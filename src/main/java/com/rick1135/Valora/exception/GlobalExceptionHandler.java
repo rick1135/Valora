@@ -6,10 +6,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.OffsetDateTime;
+import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -62,6 +65,24 @@ public class GlobalExceptionHandler {
         return buildError(HttpStatus.FORBIDDEN, "Acesso negado.", request);
     }
 
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiErrorResponse> handleValidation(
+            MethodArgumentNotValidException exception,
+            HttpServletRequest request
+    ) {
+        String message = exception.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .map(this::formatFieldError)
+                .collect(Collectors.joining("; "));
+
+        if (message.isBlank()) {
+            message = "Dados de entrada invalidos.";
+        }
+
+        return buildError(HttpStatus.BAD_REQUEST, message, request);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleUnexpected(
             Exception exception,
@@ -84,5 +105,13 @@ public class GlobalExceptionHandler {
         );
 
         return ResponseEntity.status(status).body(response);
+    }
+
+    private String formatFieldError(FieldError fieldError) {
+        String defaultMessage = fieldError.getDefaultMessage();
+        if (defaultMessage == null || defaultMessage.isBlank()) {
+            return fieldError.getField() + ": valor invalido";
+        }
+        return fieldError.getField() + ": " + defaultMessage;
     }
 }
