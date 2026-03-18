@@ -15,3 +15,8 @@ spring:
     show-sql: false
   flyway:
     enabled: true
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:troque-esta-chave}
+    issuer: valora-api
