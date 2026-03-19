@@ -35,6 +35,14 @@ public class GlobalExceptionHandler {
         return buildError(HttpStatus.CONFLICT, exception.getMessage(), request);
     }
 
+    @ExceptionHandler(AssetNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleAssetNotFound(
+            AssetNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return buildError(HttpStatus.NOT_FOUND, exception.getMessage(), request);
+    }
+
     @ExceptionHandler(InvalidTokenException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidToken(
             InvalidTokenException exception,
@@ -150,5 +158,13 @@ public class GlobalExceptionHandler {
         return buildError(HttpStatus.CONFLICT,
                 "Conflito de processamento: O ativo já está sendo atualizado por outra transação simultânea. Por favor, tente novamente.",
                 request);
+    }
+
+    @ExceptionHandler(InsufficientPositionException.class)
+    public ResponseEntity<ApiErrorResponse> handleInsufficientPosition(
+        InsufficientPositionException exception,
+        HttpServletRequest request
+    ) {
+        return buildError(HttpStatus.BAD_REQUEST, exception.getMessage(), request);
     }
 }
