@@ -45,7 +45,7 @@ O projeto está sendo desenvolvido em fases:
 
 ---
 
-## 🛠️ Tecnologias e Stack
+## Tecnologias e Stack
 
 * **Linguagem:** Java 21
 * **Framework:** Spring Boot 3.x (Web, Data JPA, Security, Validation)
