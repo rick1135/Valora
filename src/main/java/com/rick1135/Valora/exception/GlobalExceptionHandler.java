@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -139,5 +140,15 @@ public class GlobalExceptionHandler {
             return fieldError.getField() + ": valor invalido";
         }
         return fieldError.getField() + ": " + defaultMessage;
+    }
+
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ApiErrorResponse> handleObjectOptimisticLockingFailure(
+            ObjectOptimisticLockingFailureException exception,
+            HttpServletRequest request
+    ){
+        return buildError(HttpStatus.CONFLICT,
+                "Conflito de processamento: O ativo já está sendo atualizado por outra transação simultânea. Por favor, tente novamente.",
+                request);
     }
 }
