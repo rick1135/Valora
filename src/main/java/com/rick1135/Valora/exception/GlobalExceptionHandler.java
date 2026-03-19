@@ -1,6 +1,7 @@
 package com.rick1135.Valora.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -20,6 +21,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(EmailAlreadyRegisteredException.class)
     public ResponseEntity<ApiErrorResponse> handleEmailAlreadyRegistered(
             EmailAlreadyRegisteredException exception,
+            HttpServletRequest request
+    ) {
+        return buildError(HttpStatus.CONFLICT, exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(AssetAlreadyExistsException.class)
+    public ResponseEntity<ApiErrorResponse> handleAssetAlreadyExists(
+            AssetAlreadyExistsException exception,
             HttpServletRequest request
     ) {
         return buildError(HttpStatus.CONFLICT, exception.getMessage(), request);
@@ -74,6 +83,23 @@ public class GlobalExceptionHandler {
                 .getFieldErrors()
                 .stream()
                 .map(this::formatFieldError)
+                .collect(Collectors.joining("; "));
+
+        if (message.isBlank()) {
+            message = "Dados de entrada invalidos.";
+        }
+
+        return buildError(HttpStatus.BAD_REQUEST, message, request);
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleConstraintViolation(
+            ConstraintViolationException exception,
+            HttpServletRequest request
+    ) {
+        String message = exception.getConstraintViolations()
+                .stream()
+                .map(violation -> violation.getMessage())
                 .collect(Collectors.joining("; "));
 
         if (message.isBlank()) {
