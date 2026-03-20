@@ -59,7 +59,7 @@ class ProventServiceTest {
         user.setId(UUID.randomUUID());
         user.setEmail("investor@valora.dev");
         user.setPasswordHash("hash");
-        user.setRole(UserRole.User);
+        user.setRole(UserRole.USER);
 
         Instant comDate = Instant.parse("2026-03-20T00:00:00Z");
         Instant paymentDate = Instant.parse("2026-03-30T00:00:00Z");
@@ -114,7 +114,7 @@ class ProventServiceTest {
         user.setId(UUID.randomUUID());
         user.setEmail("jcp@valora.dev");
         user.setPasswordHash("hash");
-        user.setRole(UserRole.User);
+        user.setRole(UserRole.USER);
 
         Instant comDate = Instant.parse("2026-03-20T00:00:00Z");
         Instant paymentDate = Instant.parse("2026-04-05T00:00:00Z");

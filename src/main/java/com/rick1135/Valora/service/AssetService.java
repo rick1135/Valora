@@ -5,6 +5,7 @@ import com.rick1135.Valora.dto.response.AssetResponseDTO;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.exception.AssetAlreadyExistsException;
 import com.rick1135.Valora.repository.AssetRepository;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -41,6 +42,7 @@ public class AssetService {
         }
     }
 
+    @Transactional(readOnly = true)
     public List<AssetResponseDTO> getAllAssets(int page, int size, String sort, String direction) {
         Sort.Direction sortDirection = "desc".equalsIgnoreCase(direction) ? Sort.Direction.DESC : Sort.Direction.ASC;
         String safeSortField = isSortableField(sort) ? sort : "ticker";
@@ -51,6 +53,7 @@ public class AssetService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public List<AssetResponseDTO> searchAssets(String ticker) {
         String normalizedTicker = normalizeTicker(ticker);
         return assetRepository.findByTickerContainingIgnoreCase(normalizedTicker)

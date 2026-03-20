@@ -45,7 +45,7 @@ class TransactionAndPositionIntegrationTest {
         user.setEmail("investor@valora.dev");
         user.setPasswordHash("hash");
         user.setName("Investor");
-        user.setRole(UserRole.User);
+        user.setRole(UserRole.USER);
         user = userRepository.saveAndFlush(user);
 
         asset = new Asset();

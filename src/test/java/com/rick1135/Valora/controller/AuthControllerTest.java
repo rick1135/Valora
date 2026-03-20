@@ -20,7 +20,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -67,7 +66,7 @@ class AuthControllerTest {
 
     @Test
     void registerReturnsTokenWhenPayloadIsValid() throws Exception {
-        when(userRepository.findByEmail("new@valora.dev")).thenReturn(Optional.empty());
+        when(userRepository.existsByEmail("new@valora.dev")).thenReturn(false);
         when(passwordEncoder.encode("12345678")).thenReturn("hashed-password");
         when(tokenService.generateToken(any(User.class))).thenReturn("jwt-token");
 
@@ -80,22 +79,20 @@ class AuthControllerTest {
                                   "password": "12345678"
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.token").value("jwt-token"));
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(userCaptor.capture());
         User savedUser = userCaptor.getValue();
-        assertThat(savedUser.getRole()).isEqualTo(UserRole.User);
+        assertThat(savedUser.getRole()).isEqualTo(UserRole.USER);
         assertThat(savedUser.getPasswordHash()).isEqualTo("hashed-password");
         assertThat(savedUser.getEmail()).isEqualTo("new@valora.dev");
     }
 
     @Test
     void registerReturnsConflictWhenEmailAlreadyExists() throws Exception {
-        User existing = new User();
-        existing.setEmail("existing@valora.dev");
-        when(userRepository.findByEmail("existing@valora.dev")).thenReturn(Optional.of(existing));
+        when(userRepository.existsByEmail("existing@valora.dev")).thenReturn(true);
 
         mockMvc.perform(post("/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

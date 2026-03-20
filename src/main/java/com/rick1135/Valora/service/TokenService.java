@@ -10,9 +10,9 @@ import com.rick1135.Valora.exception.TokenGenerationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 
 @Service
 public class TokenService {
@@ -20,6 +20,14 @@ public class TokenService {
     private String secret;
     @Value("${security.jwt.issuer:valora-api}")
     private String issuer;
+    @Value("${security.jwt.expiration-hours:2}")
+    private long expirationHours;
+
+    private final Clock clock;
+
+    public TokenService(Clock clock) {
+        this.clock = clock;
+    }
 
     public String generateToken(User user){
         try {
@@ -49,6 +57,6 @@ public class TokenService {
     }
 
     private Instant genExpirationDate(){
-        return LocalDateTime.now().plusHours(2).toInstant(ZoneOffset.of("-03:00"));
+        return Instant.now(clock).plus(expirationHours, ChronoUnit.HOURS);
     }
 }

@@ -8,7 +8,6 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -19,13 +18,19 @@ import java.io.IOException;
 
 @Component
 public class SecurityFilter extends OncePerRequestFilter {
-    @Autowired
-    TokenService tokenService;
-    @Autowired
-    UserRepository userRepository;
-    @Autowired
-    @Qualifier("handlerExceptionResolver")
-    HandlerExceptionResolver handlerExceptionResolver;
+    private final TokenService tokenService;
+    private final UserRepository userRepository;
+    private final HandlerExceptionResolver handlerExceptionResolver;
+
+    public SecurityFilter(
+            TokenService tokenService,
+            UserRepository userRepository,
+            @Qualifier("handlerExceptionResolver") HandlerExceptionResolver handlerExceptionResolver
+    ) {
+        this.tokenService = tokenService;
+        this.userRepository = userRepository;
+        this.handlerExceptionResolver = handlerExceptionResolver;
+    }
 
     private String recoverToken(HttpServletRequest request) {
         var authHeader = request.getHeader("Authorization");

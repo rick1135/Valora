@@ -48,7 +48,7 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<LoginResponseDTO> register(@Valid @RequestBody RegisterDTO data) {
-        if(userRepository.findByEmail(data.email()).isPresent()){
+        if(userRepository.existsByEmail(data.email())){
             throw new EmailAlreadyRegisteredException("Email ja cadastrado.");
         }
         String password = passwordEncoder.encode(data.password());
@@ -56,10 +56,10 @@ public class AuthController {
         newUser.setEmail(data.email());
         newUser.setName(data.name());
         newUser.setPasswordHash(password);
-        newUser.setRole(UserRole.User);
+        newUser.setRole(UserRole.USER);
         userRepository.save(newUser);
 
         String token = tokenService.generateToken((User) newUser);
-        return ResponseEntity.ok(new LoginResponseDTO(token));
+        return ResponseEntity.status(201).body(new LoginResponseDTO(token));
     }
 }

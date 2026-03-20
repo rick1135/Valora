@@ -1,6 +1,7 @@
 package com.rick1135.Valora.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -116,7 +117,7 @@ public class GlobalExceptionHandler {
     ) {
         String message = exception.getConstraintViolations()
                 .stream()
-                .map(violation -> violation.getMessage())
+                .map(ConstraintViolation::getMessage)
                 .collect(Collectors.joining("; "));
 
         if (message.isBlank()) {

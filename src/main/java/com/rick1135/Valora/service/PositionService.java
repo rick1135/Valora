@@ -3,6 +3,7 @@ package com.rick1135.Valora.service;
 import com.rick1135.Valora.dto.response.PositionResponseDTO;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.repository.PositionRepository;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +17,7 @@ public class PositionService {
     private final PositionRepository positionRepository;
     private final QuoteService quoteService;
 
+    @Transactional(readOnly = true)
     public List<PositionResponseDTO> getUserPortfolio(User user) {
         return positionRepository.findByUser(user).stream()
                 .filter(position -> position.getQuantity().compareTo(BigDecimal.ZERO) > 0)
