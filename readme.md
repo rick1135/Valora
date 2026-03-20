@@ -16,7 +16,7 @@ O projeto está sendo desenvolvido em fases:
 - [x] **Fase 1:** Fundação, Autenticação JWT e Segurança;
 - [x] **Fase 2:** Dicionário de Ativos e Paginação;
 - [x] **Fase 3:** Motor de Transações, Posição Consolidada e Cálculo de Preço Médio;
-- [ ] **Fase 4:** Integração com APIs externas (Cotações em Tempo Real) e Cálculo de Rentabilidade;
+- [x] **Fase 4:** Integração com APIs externas (Cotações em Tempo Real) e Cálculo de Rentabilidade;
 - [ ] **Fase 5:** Dashboards e Relatórios.
 
 ---
@@ -34,14 +34,18 @@ O projeto está sendo desenvolvido em fases:
 * **Motor financeiro (transações e posição):**
     * Registro de operações de **COMPRA (BUY)** e **VENDA (SELL)**.
     * **Cálculo Automático de Preço Médio** e consolidação de carteira em tempo real.
+    * **Cálculo de rentabilidade** da carteira com base no custo total vs. cotação atual.
+* **Cotações e cache:**
+    * Integração com a BRAPI via cliente HTTP (`RestClient`).
+    * Cache de cotações com Redis e `@Cacheable` (TTL configurado).
 * **Arquitetura:**
     * **Tratamento de concorrência (race conditions):** Uso do `@Version` para impedir que duas ordens simultâneas corrompam a quantidade ou o preço médio.
     * **Tratamento Global de Exceções:** Respostas de erro padronizadas (RFC 7807) utilizando `@RestControllerAdvice`.
 
 ### Próximos Passos
-* Consumo de APIs do Mercado Financeiro via **Spring Cloud OpenFeign** para obter o preço atual dos ativos.
-* Cálculo da rentabilidade da carteira (Lucro/Prejuízo) em tempo real.
-* Configuração do **Redis** para cache de cotações e otimização de consultas.
+* Evoluir endpoint de carteira com agregações por classe de ativo e indicadores consolidados.
+* Adicionar métricas e observabilidade para latência de consulta de cotação e taxa de acerto de cache.
+* Iniciar a Fase 5 com dashboards e relatórios.
 
 ---
 
@@ -77,7 +81,7 @@ Para rodar o projeto localmente, você precisará ter instalado:
    
 2. **Suba a infra do Banco de Dados e Cache(Docker):**
     ```bash
-    docker-compose up -d postgres redis
+    docker compose up -d postgres redis
     ```
    O Flyway rodará automaticamente ao iniciar o Spring Boot, criando todas as tabelas e índices necessários.
 
@@ -98,3 +102,8 @@ Para rodar o projeto localmente, você precisará ter instalado:
     * `POST /transactions` - Registra uma compra ou venda (atualiza a posição automaticamente).
 * **Portfólio:**
     * `GET /portfolio` - Retorna a carteira atualizada do usuário logado (Quantidade, Preço Médio e Custo Total).
+* **Proventos:**
+    * `POST /provents` - Cadastra um evento de provento (DIVIDEND/JCP) e provisiona automaticamente por posição na data COM.
+    * `GET /provents/me` - Lista os proventos provisionados do usuário autenticado.
+    * `POST /provents/sync` - Sincroniza automaticamente dividendos/JCP da brapi para ativos atualmente em carteira.
+    * Sincronização agendada diária via `provents.sync.cron` (também disponível por trigger manual no endpoint acima).
