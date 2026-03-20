@@ -5,6 +5,7 @@ import com.rick1135.Valora.dto.brapi.BrapiResponseDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -19,6 +20,7 @@ public class QuoteService {
     @Value("${brapi.token:}")
     private String brapiToken;
 
+    @Cacheable(value = "quotes", key = "#ticker")
     public Optional<BigDecimal> getCurrentPrice(String ticker) {
         if (brapiToken == null || brapiToken.isBlank()) {
             log.warn("Token da Brapi nao configurado. Cotacao indisponivel para ticker={}", ticker);
