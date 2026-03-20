@@ -1,0 +1,7 @@
+UPDATE users
+SET role = CASE
+    WHEN UPPER(TRIM(role)) = 'ADMIN' THEN 'ADMIN'
+    WHEN UPPER(TRIM(role)) = 'USER' THEN 'USER'
+    ELSE role
+END
+WHERE role IS NOT NULL;

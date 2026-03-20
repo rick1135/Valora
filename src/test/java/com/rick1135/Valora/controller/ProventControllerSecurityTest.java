@@ -83,7 +83,7 @@ class ProventControllerSecurityTest {
     @Test
     void createProventShouldReturnForbiddenWhenUserIsNotAdmin() throws Exception {
         UUID assetId = seedAsset();
-        String token = seedUserAndToken(UserRole.User);
+        String token = seedUserAndToken(UserRole.USER);
 
         mockMvc.perform(post("/provents")
                         .header("Authorization", "Bearer " + token)
@@ -95,7 +95,7 @@ class ProventControllerSecurityTest {
     @Test
     void createProventShouldReturnCreatedForAdmin() throws Exception {
         UUID assetId = seedAsset();
-        String token = seedUserAndToken(UserRole.Admin);
+        String token = seedUserAndToken(UserRole.ADMIN);
 
         mockMvc.perform(post("/provents")
                         .header("Authorization", "Bearer " + token)
@@ -107,7 +107,7 @@ class ProventControllerSecurityTest {
 
     @Test
     void syncProventsShouldReturnOkForAdmin() throws Exception {
-        String token = seedUserAndToken(UserRole.Admin);
+        String token = seedUserAndToken(UserRole.ADMIN);
 
         mockMvc.perform(post("/provents/sync")
                         .header("Authorization", "Bearer " + token))
