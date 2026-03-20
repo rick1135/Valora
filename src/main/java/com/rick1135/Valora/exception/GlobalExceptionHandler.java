@@ -35,6 +35,14 @@ public class GlobalExceptionHandler {
         return buildError(HttpStatus.CONFLICT, exception.getMessage(), request);
     }
 
+    @ExceptionHandler(ProventAlreadyExistsException.class)
+    public ResponseEntity<ApiErrorResponse> handleProventAlreadyExists(
+            ProventAlreadyExistsException exception,
+            HttpServletRequest request
+    ) {
+        return buildError(HttpStatus.CONFLICT, exception.getMessage(), request);
+    }
+
     @ExceptionHandler(AssetNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleAssetNotFound(
             AssetNotFoundException exception,
@@ -116,6 +124,14 @@ public class GlobalExceptionHandler {
         }
 
         return buildError(HttpStatus.BAD_REQUEST, message, request);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiErrorResponse> handleIllegalArgument(
+            IllegalArgumentException exception,
+            HttpServletRequest request
+    ) {
+        return buildError(HttpStatus.BAD_REQUEST, exception.getMessage(), request);
     }
 
     @ExceptionHandler(Exception.class)

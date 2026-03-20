@@ -23,3 +23,9 @@ security:
 
 brapi:
   token: ${BRAPI_TOKEN:}
+
+provents:
+  sync:
+    cron: ${PROVENTS_SYNC_CRON:0 15 8 * * *}
+    asset-lookback-days: ${PROVENTS_SYNC_ASSET_LOOKBACK_DAYS:365}
+    jcp-rate-is-gross: ${PROVENTS_SYNC_JCP_RATE_IS_GROSS:true}
