@@ -9,6 +9,9 @@ public record PositionResponseDTO(
         String assetName,
         BigDecimal quantity,
         BigDecimal averagePrice,
-        BigDecimal totalCost
+        BigDecimal totalCost,
+        BigDecimal currentPrice,
+        BigDecimal currentTotalValue,
+        BigDecimal profitability
 ) {
 }

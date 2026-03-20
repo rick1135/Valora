@@ -42,7 +42,10 @@ class PortfolioControllerTest {
                 "Vale",
                 new BigDecimal("3.00000000"),
                 new BigDecimal("60.00000000"),
-                new BigDecimal("180.0000000000000000")
+                new BigDecimal("180.0000000000000000"),
+                new BigDecimal("62.00000000"),
+                new BigDecimal("186.0000000000000000"),
+                new BigDecimal("3.3333")
         );
         when(positionService.getUserPortfolio(any())).thenReturn(List.of(position));
 

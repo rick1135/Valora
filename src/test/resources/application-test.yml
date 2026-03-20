@@ -15,3 +15,6 @@ security:
   jwt:
     secret: test-secret-key
     issuer: valora-api-test
+
+brapi:
+  token: ${BRAPI_TOKEN:}

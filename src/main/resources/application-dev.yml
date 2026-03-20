@@ -1,13 +1,14 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/valora
-    username: valora
-    password: valora
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/valora}
+    username: ${SPRING_DATASOURCE_USERNAME:valora}
+    password: ${SPRING_DATASOURCE_PASSWORD:valora}
     driver-class-name: org.postgresql.Driver
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
   jpa:
     hibernate:
       ddl-auto: update
@@ -22,3 +23,6 @@ security:
   jwt:
     secret: ${JWT_SECRET:troque-esta-chave}
     issuer: valora-api
+
+brapi:
+  token: ${BRAPI_TOKEN:}
