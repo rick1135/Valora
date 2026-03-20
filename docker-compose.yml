@@ -49,6 +49,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: valora
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET deve ser definido}
     ports:
       - "8080:8080"
     restart: unless-stopped

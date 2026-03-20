@@ -8,7 +8,7 @@ import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.exception.ProventAlreadyExistsException;
 import com.rick1135.Valora.repository.*;
 import com.rick1135.Valora.repository.projection.UserAssetHoldingProjection;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -140,6 +140,7 @@ public class ProventService {
         );
     }
 
+    @Transactional(readOnly = true)
     public Page<ProventProvisionResponseDTO> getMyProvents(User user, Pageable pageable) {
         return proventProvisionRepository.findByUser(user, pageable)
                 .map(this::toResponse);

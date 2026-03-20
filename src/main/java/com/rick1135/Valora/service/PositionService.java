@@ -5,6 +5,7 @@ import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.repository.PositionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -16,6 +17,7 @@ public class PositionService {
     private final PositionRepository positionRepository;
     private final QuoteService quoteService;
 
+    @Transactional(readOnly = true)
     public List<PositionResponseDTO> getUserPortfolio(User user) {
         return positionRepository.findByUser(user).stream()
                 .filter(position -> position.getQuantity().compareTo(BigDecimal.ZERO) > 0)

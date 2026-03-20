@@ -12,7 +12,7 @@ import com.rick1135.Valora.exception.InsufficientPositionException;
 import com.rick1135.Valora.repository.AssetRepository;
 import com.rick1135.Valora.repository.PositionRepository;
 import com.rick1135.Valora.repository.TransactionRepository;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
