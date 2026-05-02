@@ -1,29 +1,25 @@
 package com.rick1135.Valora.controller;
 
 import com.rick1135.Valora.entity.User;
-import com.rick1135.Valora.entity.UserRole;
+import com.rick1135.Valora.exception.EmailAlreadyRegisteredException;
 import com.rick1135.Valora.exception.GlobalExceptionHandler;
-import com.rick1135.Valora.repository.UserRepository;
 import com.rick1135.Valora.service.TokenService;
+import com.rick1135.Valora.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -38,13 +34,10 @@ class AuthControllerTest {
     TokenService tokenService;
 
     @Mock
-    UserRepository userRepository;
+    UserService userService;
 
     @Mock
     AuthenticationManager authenticationManager;
-
-    @Mock
-    PasswordEncoder passwordEncoder;
 
     @BeforeEach
     void setUp() {
@@ -53,9 +46,8 @@ class AuthControllerTest {
 
         AuthController authController = new AuthController(
                 tokenService,
-                userRepository,
-                authenticationManager,
-                passwordEncoder
+                userService,
+                authenticationManager
         );
 
         mockMvc = MockMvcBuilders.standaloneSetup(authController)
@@ -66,9 +58,11 @@ class AuthControllerTest {
 
     @Test
     void registerReturnsTokenWhenPayloadIsValid() throws Exception {
-        when(userRepository.existsByEmail("new@valora.dev")).thenReturn(false);
-        when(passwordEncoder.encode("12345678")).thenReturn("hashed-password");
-        when(tokenService.generateToken(any(User.class))).thenReturn("jwt-token");
+        User registeredUser = new User();
+        registeredUser.setEmail("new@valora.dev");
+
+        when(userService.registerUser(any())).thenReturn(registeredUser);
+        when(tokenService.generateToken(registeredUser)).thenReturn("jwt-token");
 
         mockMvc.perform(post("/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -81,18 +75,12 @@ class AuthControllerTest {
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.token").value("jwt-token"));
-
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(userCaptor.capture());
-        User savedUser = userCaptor.getValue();
-        assertThat(savedUser.getRole()).isEqualTo(UserRole.USER);
-        assertThat(savedUser.getPasswordHash()).isEqualTo("hashed-password");
-        assertThat(savedUser.getEmail()).isEqualTo("new@valora.dev");
     }
 
     @Test
     void registerReturnsConflictWhenEmailAlreadyExists() throws Exception {
-        when(userRepository.existsByEmail("existing@valora.dev")).thenReturn(true);
+        when(userService.registerUser(any()))
+                .thenThrow(new EmailAlreadyRegisteredException("Email ja cadastrado."));
 
         mockMvc.perform(post("/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

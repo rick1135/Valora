@@ -4,14 +4,11 @@ import com.rick1135.Valora.dto.request.AuthenticationDTO;
 import com.rick1135.Valora.dto.request.RegisterDTO;
 import com.rick1135.Valora.dto.response.LoginResponseDTO;
 import com.rick1135.Valora.entity.User;
-import com.rick1135.Valora.entity.UserRole;
-import com.rick1135.Valora.exception.EmailAlreadyRegisteredException;
-import com.rick1135.Valora.repository.UserRepository;
 import com.rick1135.Valora.service.TokenService;
+import com.rick1135.Valora.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,20 +19,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/auth")
 public class AuthController {
     private final TokenService tokenService;
-    private final UserRepository userRepository;
+    private final UserService userService;
     private final AuthenticationManager authenticationManager;
-    private final PasswordEncoder passwordEncoder;
 
     public AuthController(
             TokenService tokenService,
-            UserRepository userRepository,
-            AuthenticationManager authenticationManager,
-            PasswordEncoder passwordEncoder
+            UserService userService,
+            AuthenticationManager authenticationManager
     ) {
         this.tokenService = tokenService;
-        this.userRepository = userRepository;
+        this.userService = userService;
         this.authenticationManager = authenticationManager;
-        this.passwordEncoder = passwordEncoder;
     }
 
     @PostMapping("/login")
@@ -48,17 +42,7 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<LoginResponseDTO> register(@Valid @RequestBody RegisterDTO data) {
-        if(userRepository.existsByEmail(data.email())){
-            throw new EmailAlreadyRegisteredException("Email ja cadastrado.");
-        }
-        String password = passwordEncoder.encode(data.password());
-        User newUser = new User();
-        newUser.setEmail(data.email());
-        newUser.setName(data.name());
-        newUser.setPasswordHash(password);
-        newUser.setRole(UserRole.USER);
-        userRepository.save(newUser);
-
+        User newUser = userService.registerUser(data);
         String token = tokenService.generateToken((User) newUser);
         return ResponseEntity.status(201).body(new LoginResponseDTO(token));
     }
