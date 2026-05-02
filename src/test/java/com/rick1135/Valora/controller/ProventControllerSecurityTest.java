@@ -1,6 +1,7 @@
 package com.rick1135.Valora.controller;
 
 import com.rick1135.Valora.ValoraApplication;
+import com.rick1135.Valora.config.TestRedisConfig;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.entity.User;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.context.WebApplicationContext;
@@ -35,6 +37,7 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppC
 
 @SpringBootTest(classes = ValoraApplication.class)
 @ActiveProfiles("test")
+@Import(TestRedisConfig.class)
 class ProventControllerSecurityTest {
 
     @Autowired

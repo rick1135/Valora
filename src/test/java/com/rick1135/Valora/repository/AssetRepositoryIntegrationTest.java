@@ -1,11 +1,13 @@
 package com.rick1135.Valora.repository;
 
+import com.rick1135.Valora.config.TestRedisConfig;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -13,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@Import(TestRedisConfig.class)
 class AssetRepositoryIntegrationTest {
 
     @Autowired
