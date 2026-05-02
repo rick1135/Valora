@@ -2,9 +2,14 @@ package com.rick1135.Valora.service;
 
 import com.rick1135.Valora.dto.request.TransactionDTO;
 import com.rick1135.Valora.dto.response.TransactionResponseDTO;
-import com.rick1135.Valora.entity.*;
+import com.rick1135.Valora.entity.Asset;
+import com.rick1135.Valora.entity.Position;
+import com.rick1135.Valora.entity.Transaction;
+import com.rick1135.Valora.entity.TransactionType;
+import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.exception.InsufficientPositionException;
+import com.rick1135.Valora.mapper.TransactionMapper;
 import com.rick1135.Valora.repository.AssetRepository;
 import com.rick1135.Valora.repository.PositionRepository;
 import com.rick1135.Valora.repository.TransactionRepository;
@@ -36,6 +41,9 @@ class TransactionServiceTest {
     @Mock
     private AssetRepository assetRepository;
 
+    @Mock
+    private TransactionMapper transactionMapper;
+
     @InjectMocks
     private TransactionService transactionService;
 
@@ -57,7 +65,14 @@ class TransactionServiceTest {
                 now
         );
 
+        Transaction mappedTransaction = new Transaction();
+        mappedTransaction.setType(TransactionType.BUY);
+        mappedTransaction.setQuantity(new BigDecimal("10.00000000"));
+        mappedTransaction.setUnitPrice(new BigDecimal("25.00000000"));
+        mappedTransaction.setTransactionDate(now);
+
         when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(transactionMapper.toEntity(dto)).thenReturn(mappedTransaction);
         when(positionRepository.findByUserAndAsset(user, asset)).thenReturn(Optional.empty());
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> {
             Transaction transaction = invocation.getArgument(0);
@@ -65,6 +80,23 @@ class TransactionServiceTest {
             return transaction;
         });
         when(positionRepository.save(any(Position.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(transactionMapper.toResponse(any(Transaction.class), any(Asset.class), any(Position.class)))
+                .thenAnswer(invocation -> {
+                    Transaction transaction = invocation.getArgument(0);
+                    Asset mappedAsset = invocation.getArgument(1);
+                    Position position = invocation.getArgument(2);
+                    return new TransactionResponseDTO(
+                            transaction.getId(),
+                            mappedAsset.getId(),
+                            mappedAsset.getTicker(),
+                            transaction.getType(),
+                            transaction.getQuantity(),
+                            transaction.getUnitPrice(),
+                            transaction.getTransactionDate(),
+                            position.getQuantity(),
+                            position.getAveragePrice()
+                    );
+                });
 
         TransactionResponseDTO response = transactionService.processTransaction(user, dto);
 
@@ -116,8 +148,16 @@ class TransactionServiceTest {
                 Instant.now()
         );
 
+        Transaction mappedTransaction = new Transaction();
+        mappedTransaction.setType(TransactionType.SELL);
+        mappedTransaction.setQuantity(dto.quantity());
+        mappedTransaction.setUnitPrice(dto.unitPrice());
+        mappedTransaction.setTransactionDate(dto.transactionDate());
+
         when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(transactionMapper.toEntity(dto)).thenReturn(mappedTransaction);
         when(positionRepository.findByUserAndAsset(user, asset)).thenReturn(Optional.of(position));
+        when(transactionRepository.save(any(Transaction.class))).thenReturn(mappedTransaction);
 
         assertThatThrownBy(() -> transactionService.processTransaction(user, dto))
                 .isInstanceOf(InsufficientPositionException.class)

@@ -3,6 +3,7 @@ package com.rick1135.Valora.service;
 import com.rick1135.Valora.client.BrapiClient;
 import com.rick1135.Valora.dto.brapi.BrapiResponseDTO;
 import com.rick1135.Valora.dto.brapi.BrapiResultDTO;
+import com.rick1135.Valora.dto.response.QuoteDTO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -63,14 +64,22 @@ class QuoteServiceCacheTest {
     @Test
     void shouldUseRedisCacheForSameTicker() {
         when(brapiClient.getQuote("ITSA4", "test-token"))
-                .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO("ITSA4", new BigDecimal("11.25")))));
+                .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO(
+                        "ITSA4",
+                        new BigDecimal("11.25"),
+                        new BigDecimal("0.55"),
+                        998877L,
+                        new BigDecimal("11.40"),
+                        new BigDecimal("11.10")
+                ))));
 
-        BigDecimal first = quoteService.getCurrentPrice("ITSA4").orElseThrow();
-        BigDecimal second = quoteService.getCurrentPrice("ITSA4").orElseThrow();
+        QuoteDTO first = quoteService.getCurrentQuote("ITSA4").orElseThrow();
+        QuoteDTO second = quoteService.getCurrentQuote("ITSA4").orElseThrow();
 
-        assertThat(first).isEqualByComparingTo("11.25");
-        assertThat(second).isEqualByComparingTo("11.25");
-        assertThat(cache).containsEntry("quotes::ITSA4", new BigDecimal("11.25"));
+        assertThat(first.price()).isEqualByComparingTo("11.25");
+        assertThat(second.price()).isEqualByComparingTo("11.25");
+        assertThat(cache.get("quotes::ITSA4")).isInstanceOf(QuoteDTO.class);
+        assertThat(((QuoteDTO) cache.get("quotes::ITSA4")).changePercent()).isEqualByComparingTo("0.55");
         verify(brapiClient, times(1)).getQuote("ITSA4", "test-token");
     }
 }

@@ -5,6 +5,7 @@ import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.entity.UserRole;
 import com.rick1135.Valora.exception.EmailAlreadyRegisteredException;
 import com.rick1135.Valora.repository.UserRepository;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,5 +33,11 @@ public class UserService {
         newUser.setRole(UserRole.USER);
 
         return userRepository.save(newUser);
+    }
+
+    @Transactional(readOnly = true)
+    public User getByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("Usuario nao encontrado."));
     }
 }

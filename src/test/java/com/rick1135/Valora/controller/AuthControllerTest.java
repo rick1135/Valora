@@ -3,6 +3,7 @@ package com.rick1135.Valora.controller;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.EmailAlreadyRegisteredException;
 import com.rick1135.Valora.exception.GlobalExceptionHandler;
+import com.rick1135.Valora.exception.InvalidTokenException;
 import com.rick1135.Valora.service.TokenService;
 import com.rick1135.Valora.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,7 +18,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
-
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -57,12 +57,13 @@ class AuthControllerTest {
     }
 
     @Test
-    void registerReturnsTokenWhenPayloadIsValid() throws Exception {
+    void registerReturnsTokensWhenPayloadIsValid() throws Exception {
         User registeredUser = new User();
         registeredUser.setEmail("new@valora.dev");
 
         when(userService.registerUser(any())).thenReturn(registeredUser);
         when(tokenService.generateToken(registeredUser)).thenReturn("jwt-token");
+        when(tokenService.generateRefreshToken(registeredUser)).thenReturn("refresh-token");
 
         mockMvc.perform(post("/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -74,7 +75,8 @@ class AuthControllerTest {
                                 }
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.token").value("jwt-token"));
+                .andExpect(jsonPath("$.token").value("jwt-token"))
+                .andExpect(jsonPath("$.refreshToken").value("refresh-token"));
     }
 
     @Test
@@ -96,13 +98,14 @@ class AuthControllerTest {
     }
 
     @Test
-    void loginReturnsTokenWhenCredentialsAreValid() throws Exception {
+    void loginReturnsTokensWhenCredentialsAreValid() throws Exception {
         User principal = new User();
         principal.setEmail("user@valora.dev");
         var authentication = new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
 
         when(authenticationManager.authenticate(any())).thenReturn(authentication);
         when(tokenService.generateToken(principal)).thenReturn("jwt-login");
+        when(tokenService.generateRefreshToken(principal)).thenReturn("refresh-login");
 
         mockMvc.perform(post("/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -113,7 +116,8 @@ class AuthControllerTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").value("jwt-login"));
+                .andExpect(jsonPath("$.token").value("jwt-login"))
+                .andExpect(jsonPath("$.refreshToken").value("refresh-login"));
     }
 
     @Test
@@ -131,6 +135,44 @@ class AuthControllerTest {
                                 """))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("Credenciais invalidas."));
+    }
+
+    @Test
+    void refreshReturnsNewTokensWhenRefreshTokenIsValid() throws Exception {
+        User user = new User();
+        user.setEmail("refresh@valora.dev");
+
+        when(tokenService.consumeRefreshToken("refresh-token")).thenReturn("refresh@valora.dev");
+        when(userService.getByEmail("refresh@valora.dev")).thenReturn(user);
+        when(tokenService.generateToken(user)).thenReturn("jwt-refreshed");
+        when(tokenService.generateRefreshToken(user)).thenReturn("refresh-rotated");
+
+        mockMvc.perform(post("/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "refreshToken": "refresh-token"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").value("jwt-refreshed"))
+                .andExpect(jsonPath("$.refreshToken").value("refresh-rotated"));
+    }
+
+    @Test
+    void refreshReturnsUnauthorizedWhenRefreshTokenIsInvalid() throws Exception {
+        when(tokenService.consumeRefreshToken("refresh-token"))
+                .thenThrow(new InvalidTokenException("Refresh token invalido ou expirado."));
+
+        mockMvc.perform(post("/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "refreshToken": "refresh-token"
+                                }
+                                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Refresh token invalido ou expirado."));
     }
 
     @Test

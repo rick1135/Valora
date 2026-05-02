@@ -1,13 +1,20 @@
 package com.rick1135.Valora.repository;
 
 import com.rick1135.Valora.config.TestRedisConfig;
-import com.rick1135.Valora.entity.*;
-import jakarta.validation.ConstraintViolationException;
+import com.rick1135.Valora.entity.Asset;
+import com.rick1135.Valora.entity.AssetCategory;
+import com.rick1135.Valora.entity.Position;
+import com.rick1135.Valora.entity.Transaction;
+import com.rick1135.Valora.entity.TransactionType;
+import com.rick1135.Valora.entity.User;
+import com.rick1135.Valora.entity.UserRole;
+import com.rick1135.Valora.support.AbstractPostgresIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -20,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 @ActiveProfiles("test")
 @Import(TestRedisConfig.class)
-class TransactionAndPositionIntegrationTest {
+class TransactionAndPositionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private TransactionRepository transactionRepository;
@@ -75,7 +82,7 @@ class TransactionAndPositionIntegrationTest {
     }
 
     @Test
-    void shouldRejectNullTransactionType() {
+    void shouldRejectNullTransactionTypeByDatabaseConstraint() {
         Transaction transaction = new Transaction();
         transaction.setUser(user);
         transaction.setAsset(asset);
@@ -84,7 +91,7 @@ class TransactionAndPositionIntegrationTest {
         transaction.setTransactionDate(Instant.now());
 
         assertThatThrownBy(() -> transactionRepository.saveAndFlush(transaction))
-                .isInstanceOf(ConstraintViolationException.class);
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -98,7 +105,7 @@ class TransactionAndPositionIntegrationTest {
         transaction.setTransactionDate(Instant.now());
 
         assertThatThrownBy(() -> transactionRepository.saveAndFlush(transaction))
-                .isInstanceOf(ConstraintViolationException.class);
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test

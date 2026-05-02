@@ -3,6 +3,7 @@ package com.rick1135.Valora.service;
 import com.rick1135.Valora.client.BrapiClient;
 import com.rick1135.Valora.dto.brapi.BrapiResponseDTO;
 import com.rick1135.Valora.dto.brapi.BrapiResultDTO;
+import com.rick1135.Valora.dto.response.QuoteDTO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -65,6 +66,30 @@ class QuoteServiceTest {
     }
 
     @Test
+    void shouldReturnCompleteQuoteWhenBrapiReturnsMarketData() {
+        ReflectionTestUtils.setField(quoteService, "brapiToken", "token-ok");
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.multiGet(any())).thenReturn(Collections.singletonList(null));
+        when(brapiClient.getQuote("PETR4", "token-ok"))
+                .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO(
+                        "PETR4",
+                        new BigDecimal("36.15"),
+                        new BigDecimal("1.25"),
+                        1234567L,
+                        new BigDecimal("36.50"),
+                        new BigDecimal("35.80")
+                ))));
+
+        QuoteDTO result = quoteService.getCurrentQuote("PETR4").orElseThrow();
+
+        assertThat(result.price()).isEqualByComparingTo("36.15");
+        assertThat(result.changePercent()).isEqualByComparingTo("1.25");
+        assertThat(result.volume()).isEqualTo(1234567L);
+        assertThat(result.high()).isEqualByComparingTo("36.50");
+        assertThat(result.low()).isEqualByComparingTo("35.80");
+    }
+
+    @Test
     void shouldReturnEmptyWhenQuoteIsInvalid() {
         ReflectionTestUtils.setField(quoteService, "brapiToken", "token-ok");
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -95,7 +120,7 @@ class QuoteServiceTest {
         ReflectionTestUtils.setField(quoteService, "brapiToken", "token-ok");
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.multiGet(List.of("quotes::PETR4", "quotes::VALE3")))
-                .thenReturn(java.util.Arrays.asList(new BigDecimal("31.10"), null));
+                .thenReturn(java.util.Arrays.asList(new QuoteDTO("PETR4", new BigDecimal("31.10"), null, null, null, null), null));
         when(brapiClient.getQuote("VALE3", "token-ok"))
                 .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO("VALE3", new BigDecimal("66.40")))));
 

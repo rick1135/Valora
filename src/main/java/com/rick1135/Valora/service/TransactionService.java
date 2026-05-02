@@ -9,12 +9,13 @@ import com.rick1135.Valora.entity.TransactionType;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.exception.InsufficientPositionException;
+import com.rick1135.Valora.mapper.TransactionMapper;
 import com.rick1135.Valora.repository.AssetRepository;
 import com.rick1135.Valora.repository.PositionRepository;
 import com.rick1135.Valora.repository.TransactionRepository;
-import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -25,19 +26,16 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final PositionRepository positionRepository;
     private final AssetRepository assetRepository;
+    private final TransactionMapper transactionMapper;
 
     @Transactional
     public TransactionResponseDTO processTransaction(User user, TransactionDTO dto) {
         Asset asset = assetRepository.findById(dto.assetId())
                 .orElseThrow(() -> new AssetNotFoundException("Ativo nao encontrado"));
 
-        Transaction transaction = new Transaction();
+        Transaction transaction = transactionMapper.toEntity(dto);
         transaction.setUser(user);
         transaction.setAsset(asset);
-        transaction.setType(dto.type());
-        transaction.setQuantity(dto.quantity());
-        transaction.setUnitPrice(dto.unitPrice());
-        transaction.setTransactionDate(dto.transactionDate());
         Transaction savedTransaction = transactionRepository.save(transaction);
 
         Position position = positionRepository.findByUserAndAsset(user, asset)
@@ -57,17 +55,7 @@ public class TransactionService {
         }
 
         Position savedPosition = positionRepository.save(position);
-        return new TransactionResponseDTO(
-                savedTransaction.getId(),
-                asset.getId(),
-                asset.getTicker(),
-                savedTransaction.getType(),
-                savedTransaction.getQuantity(),
-                savedTransaction.getUnitPrice(),
-                savedTransaction.getTransactionDate(),
-                savedPosition.getQuantity(),
-                savedPosition.getAveragePrice()
-        );
+        return transactionMapper.toResponse(savedTransaction, asset, savedPosition);
     }
 
     private void handleBuy(Position position, TransactionDTO dto) {

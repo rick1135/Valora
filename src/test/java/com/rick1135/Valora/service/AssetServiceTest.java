@@ -5,6 +5,7 @@ import com.rick1135.Valora.dto.response.AssetResponseDTO;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.exception.AssetAlreadyExistsException;
+import com.rick1135.Valora.mapper.AssetMapper;
 import com.rick1135.Valora.repository.AssetRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,9 @@ class AssetServiceTest {
     @Mock
     private AssetRepository assetRepository;
 
+    @Mock
+    private AssetMapper assetMapper;
+
     @InjectMocks
     private AssetService assetService;
 
@@ -41,12 +45,17 @@ class AssetServiceTest {
         AssetRequestDTO request = new AssetRequestDTO(" petr4 ", "Petrobras", AssetCategory.ACOES);
         when(assetRepository.findByTickerIgnoreCase("PETR4")).thenReturn(Optional.empty());
 
+        Asset mappedAsset = new Asset();
+        mappedAsset.setCategory(AssetCategory.ACOES);
+        when(assetMapper.toEntity(request)).thenReturn(mappedAsset);
+
         Asset savedAsset = new Asset();
         savedAsset.setId(UUID.randomUUID());
         savedAsset.setTicker("PETR4");
         savedAsset.setName("Petrobras");
         savedAsset.setCategory(AssetCategory.ACOES);
         when(assetRepository.saveAndFlush(any(Asset.class))).thenReturn(savedAsset);
+        when(assetMapper.toResponse(savedAsset)).thenReturn(new AssetResponseDTO(savedAsset.getId(), "PETR4", "Petrobras", AssetCategory.ACOES));
 
         AssetResponseDTO response = assetService.createAsset(request);
 
@@ -71,7 +80,9 @@ class AssetServiceTest {
     @Test
     void createAssetConvertsDataIntegrityViolationToDomainConflict() {
         AssetRequestDTO request = new AssetRequestDTO("PETR4", "Petrobras", AssetCategory.ACOES);
+        Asset mappedAsset = new Asset();
         when(assetRepository.findByTickerIgnoreCase("PETR4")).thenReturn(Optional.empty());
+        when(assetMapper.toEntity(request)).thenReturn(mappedAsset);
         when(assetRepository.saveAndFlush(any(Asset.class))).thenThrow(new DataIntegrityViolationException("duplicate"));
 
         assertThatThrownBy(() -> assetService.createAsset(request))
@@ -89,6 +100,7 @@ class AssetServiceTest {
 
         when(assetRepository.findAll(PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "name"))))
                 .thenReturn(new PageImpl<>(List.of(asset)));
+        when(assetMapper.toResponse(asset)).thenReturn(new AssetResponseDTO(asset.getId(), "ITSA4", "Itausa", AssetCategory.ACOES));
 
         var result = assetService.getAllAssets(0, 20, "name", "desc");
         assertThat(result).hasSize(1);

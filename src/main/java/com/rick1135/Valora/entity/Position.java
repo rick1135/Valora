@@ -1,9 +1,18 @@
 package com.rick1135.Valora.entity;
 
-import jakarta.persistence.*;
-import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotNull;
-import lombok.*;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -14,28 +23,22 @@ import java.util.UUID;
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
-@EqualsAndHashCode(of="id")
+@EqualsAndHashCode(of = "id")
 public class Position {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @NotNull(message = "O usuário é obrigatório")
     @ManyToOne(optional = false)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @NotNull(message = "O ativo é obrigatório")
     @ManyToOne(optional = false)
     @JoinColumn(name = "asset_id", nullable = false)
     private Asset asset;
 
-    @NotNull(message = "A quantidade é obrigatória")
-    @DecimalMin(value = "0.0", message = "A quantidade total não pode ser negativa")
     private BigDecimal quantity;
 
-    @NotNull(message = "O preço médio é obrigatório")
-    @DecimalMin(value = "0.0", message = "O preço médio não pode ser negativo")
     private BigDecimal averagePrice;
 
     @Version

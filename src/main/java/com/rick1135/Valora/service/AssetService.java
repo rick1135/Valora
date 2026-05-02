@@ -4,6 +4,7 @@ import com.rick1135.Valora.dto.request.AssetRequestDTO;
 import com.rick1135.Valora.dto.response.AssetResponseDTO;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.exception.AssetAlreadyExistsException;
+import com.rick1135.Valora.mapper.AssetMapper;
 import com.rick1135.Valora.repository.AssetRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -17,9 +18,11 @@ import java.util.Locale;
 @Service
 public class AssetService {
     private final AssetRepository assetRepository;
+    private final AssetMapper assetMapper;
 
-    public AssetService(AssetRepository assetRepository) {
+    public AssetService(AssetRepository assetRepository, AssetMapper assetMapper) {
         this.assetRepository = assetRepository;
+        this.assetMapper = assetMapper;
     }
 
     public AssetResponseDTO createAsset(AssetRequestDTO request) {
@@ -29,14 +32,13 @@ public class AssetService {
             throw new AssetAlreadyExistsException("Ativo com ticker '" + normalizedTicker + "' ja cadastrado.");
         }
 
-        Asset asset = new Asset();
+        Asset asset = assetMapper.toEntity(request);
         asset.setTicker(normalizedTicker);
         asset.setName(request.name().trim());
-        asset.setCategory(request.category());
 
         try {
             Asset savedAsset = assetRepository.saveAndFlush(asset);
-            return new AssetResponseDTO(savedAsset);
+            return assetMapper.toResponse(savedAsset);
         } catch (DataIntegrityViolationException exception) {
             throw new AssetAlreadyExistsException("Ativo com ticker '" + normalizedTicker + "' ja cadastrado.");
         }
@@ -49,7 +51,7 @@ public class AssetService {
         PageRequest pageable = PageRequest.of(page, size, Sort.by(sortDirection, safeSortField));
         return assetRepository.findAll(pageable)
                 .stream()
-                .map(AssetResponseDTO::new)
+                .map(assetMapper::toResponse)
                 .toList();
     }
 
@@ -58,7 +60,7 @@ public class AssetService {
         String normalizedTicker = normalizeTicker(ticker);
         return assetRepository.findByTickerContainingIgnoreCase(normalizedTicker)
                 .stream()
-                .map(AssetResponseDTO::new)
+                .map(assetMapper::toResponse)
                 .toList();
     }
 

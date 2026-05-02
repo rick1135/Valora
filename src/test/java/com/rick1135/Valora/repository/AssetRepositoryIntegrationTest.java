@@ -3,6 +3,7 @@ package com.rick1135.Valora.repository;
 import com.rick1135.Valora.config.TestRedisConfig;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
+import com.rick1135.Valora.support.AbstractPostgresIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 @ActiveProfiles("test")
 @Import(TestRedisConfig.class)
-class AssetRepositoryIntegrationTest {
+class AssetRepositoryIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private AssetRepository assetRepository;
