@@ -24,14 +24,14 @@ public class BrapiClient {
         return request(ticker, token, true);
     }
 
-    private BrapiResponseDTO request(String ticker, String token, boolean includeDividends) {
+    private BrapiResponseDTO request(String tickers, String token, boolean includeDividends) {
         return restClient.get()
                 .uri(uriBuilder -> {
-                    var builder = uriBuilder.path("/quote/{ticker}");
+                    var builder = uriBuilder.path("/quote/{tickers}");
                     if (includeDividends) {
                         builder.queryParam("dividends", true);
                     }
-                    return builder.build(ticker);
+                    return builder.build(tickers);
                 })
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                 .accept(MediaType.APPLICATION_JSON)

@@ -1,6 +1,7 @@
 package com.rick1135.Valora.service;
 
 import com.rick1135.Valora.dto.response.PositionResponseDTO;
+import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.repository.PositionRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,15 +20,27 @@ public class PositionService {
 
     @Transactional(readOnly = true)
     public List<PositionResponseDTO> getUserPortfolio(User user) {
-        return positionRepository.findByUser(user).stream()
+        List<Position> positions = positionRepository.findByUser(user).stream()
                 .filter(position -> position.getQuantity().compareTo(BigDecimal.ZERO) > 0)
+                .toList();
+
+        List<String> tickers = positions.stream()
+                .map(position -> position.getAsset().getTicker())
+                .distinct()
+                .toList();
+
+        var pricesMap = quoteService.getCurrentPrices(tickers);
+
+        return positions.stream()
                 .map(position -> {
                     BigDecimal quantity = position.getQuantity();
                     BigDecimal averagePrice = position.getAveragePrice();
                     BigDecimal totalCost = quantity.multiply(averagePrice);
 
-                    BigDecimal currentPrice = quoteService.getCurrentPrice(position.getAsset().getTicker()).orElse(null);
-                    BigDecimal currentTotalValue = currentPrice == null ? null : quantity.multiply(currentPrice);
+                    BigDecimal currentPrice = pricesMap.getOrDefault(position.getAsset().getTicker(), BigDecimal.ZERO);
+                    BigDecimal currentTotalValue = currentPrice.compareTo(BigDecimal.ZERO) > 0
+                            ? quantity.multiply(currentPrice)
+                            : null;
 
                     BigDecimal profitability = null;
                     if (currentTotalValue != null && totalCost.compareTo(BigDecimal.ZERO) > 0) {

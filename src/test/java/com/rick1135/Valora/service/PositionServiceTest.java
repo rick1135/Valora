@@ -13,7 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,7 +58,7 @@ class PositionServiceTest {
         zeroPosition.setAveragePrice(new BigDecimal("30.00000000"));
 
         when(positionRepository.findByUser(user)).thenReturn(List.of(positivePosition, zeroPosition));
-        when(quoteService.getCurrentPrice("ITSA4")).thenReturn(Optional.of(new BigDecimal("12.00000000")));
+        when(quoteService.getCurrentPrices(List.of("ITSA4"))).thenReturn(Map.of("ITSA4", new BigDecimal("12.00000000")));
 
         List<PositionResponseDTO> portfolio = positionService.getUserPortfolio(user);
 
