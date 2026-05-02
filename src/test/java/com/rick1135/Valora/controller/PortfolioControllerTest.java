@@ -1,6 +1,9 @@
 package com.rick1135.Valora.controller;
 
+import com.rick1135.Valora.dto.response.AssetAllocationDTO;
+import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.dto.response.PositionResponseDTO;
+import com.rick1135.Valora.service.PortfolioService;
 import com.rick1135.Valora.service.PositionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,9 +31,12 @@ class PortfolioControllerTest {
     @Mock
     private PositionService positionService;
 
+    @Mock
+    private PortfolioService portfolioService;
+
     @BeforeEach
     void setUp() {
-        PortfolioController controller = new PortfolioController(positionService);
+        PortfolioController controller = new PortfolioController(positionService, portfolioService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -53,5 +59,27 @@ class PortfolioControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].ticker").value("VALE3"))
                 .andExpect(jsonPath("$[0].totalCost").value(180.0));
+    }
+
+    @Test
+    void getPortfolioSummaryShouldReturnConsolidatedSnapshot() throws Exception {
+        PortfolioSummaryDTO summary = new PortfolioSummaryDTO(
+                new BigDecimal("350.00"),
+                new BigDecimal("300.00"),
+                new BigDecimal("50.00"),
+                new BigDecimal("100.00"),
+                new BigDecimal("33.3333"),
+                List.of(
+                        new AssetAllocationDTO("ACOES", new BigDecimal("250.00"), new BigDecimal("71.4286")),
+                        new AssetAllocationDTO("ETF", new BigDecimal("100.00"), new BigDecimal("28.5714"))
+                )
+        );
+        when(portfolioService.getPortfolioSummary(any())).thenReturn(summary);
+
+        mockMvc.perform(get("/portfolio/summary"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalPatrimony").value(350.0))
+                .andExpect(jsonPath("$.allocations[0].category").value("ACOES"))
+                .andExpect(jsonPath("$.allocations[0].percentage").value(71.4286));
     }
 }
