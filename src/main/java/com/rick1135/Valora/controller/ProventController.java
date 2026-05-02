@@ -16,6 +16,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.UUID;
+
 @RestController
 @RequestMapping("/provents")
 @RequiredArgsConstructor
@@ -32,10 +34,11 @@ public class ProventController {
     @GetMapping("/me")
     public ResponseEntity<Page<ProventProvisionResponseDTO>> getMyProvents(
             @AuthenticationPrincipal User user,
+            @RequestParam UUID portfolioId,
             @PageableDefault(sort = {"provent.paymentDate", "provent.comDate"}, direction = org.springframework.data.domain.Sort.Direction.DESC)
             Pageable pageable
     ) {
-        return ResponseEntity.ok(proventService.getMyProvents(user, pageable));
+        return ResponseEntity.ok(proventService.getMyProvents(user, portfolioId, pageable));
     }
 
     @PostMapping("/sync")

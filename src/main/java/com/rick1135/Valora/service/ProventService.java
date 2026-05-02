@@ -28,7 +28,8 @@ public class ProventService {
     private final ProventRepository proventRepository;
     private final ProventProvisionRepository proventProvisionRepository;
     private final TransactionRepository transactionRepository;
-    private final UserRepository userRepository;
+    private final PortfolioRepository portfolioRepository;
+    private final PortfolioService portfolioService;
     private final ProventMapper proventMapper;
 
     @Transactional
@@ -85,21 +86,21 @@ public class ProventService {
             throw new ProventAlreadyExistsException("Ja existe um provento igual para esse evento de origem.");
         }
 
-        List<UserAssetHoldingProjection> holdings = transactionRepository.findUserHoldingsByAssetAtDate(
+        List<UserAssetHoldingProjection> holdings = transactionRepository.findPortfolioHoldingsByAssetAtDate(
                 asset.getId(),
                 dto.comDate(),
                 TransactionType.BUY
         );
 
-        Map<UUID, User> usersById = userRepository.findAllById(
-                        holdings.stream().map(UserAssetHoldingProjection::getUserId).toList()
+        Map<UUID, Portfolio> portfoliosById = portfolioRepository.findAllById(
+                        holdings.stream().map(UserAssetHoldingProjection::getPortfolioId).toList()
                 ).stream()
-                .collect(Collectors.toMap(User::getId, user -> user));
+                .collect(Collectors.toMap(Portfolio::getId, portfolio -> portfolio));
 
         List<ProventProvision> provisions = new ArrayList<>();
         for (UserAssetHoldingProjection holding : holdings) {
-            User user = usersById.get(holding.getUserId());
-            if (user == null) {
+            Portfolio portfolio = portfoliosById.get(holding.getPortfolioId());
+            if (portfolio == null) {
                 continue;
             }
 
@@ -111,7 +112,7 @@ public class ProventService {
 
             ProventProvision provision = new ProventProvision();
             provision.setProvent(savedProvent);
-            provision.setUser(user);
+            provision.setPortfolio(portfolio);
             provision.setAsset(asset);
             provision.setQuantityOnComDate(quantity.setScale(8, RoundingMode.HALF_UP));
             provision.setGrossAmount(grossAmount);
@@ -127,8 +128,9 @@ public class ProventService {
     }
 
     @Transactional(readOnly = true)
-    public Page<ProventProvisionResponseDTO> getMyProvents(User user, Pageable pageable) {
-        return proventProvisionRepository.findByUser(user, pageable)
+    public Page<ProventProvisionResponseDTO> getMyProvents(User user, UUID portfolioId, Pageable pageable) {
+        Portfolio portfolio = portfolioService.resolveOwnedPortfolio(user, portfolioId);
+        return proventProvisionRepository.findByPortfolio(portfolio, pageable)
                 .map(proventMapper::toProvisionResponse);
     }
 

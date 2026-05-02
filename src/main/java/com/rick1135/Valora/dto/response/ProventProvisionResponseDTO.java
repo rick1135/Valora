@@ -11,6 +11,7 @@ import java.util.UUID;
 
 public record ProventProvisionResponseDTO(
         UUID provisionId,
+        UUID portfolioId,
         UUID proventId,
         UUID assetId,
         String ticker,

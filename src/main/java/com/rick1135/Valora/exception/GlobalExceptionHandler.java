@@ -13,6 +13,8 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.OffsetDateTime;
 import java.util.stream.Collectors;
@@ -47,6 +49,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AssetNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleAssetNotFound(
             AssetNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return buildError(HttpStatus.NOT_FOUND, exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(PortfolioNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handlePortfolioNotFound(
+            PortfolioNotFoundException exception,
             HttpServletRequest request
     ) {
         return buildError(HttpStatus.NOT_FOUND, exception.getMessage(), request);
@@ -125,6 +135,30 @@ public class GlobalExceptionHandler {
         }
 
         return buildError(HttpStatus.BAD_REQUEST, message, request);
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingRequestParameter(
+            MissingServletRequestParameterException exception,
+            HttpServletRequest request
+    ) {
+        return buildError(
+                HttpStatus.BAD_REQUEST,
+                exception.getParameterName() + ": parametro obrigatorio.",
+                request
+        );
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleMethodArgumentTypeMismatch(
+            MethodArgumentTypeMismatchException exception,
+            HttpServletRequest request
+    ) {
+        return buildError(
+                HttpStatus.BAD_REQUEST,
+                exception.getName() + ": valor invalido.",
+                request
+        );
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

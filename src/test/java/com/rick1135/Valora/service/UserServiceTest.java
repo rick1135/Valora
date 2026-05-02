@@ -4,6 +4,7 @@ import com.rick1135.Valora.dto.request.RegisterDTO;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.entity.UserRole;
 import com.rick1135.Valora.exception.EmailAlreadyRegisteredException;
+import com.rick1135.Valora.repository.PortfolioRepository;
 import com.rick1135.Valora.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +25,9 @@ class UserServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private PortfolioRepository portfolioRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -54,6 +58,12 @@ class UserServiceTest {
         assertThat(savedUser.getPasswordHash()).isEqualTo("hashed-password");
         assertThat(savedUser.getRole()).isEqualTo(UserRole.USER);
         assertThat(result).isSameAs(persistedUser);
+
+        ArgumentCaptor<com.rick1135.Valora.entity.Portfolio> portfolioCaptor =
+                ArgumentCaptor.forClass(com.rick1135.Valora.entity.Portfolio.class);
+        verify(portfolioRepository).save(portfolioCaptor.capture());
+        assertThat(portfolioCaptor.getValue().getUser()).isSameAs(persistedUser);
+        assertThat(portfolioCaptor.getValue().getName()).isEqualTo("Principal");
     }
 
     @Test

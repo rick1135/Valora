@@ -3,6 +3,7 @@ package com.rick1135.Valora.service;
 import com.rick1135.Valora.dto.request.TransactionDTO;
 import com.rick1135.Valora.dto.response.TransactionResponseDTO;
 import com.rick1135.Valora.entity.Asset;
+import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.Transaction;
 import com.rick1135.Valora.entity.TransactionType;
@@ -31,21 +32,23 @@ public class TransactionService {
     private final PositionRepository positionRepository;
     private final AssetRepository assetRepository;
     private final TransactionMapper transactionMapper;
+    private final PortfolioService portfolioService;
 
     @Transactional
     public TransactionResponseDTO processTransaction(User user, TransactionDTO dto) {
+        Portfolio portfolio = portfolioService.resolveOwnedPortfolio(user, dto.portfolioId());
         Asset asset = assetRepository.findById(dto.assetId())
                 .orElseThrow(() -> new AssetNotFoundException("Ativo nao encontrado"));
 
         Transaction transaction = transactionMapper.toEntity(dto);
-        transaction.setUser(user);
+        transaction.setPortfolio(portfolio);
         transaction.setAsset(asset);
         Transaction savedTransaction = transactionRepository.save(transaction);
 
-        Position position = positionRepository.findByUserAndAsset(user, asset)
+        Position position = positionRepository.findByPortfolioAndAsset(portfolio, asset)
                 .orElseGet(() -> {
                     Position newPosition = new Position();
-                    newPosition.setUser(user);
+                    newPosition.setPortfolio(portfolio);
                     newPosition.setAsset(asset);
                     newPosition.setQuantity(BigDecimal.ZERO);
                     newPosition.setAveragePrice(BigDecimal.ZERO);
@@ -65,15 +68,17 @@ public class TransactionService {
     @Transactional(readOnly = true)
     public Page<TransactionResponseDTO> getTransactionHistory(
             User user,
+            java.util.UUID portfolioId,
             String ticker,
             TransactionType type,
             Instant startDate,
             Instant endDate,
             Pageable pageable
     ) {
+        Portfolio portfolio = portfolioService.resolveOwnedPortfolio(user, portfolioId);
         String normalizedTicker = normalizeTicker(ticker);
-        return transactionRepository.findTransactionHistoryByUserAndFilters(
-                        user,
+        return transactionRepository.findTransactionHistoryByPortfolioAndFilters(
+                        portfolio,
                         normalizedTicker,
                         type,
                         startDate,

@@ -4,22 +4,35 @@ import com.rick1135.Valora.dto.response.AssetAllocationDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
+import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.ProventStatus;
 import com.rick1135.Valora.entity.User;
+import com.rick1135.Valora.exception.PortfolioNotFoundException;
+import com.rick1135.Valora.mapper.PortfolioMapper;
+import com.rick1135.Valora.repository.PortfolioRepository;
 import com.rick1135.Valora.repository.PositionRepository;
 import com.rick1135.Valora.repository.ProventProvisionRepository;
+import com.rick1135.Valora.repository.TransactionRepository;
+import org.mapstruct.factory.Mappers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -32,7 +45,16 @@ class PortfolioServiceTest {
     private ProventProvisionRepository proventProvisionRepository;
 
     @Mock
+    private PortfolioRepository portfolioRepository;
+
+    @Mock
+    private TransactionRepository transactionRepository;
+
+    @Mock
     private QuoteService quoteService;
+
+    @Spy
+    private PortfolioMapper portfolioMapper = Mappers.getMapper(PortfolioMapper.class);
 
     @InjectMocks
     private PortfolioService portfolioService;
@@ -40,18 +62,20 @@ class PortfolioServiceTest {
     @Test
     void getPortfolioSummaryShouldCalculateTotalsAndAllocations() {
         User user = new User();
+        Portfolio portfolio = portfolio(user);
 
         Position stockPosition = buildPosition("VALE3", AssetCategory.ACOES, "5.00000000", "40.00");
         Position etfPosition = buildPosition("BOVA11", AssetCategory.ETF, "2.00000000", "50.00");
         Position zeroPosition = buildPosition("PETR4", AssetCategory.ACOES, "0.00000000", "30.00");
 
-        when(positionRepository.findByUser(user)).thenReturn(List.of(stockPosition, etfPosition, zeroPosition));
+        when(portfolioRepository.findByIdAndUser(portfolio.getId(), user)).thenReturn(Optional.of(portfolio));
+        when(positionRepository.findByPortfolio(portfolio)).thenReturn(List.of(stockPosition, etfPosition, zeroPosition));
         when(quoteService.getCurrentPrices(List.of("VALE3", "BOVA11")))
                 .thenReturn(Map.of("VALE3", new BigDecimal("50.00")));
-        when(proventProvisionRepository.sumNetAmountByUserAndStatus(user, ProventStatus.PAID))
+        when(proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID))
                 .thenReturn(new BigDecimal("50.00"));
 
-        PortfolioSummaryDTO summary = portfolioService.getPortfolioSummary(user);
+        PortfolioSummaryDTO summary = portfolioService.getPortfolioSummary(user, portfolio.getId());
 
         assertThat(summary.totalInvested()).isEqualByComparingTo("300.0000000000");
         assertThat(summary.totalPatrimony()).isEqualByComparingTo("350.0000000000");
@@ -71,12 +95,14 @@ class PortfolioServiceTest {
     @Test
     void getPortfolioSummaryShouldHandleEmptyPortfolioWithoutDivisionByZero() {
         User user = new User();
-        when(positionRepository.findByUser(user)).thenReturn(List.of());
+        Portfolio portfolio = portfolio(user);
+        when(portfolioRepository.findByIdAndUser(portfolio.getId(), user)).thenReturn(Optional.of(portfolio));
+        when(positionRepository.findByPortfolio(portfolio)).thenReturn(List.of());
         when(quoteService.getCurrentPrices(List.of())).thenReturn(Map.of());
-        when(proventProvisionRepository.sumNetAmountByUserAndStatus(user, ProventStatus.PAID))
+        when(proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID))
                 .thenReturn(null);
 
-        PortfolioSummaryDTO summary = portfolioService.getPortfolioSummary(user);
+        PortfolioSummaryDTO summary = portfolioService.getPortfolioSummary(user, portfolio.getId());
 
         assertThat(summary.totalInvested()).isEqualByComparingTo("0");
         assertThat(summary.totalPatrimony()).isEqualByComparingTo("0");
@@ -84,6 +110,43 @@ class PortfolioServiceTest {
         assertThat(summary.absoluteProfitLoss()).isEqualByComparingTo("0");
         assertThat(summary.percentageProfitLoss()).isEqualByComparingTo("0");
         assertThat(summary.allocations()).isEmpty();
+    }
+
+    @Test
+    void resolveOwnedPortfolioShouldRejectUnknownOrForeignPortfolio() {
+        User user = new User();
+        UUID foreignPortfolioId = UUID.randomUUID();
+
+        when(portfolioRepository.findByIdAndUser(foreignPortfolioId, user)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> portfolioService.resolveOwnedPortfolio(user, foreignPortfolioId))
+                .isInstanceOf(PortfolioNotFoundException.class)
+                .hasMessage("Carteira nao encontrada.");
+    }
+
+    @Test
+    void getPortfolioSummaryShouldRejectPortfolioNotOwnedBeforeFinancialQueries() {
+        User user = new User();
+        UUID portfolioId = UUID.randomUUID();
+        when(portfolioRepository.findByIdAndUser(portfolioId, user)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> portfolioService.getPortfolioSummary(user, portfolioId))
+                .isInstanceOf(PortfolioNotFoundException.class);
+        verify(positionRepository, never()).findByPortfolio(any());
+        verify(proventProvisionRepository, never()).sumNetAmountByPortfolioAndStatus(any(), any());
+    }
+
+    @Test
+    void deletePortfolioShouldRejectPortfolioNotOwnedBeforeDeleteGuards() {
+        User user = new User();
+        UUID portfolioId = UUID.randomUUID();
+        when(portfolioRepository.findByIdAndUser(portfolioId, user)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> portfolioService.deletePortfolio(user, portfolioId))
+                .isInstanceOf(PortfolioNotFoundException.class);
+        verify(transactionRepository, never()).existsByPortfolio(any());
+        verify(positionRepository, never()).existsByPortfolio(any());
+        verify(proventProvisionRepository, never()).existsByPortfolio(any());
     }
 
     private Position buildPosition(String ticker, AssetCategory category, String quantity, String averagePrice) {
@@ -96,5 +159,13 @@ class PortfolioServiceTest {
         position.setQuantity(new BigDecimal(quantity));
         position.setAveragePrice(new BigDecimal(averagePrice));
         return position;
+    }
+
+    private Portfolio portfolio(User user) {
+        Portfolio portfolio = new Portfolio();
+        portfolio.setId(UUID.randomUUID());
+        portfolio.setUser(user);
+        portfolio.setName("Principal");
+        return portfolio;
     }
 }

@@ -2,7 +2,7 @@ package com.rick1135.Valora.repository;
 
 import com.rick1135.Valora.entity.ProventProvision;
 import com.rick1135.Valora.entity.ProventStatus;
-import com.rick1135.Valora.entity.User;
+import com.rick1135.Valora.entity.Portfolio;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -14,14 +14,19 @@ import java.util.List;
 import java.util.UUID;
 
 public interface ProventProvisionRepository extends JpaRepository<ProventProvision, UUID> {
-    List<ProventProvision> findByUserOrderByProventPaymentDateDescProventComDateDesc(User user);
+    List<ProventProvision> findByPortfolioOrderByProventPaymentDateDescProventComDateDesc(Portfolio portfolio);
 
-    Page<ProventProvision> findByUser(User user, Pageable pageable);
+    Page<ProventProvision> findByPortfolio(Portfolio portfolio, Pageable pageable);
+
+    boolean existsByPortfolio(Portfolio portfolio);
 
     @Query("""
             select coalesce(sum(pp.netAmount), 0)
             from ProventProvision pp
-            where pp.user = :user and pp.status = :status
+            where pp.portfolio = :portfolio and pp.status = :status
             """)
-    BigDecimal sumNetAmountByUserAndStatus(@Param("user") User user, @Param("status") ProventStatus status);
+    BigDecimal sumNetAmountByPortfolioAndStatus(
+            @Param("portfolio") Portfolio portfolio,
+            @Param("status") ProventStatus status
+    );
 }

@@ -41,6 +41,7 @@ public interface ProventMapper {
     ProventResponseDTO toResponse(Provent provent, Asset asset, int provisionedUsers);
 
     @Mapping(target = "provisionId", source = "provision.id")
+    @Mapping(target = "portfolioId", source = "provision.portfolio.id")
     @Mapping(target = "proventId", source = "provision.provent.id")
     @Mapping(target = "assetId", source = "provision.asset.id")
     @Mapping(target = "ticker", source = "provision.asset.ticker")

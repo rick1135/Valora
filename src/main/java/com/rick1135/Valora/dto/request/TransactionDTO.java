@@ -10,6 +10,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record TransactionDTO(
+        @NotNull(message = "O ID da carteira e obrigatorio")
+        UUID portfolioId,
         @NotNull(message = "O ID do ativo é obrigatório")
         UUID assetId,
         @NotNull(message = "O tipo de transação é obrigatório")

@@ -1,8 +1,8 @@
 package com.rick1135.Valora.repository;
 
+import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Transaction;
 import com.rick1135.Valora.entity.TransactionType;
-import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.repository.projection.UserAssetHoldingProjection;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Page;
@@ -24,15 +24,15 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     );
 
     @Query("""
-           select t.user.id as userId,
+           select t.portfolio.id as portfolioId,
                   sum(case when t.type = :buyType then t.quantity else -t.quantity end) as quantity
            from Transaction t
            where t.asset.id = :assetId
              and t.transactionDate <= :comDate
-           group by t.user.id
+           group by t.portfolio.id
            having sum(case when t.type = :buyType then t.quantity else -t.quantity end) > 0
            """)
-    List<UserAssetHoldingProjection> findUserHoldingsByAssetAtDate(
+    List<UserAssetHoldingProjection> findPortfolioHoldingsByAssetAtDate(
             @Param("assetId") UUID assetId,
             @Param("comDate") Instant comDate,
             @Param("buyType") TransactionType buyType
@@ -41,18 +41,20 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     @Query("""
            select t
            from Transaction t
-           where t.user = :user
+           where t.portfolio = :portfolio
              and (:ticker is null or t.asset.ticker = :ticker)
              and (:type is null or t.type = :type)
              and (:startDate is null or t.transactionDate >= :startDate)
              and (:endDate is null or t.transactionDate <= :endDate)
            """)
-    Page<Transaction> findTransactionHistoryByUserAndFilters(
-            @Param("user") User user,
+    Page<Transaction> findTransactionHistoryByPortfolioAndFilters(
+            @Param("portfolio") Portfolio portfolio,
             @Param("ticker") String ticker,
             @Param("type") TransactionType type,
             @Param("startDate") Instant startDate,
             @Param("endDate") Instant endDate,
             Pageable pageable
     );
+
+    boolean existsByPortfolio(Portfolio portfolio);
 }

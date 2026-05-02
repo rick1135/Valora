@@ -3,12 +3,14 @@ package com.rick1135.Valora.service;
 import com.rick1135.Valora.dto.request.TransactionDTO;
 import com.rick1135.Valora.dto.response.TransactionResponseDTO;
 import com.rick1135.Valora.entity.Asset;
+import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.Transaction;
 import com.rick1135.Valora.entity.TransactionType;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.exception.InsufficientPositionException;
+import com.rick1135.Valora.exception.PortfolioNotFoundException;
 import com.rick1135.Valora.mapper.TransactionMapper;
 import com.rick1135.Valora.repository.AssetRepository;
 import com.rick1135.Valora.repository.PositionRepository;
@@ -33,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class TransactionServiceTest {
@@ -49,6 +52,9 @@ class TransactionServiceTest {
     @Mock
     private TransactionMapper transactionMapper;
 
+    @Mock
+    private PortfolioService portfolioService;
+
     @InjectMocks
     private TransactionService transactionService;
 
@@ -56,6 +62,7 @@ class TransactionServiceTest {
     void processTransactionShouldReturnCreatedTransactionSnapshotOnBuy() {
         User user = new User();
         user.setId(UUID.randomUUID());
+        Portfolio portfolio = portfolio(user);
 
         Asset asset = new Asset();
         asset.setId(UUID.randomUUID());
@@ -63,6 +70,7 @@ class TransactionServiceTest {
 
         Instant now = Instant.now();
         TransactionDTO dto = new TransactionDTO(
+                portfolio.getId(),
                 asset.getId(),
                 TransactionType.BUY,
                 new BigDecimal("10.00000000"),
@@ -76,9 +84,10 @@ class TransactionServiceTest {
         mappedTransaction.setUnitPrice(new BigDecimal("25.00000000"));
         mappedTransaction.setTransactionDate(now);
 
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
         when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
         when(transactionMapper.toEntity(dto)).thenReturn(mappedTransaction);
-        when(positionRepository.findByUserAndAsset(user, asset)).thenReturn(Optional.empty());
+        when(positionRepository.findByPortfolioAndAsset(portfolio, asset)).thenReturn(Optional.empty());
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> {
             Transaction transaction = invocation.getArgument(0);
             transaction.setId(UUID.randomUUID());
@@ -92,6 +101,7 @@ class TransactionServiceTest {
                     Position position = invocation.getArgument(2);
                     return new TransactionResponseDTO(
                             transaction.getId(),
+                            portfolio.getId(),
                             mappedAsset.getId(),
                             mappedAsset.getTicker(),
                             transaction.getType(),
@@ -117,7 +127,9 @@ class TransactionServiceTest {
     void processTransactionShouldThrowNotFoundWhenAssetDoesNotExist() {
         User user = new User();
         UUID assetId = UUID.randomUUID();
+        Portfolio portfolio = portfolio(user);
         TransactionDTO dto = new TransactionDTO(
+                portfolio.getId(),
                 assetId,
                 TransactionType.BUY,
                 new BigDecimal("1.00000000"),
@@ -125,6 +137,7 @@ class TransactionServiceTest {
                 Instant.now()
         );
 
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
         when(assetRepository.findById(assetId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> transactionService.processTransaction(user, dto))
@@ -133,19 +146,42 @@ class TransactionServiceTest {
     }
 
     @Test
+    void processTransactionShouldRejectPortfolioNotOwnedBeforeLoadingAsset() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+        TransactionDTO dto = new TransactionDTO(
+                portfolio.getId(),
+                UUID.randomUUID(),
+                TransactionType.BUY,
+                new BigDecimal("1.00000000"),
+                new BigDecimal("10.00000000"),
+                Instant.now()
+        );
+
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId()))
+                .thenThrow(new PortfolioNotFoundException("Carteira nao encontrada."));
+
+        assertThatThrownBy(() -> transactionService.processTransaction(user, dto))
+                .isInstanceOf(PortfolioNotFoundException.class);
+        verifyNoInteractions(assetRepository, transactionRepository, positionRepository);
+    }
+
+    @Test
     void processTransactionShouldThrowWhenSellExceedsCurrentPosition() {
         User user = new User();
+        Portfolio portfolio = portfolio(user);
         Asset asset = new Asset();
         asset.setId(UUID.randomUUID());
         asset.setTicker("VALE3");
 
         Position position = new Position();
-        position.setUser(user);
+        position.setPortfolio(portfolio);
         position.setAsset(asset);
         position.setQuantity(new BigDecimal("1.00000000"));
         position.setAveragePrice(new BigDecimal("50.00000000"));
 
         TransactionDTO dto = new TransactionDTO(
+                portfolio.getId(),
                 asset.getId(),
                 TransactionType.SELL,
                 new BigDecimal("2.00000000"),
@@ -159,9 +195,10 @@ class TransactionServiceTest {
         mappedTransaction.setUnitPrice(dto.unitPrice());
         mappedTransaction.setTransactionDate(dto.transactionDate());
 
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
         when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
         when(transactionMapper.toEntity(dto)).thenReturn(mappedTransaction);
-        when(positionRepository.findByUserAndAsset(user, asset)).thenReturn(Optional.of(position));
+        when(positionRepository.findByPortfolioAndAsset(portfolio, asset)).thenReturn(Optional.of(position));
         when(transactionRepository.save(any(Transaction.class))).thenReturn(mappedTransaction);
 
         assertThatThrownBy(() -> transactionService.processTransaction(user, dto))
@@ -173,6 +210,7 @@ class TransactionServiceTest {
     void getTransactionHistoryShouldReturnPagedHistoryUsingNormalizedTickerFilter() {
         User user = new User();
         user.setId(UUID.randomUUID());
+        Portfolio portfolio = portfolio(user);
 
         Asset asset = new Asset();
         asset.setId(UUID.randomUUID());
@@ -188,6 +226,7 @@ class TransactionServiceTest {
 
         TransactionResponseDTO response = new TransactionResponseDTO(
                 transaction.getId(),
+                portfolio.getId(),
                 asset.getId(),
                 asset.getTicker(),
                 transaction.getType(),
@@ -199,11 +238,12 @@ class TransactionServiceTest {
         );
 
         PageRequest pageable = PageRequest.of(0, 20);
-        when(transactionRepository.findTransactionHistoryByUserAndFilters(user, "PETR4", TransactionType.BUY, null, null, pageable))
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(transactionRepository.findTransactionHistoryByPortfolioAndFilters(portfolio, "PETR4", TransactionType.BUY, null, null, pageable))
                 .thenReturn(new PageImpl<>(List.of(transaction), pageable, 1));
         when(transactionMapper.toHistoryResponse(transaction)).thenReturn(response);
 
-        Page<TransactionResponseDTO> result = transactionService.getTransactionHistory(user, " petr4 ", TransactionType.BUY, null, null, pageable);
+        Page<TransactionResponseDTO> result = transactionService.getTransactionHistory(user, portfolio.getId(), " petr4 ", TransactionType.BUY, null, null, pageable);
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().getFirst().ticker()).isEqualTo("PETR4");
@@ -214,12 +254,14 @@ class TransactionServiceTest {
     void getTransactionHistoryShouldPassNullFiltersWhenNotProvided() {
         User user = new User();
         user.setId(UUID.randomUUID());
+        Portfolio portfolio = portfolio(user);
 
         PageRequest pageable = PageRequest.of(1, 10);
-        when(transactionRepository.findTransactionHistoryByUserAndFilters(user, null, null, null, null, pageable))
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(transactionRepository.findTransactionHistoryByPortfolioAndFilters(portfolio, null, null, null, null, pageable))
                 .thenReturn(Page.empty(pageable));
 
-        Page<TransactionResponseDTO> result = transactionService.getTransactionHistory(user, null, null, null, null, pageable);
+        Page<TransactionResponseDTO> result = transactionService.getTransactionHistory(user, portfolio.getId(), null, null, null, null, pageable);
 
         assertThat(result).isEmpty();
     }
@@ -228,6 +270,7 @@ class TransactionServiceTest {
     void getTransactionHistoryShouldPassDateRangeFiltersToRepository() {
         User user = new User();
         user.setId(UUID.randomUUID());
+        Portfolio portfolio = portfolio(user);
 
         Asset asset = new Asset();
         asset.setId(UUID.randomUUID());
@@ -246,6 +289,7 @@ class TransactionServiceTest {
 
         TransactionResponseDTO response = new TransactionResponseDTO(
                 transaction.getId(),
+                portfolio.getId(),
                 asset.getId(),
                 asset.getTicker(),
                 transaction.getType(),
@@ -257,8 +301,9 @@ class TransactionServiceTest {
         );
 
         PageRequest pageable = PageRequest.of(0, 20);
-        when(transactionRepository.findTransactionHistoryByUserAndFilters(
-                eq(user),
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(transactionRepository.findTransactionHistoryByPortfolioAndFilters(
+                eq(portfolio),
                 eq("VALE3"),
                 eq(TransactionType.SELL),
                 eq(startDate),
@@ -269,6 +314,7 @@ class TransactionServiceTest {
 
         Page<TransactionResponseDTO> result = transactionService.getTransactionHistory(
                 user,
+                portfolio.getId(),
                 "vale3",
                 TransactionType.SELL,
                 startDate,
@@ -278,5 +324,13 @@ class TransactionServiceTest {
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().getFirst().transactionDate()).isBetween(startDate, endDate);
+    }
+
+    private Portfolio portfolio(User user) {
+        Portfolio portfolio = new Portfolio();
+        portfolio.setId(UUID.randomUUID());
+        portfolio.setUser(user);
+        portfolio.setName("Principal");
+        return portfolio;
     }
 }

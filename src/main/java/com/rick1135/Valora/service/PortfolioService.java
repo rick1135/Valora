@@ -1,13 +1,21 @@
 package com.rick1135.Valora.service;
 
+import com.rick1135.Valora.dto.request.PortfolioRequestDTO;
 import com.rick1135.Valora.dto.response.AssetAllocationDTO;
+import com.rick1135.Valora.dto.response.PortfolioResponseDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
+import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.ProventStatus;
 import com.rick1135.Valora.entity.User;
+import com.rick1135.Valora.exception.PortfolioNotFoundException;
+import com.rick1135.Valora.mapper.PortfolioMapper;
+import com.rick1135.Valora.repository.PortfolioRepository;
 import com.rick1135.Valora.repository.PositionRepository;
 import com.rick1135.Valora.repository.ProventProvisionRepository;
+import com.rick1135.Valora.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +24,7 @@ import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -24,13 +33,76 @@ public class PortfolioService {
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     private static final int PERCENTAGE_SCALE = 4;
 
+    private final PortfolioRepository portfolioRepository;
     private final PositionRepository positionRepository;
     private final ProventProvisionRepository proventProvisionRepository;
+    private final TransactionRepository transactionRepository;
     private final QuoteService quoteService;
+    private final PortfolioMapper portfolioMapper;
+
+    @Transactional
+    public PortfolioResponseDTO createPortfolio(User user, PortfolioRequestDTO dto) {
+        String normalizedName = normalizeName(dto.name());
+        if (portfolioRepository.existsByUserAndNameIgnoreCase(user, normalizedName)) {
+            throw new IllegalArgumentException("Ja existe uma carteira com esse nome.");
+        }
+
+        Portfolio portfolio = portfolioMapper.toEntity(new PortfolioRequestDTO(normalizedName, dto.description()));
+        portfolio.setUser(user);
+        try {
+            return portfolioMapper.toResponse(portfolioRepository.save(portfolio));
+        } catch (DataIntegrityViolationException exception) {
+            throw new IllegalArgumentException("Ja existe uma carteira com esse nome.");
+        }
+    }
 
     @Transactional(readOnly = true)
-    public PortfolioSummaryDTO getPortfolioSummary(User user) {
-        List<Position> positions = positionRepository.findByUser(user).stream()
+    public List<PortfolioResponseDTO> listPortfolios(User user) {
+        return portfolioRepository.findByUserOrderByCreatedAtAsc(user)
+                .stream()
+                .map(portfolioMapper::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PortfolioResponseDTO getPortfolio(User user, UUID portfolioId) {
+        return portfolioMapper.toResponse(resolveOwnedPortfolio(user, portfolioId));
+    }
+
+    @Transactional
+    public PortfolioResponseDTO updatePortfolio(User user, UUID portfolioId, PortfolioRequestDTO dto) {
+        Portfolio portfolio = resolveOwnedPortfolio(user, portfolioId);
+        String normalizedName = normalizeName(dto.name());
+
+        boolean nameChanged = !portfolio.getName().equalsIgnoreCase(normalizedName);
+        if (nameChanged && portfolioRepository.existsByUserAndNameIgnoreCase(user, normalizedName)) {
+            throw new IllegalArgumentException("Ja existe uma carteira com esse nome.");
+        }
+
+        portfolio.setName(normalizedName);
+        portfolio.setDescription(dto.description());
+        try {
+            return portfolioMapper.toResponse(portfolioRepository.save(portfolio));
+        } catch (DataIntegrityViolationException exception) {
+            throw new IllegalArgumentException("Ja existe uma carteira com esse nome.");
+        }
+    }
+
+    @Transactional
+    public void deletePortfolio(User user, UUID portfolioId) {
+        Portfolio portfolio = resolveOwnedPortfolio(user, portfolioId);
+        if (transactionRepository.existsByPortfolio(portfolio)
+                || positionRepository.existsByPortfolio(portfolio)
+                || proventProvisionRepository.existsByPortfolio(portfolio)) {
+            throw new IllegalArgumentException("Carteiras com historico financeiro nao podem ser excluidas.");
+        }
+        portfolioRepository.delete(portfolio);
+    }
+
+    @Transactional(readOnly = true)
+    public PortfolioSummaryDTO getPortfolioSummary(User user, UUID portfolioId) {
+        Portfolio portfolio = resolveOwnedPortfolio(user, portfolioId);
+        List<Position> positions = positionRepository.findByPortfolio(portfolio).stream()
                 .filter(position -> position.getQuantity() != null && position.getQuantity().compareTo(ZERO) > 0)
                 .toList();
 
@@ -42,7 +114,7 @@ public class PortfolioService {
         Map<String, BigDecimal> currentPrices = quoteService.getCurrentPrices(tickers);
 
         BigDecimal totalInvested = positions.stream()
-                .map(position -> calculatePositionInvested(position))
+                .map(this::calculatePositionInvested)
                 .reduce(ZERO, BigDecimal::add);
 
         Map<String, BigDecimal> patrimonyByTicker = positions.stream()
@@ -56,7 +128,7 @@ public class PortfolioService {
                 .reduce(ZERO, BigDecimal::add);
 
         BigDecimal totalProvents = defaultBigDecimal(
-                proventProvisionRepository.sumNetAmountByUserAndStatus(user, ProventStatus.PAID)
+                proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID)
         );
 
         BigDecimal absoluteProfitLoss = totalPatrimony
@@ -79,6 +151,12 @@ public class PortfolioService {
                 percentageProfitLoss,
                 allocations
         );
+    }
+
+    @Transactional(readOnly = true)
+    public Portfolio resolveOwnedPortfolio(User user, UUID portfolioId) {
+        return portfolioRepository.findByIdAndUser(portfolioId, user)
+                .orElseThrow(() -> new PortfolioNotFoundException("Carteira nao encontrada."));
     }
 
     private List<AssetAllocationDTO> buildAllocations(
@@ -124,5 +202,13 @@ public class PortfolioService {
 
     private BigDecimal defaultBigDecimal(BigDecimal value) {
         return value != null ? value : ZERO;
+    }
+
+    private String normalizeName(String name) {
+        String normalized = name == null ? "" : name.trim();
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("O nome da carteira e obrigatorio.");
+        }
+        return normalized;
     }
 }

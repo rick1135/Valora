@@ -12,11 +12,12 @@ import org.mapstruct.ReportingPolicy;
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface TransactionMapper {
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "user", ignore = true)
+    @Mapping(target = "portfolio", ignore = true)
     @Mapping(target = "asset", ignore = true)
     Transaction toEntity(TransactionDTO dto);
 
     @Mapping(target = "transactionId", source = "transaction.id")
+    @Mapping(target = "portfolioId", source = "transaction.portfolio.id")
     @Mapping(target = "assetId", source = "asset.id")
     @Mapping(target = "ticker", source = "asset.ticker")
     @Mapping(target = "type", source = "transaction.type")
@@ -28,6 +29,7 @@ public interface TransactionMapper {
     TransactionResponseDTO toResponse(Transaction transaction, Asset asset, Position position);
 
     @Mapping(target = "transactionId", source = "id")
+    @Mapping(target = "portfolioId", source = "portfolio.id")
     @Mapping(target = "assetId", source = "asset.id")
     @Mapping(target = "ticker", source = "asset.ticker")
     @Mapping(target = "type", source = "type")

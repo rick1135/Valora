@@ -36,8 +36,8 @@ public class ProventProvision {
     private Provent provent;
 
     @ManyToOne(optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    @JoinColumn(name = "portfolio_id", nullable = false)
+    private Portfolio portfolio;
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "asset_id", nullable = false)

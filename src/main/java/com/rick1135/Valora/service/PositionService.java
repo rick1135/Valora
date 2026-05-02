@@ -1,6 +1,7 @@
 package com.rick1135.Valora.service;
 
 import com.rick1135.Valora.dto.response.PositionResponseDTO;
+import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.mapper.PositionMapper;
@@ -19,10 +20,12 @@ public class PositionService {
     private final PositionRepository positionRepository;
     private final QuoteService quoteService;
     private final PositionMapper positionMapper;
+    private final PortfolioService portfolioService;
 
     @Transactional(readOnly = true)
-    public List<PositionResponseDTO> getUserPortfolio(User user) {
-        List<Position> positions = positionRepository.findByUser(user).stream()
+    public List<PositionResponseDTO> getUserPortfolio(User user, java.util.UUID portfolioId) {
+        Portfolio portfolio = portfolioService.resolveOwnedPortfolio(user, portfolioId);
+        List<Position> positions = positionRepository.findByPortfolio(portfolio).stream()
                 .filter(position -> position.getQuantity().compareTo(BigDecimal.ZERO) > 0)
                 .toList();
 

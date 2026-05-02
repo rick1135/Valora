@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -117,9 +118,11 @@ class ProventControllerTest {
 
     @Test
     void getMyProventsShouldReturnPagedContent() throws Exception {
-        when(proventService.getMyProvents(nullable(com.rick1135.Valora.entity.User.class), any())).thenReturn(new PageImpl<ProventProvisionResponseDTO>(List.of(
+        UUID portfolioId = UUID.randomUUID();
+        when(proventService.getMyProvents(nullable(com.rick1135.Valora.entity.User.class), eq(portfolioId), any())).thenReturn(new PageImpl<ProventProvisionResponseDTO>(List.of(
                 new ProventProvisionResponseDTO(
                         UUID.randomUUID(),
+                        portfolioId,
                         UUID.randomUUID(),
                         UUID.randomUUID(),
                         "TAEE11",
@@ -138,10 +141,24 @@ class ProventControllerTest {
                 )
         ), PageRequest.of(0, 20), 1));
 
-        mockMvc.perform(get("/provents/me"))
+        mockMvc.perform(get("/provents/me").param("portfolioId", portfolioId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].ticker").value("TAEE11"))
                 .andExpect(jsonPath("$.content[0].status").value("PENDING"));
+    }
+
+    @Test
+    void getMyProventsShouldReturnBadRequestWhenPortfolioIdIsMissing() throws Exception {
+        mockMvc.perform(get("/provents/me"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("portfolioId: parametro obrigatorio."));
+    }
+
+    @Test
+    void getMyProventsShouldReturnBadRequestWhenPortfolioIdIsInvalid() throws Exception {
+        mockMvc.perform(get("/provents/me").param("portfolioId", "not-a-uuid"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("portfolioId: valor invalido."));
     }
 
     @Test

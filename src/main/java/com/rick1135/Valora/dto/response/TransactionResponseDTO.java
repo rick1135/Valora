@@ -8,6 +8,7 @@ import java.util.UUID;
 
 public record TransactionResponseDTO(
         UUID transactionId,
+        UUID portfolioId,
         UUID assetId,
         String ticker,
         TransactionType type,

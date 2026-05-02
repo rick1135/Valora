@@ -3,6 +3,7 @@ package com.rick1135.Valora.repository;
 import com.rick1135.Valora.config.TestRedisConfig;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
+import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.Transaction;
 import com.rick1135.Valora.entity.TransactionType;
@@ -39,15 +40,20 @@ class TransactionAndPositionIntegrationTest extends AbstractPostgresIntegrationT
     private UserRepository userRepository;
 
     @Autowired
+    private PortfolioRepository portfolioRepository;
+
+    @Autowired
     private AssetRepository assetRepository;
 
     private User user;
+    private Portfolio portfolio;
     private Asset asset;
 
     @BeforeEach
     void setUp() {
         transactionRepository.deleteAll();
         positionRepository.deleteAll();
+        portfolioRepository.deleteAll();
         assetRepository.deleteAll();
         userRepository.deleteAll();
 
@@ -57,6 +63,11 @@ class TransactionAndPositionIntegrationTest extends AbstractPostgresIntegrationT
         user.setName("Investor");
         user.setRole(UserRole.USER);
         user = userRepository.saveAndFlush(user);
+
+        portfolio = new Portfolio();
+        portfolio.setUser(user);
+        portfolio.setName("Principal");
+        portfolio = portfolioRepository.saveAndFlush(portfolio);
 
         asset = new Asset();
         asset.setTicker("PETR4");
@@ -68,7 +79,7 @@ class TransactionAndPositionIntegrationTest extends AbstractPostgresIntegrationT
     @Test
     void shouldPersistValidTransactionWithInstantDate() {
         Transaction transaction = new Transaction();
-        transaction.setUser(user);
+        transaction.setPortfolio(portfolio);
         transaction.setAsset(asset);
         transaction.setType(TransactionType.BUY);
         transaction.setQuantity(new BigDecimal("10.00000000"));
@@ -84,7 +95,7 @@ class TransactionAndPositionIntegrationTest extends AbstractPostgresIntegrationT
     @Test
     void shouldRejectNullTransactionTypeByDatabaseConstraint() {
         Transaction transaction = new Transaction();
-        transaction.setUser(user);
+        transaction.setPortfolio(portfolio);
         transaction.setAsset(asset);
         transaction.setQuantity(new BigDecimal("1.00000000"));
         transaction.setUnitPrice(new BigDecimal("10.00000000"));
@@ -97,7 +108,7 @@ class TransactionAndPositionIntegrationTest extends AbstractPostgresIntegrationT
     @Test
     void shouldRejectNegativeTransactionQuantityByDatabaseCheck() {
         Transaction transaction = new Transaction();
-        transaction.setUser(user);
+        transaction.setPortfolio(portfolio);
         transaction.setAsset(asset);
         transaction.setType(TransactionType.BUY);
         transaction.setQuantity(new BigDecimal("-1.00000000"));
@@ -111,7 +122,7 @@ class TransactionAndPositionIntegrationTest extends AbstractPostgresIntegrationT
     @Test
     void shouldFailWithOptimisticLockWhenUpdatingStalePosition() {
         Position position = new Position();
-        position.setUser(user);
+        position.setPortfolio(portfolio);
         position.setAsset(asset);
         position.setQuantity(new BigDecimal("10.00000000"));
         position.setAveragePrice(new BigDecimal("30.00000000"));

@@ -4,6 +4,6 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 public interface UserAssetHoldingProjection {
-    UUID getUserId();
+    UUID getPortfolioId();
     BigDecimal getQuantity();
 }

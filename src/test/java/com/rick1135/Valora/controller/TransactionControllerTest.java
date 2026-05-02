@@ -54,8 +54,10 @@ class TransactionControllerTest {
 
     @Test
     void registerTransactionShouldReturnCreated() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
         TransactionResponseDTO response = new TransactionResponseDTO(
                 UUID.randomUUID(),
+                portfolioId,
                 UUID.randomUUID(),
                 "PETR4",
                 TransactionType.BUY,
@@ -71,13 +73,14 @@ class TransactionControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "portfolioId": "%s",
                                   "assetId": "11111111-1111-1111-1111-111111111111",
                                   "type": "BUY",
                                   "quantity": 1.00000000,
                                   "unitPrice": 10.00000000,
                                   "transactionDate": "2026-03-19T18:00:00Z"
                                 }
-                                """))
+                                """.formatted(portfolioId)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.ticker").value("PETR4"))
                 .andExpect(jsonPath("$.positionQuantity").value(1.0));
@@ -92,6 +95,7 @@ class TransactionControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "portfolioId": "22222222-2222-2222-2222-222222222222",
                                   "assetId": "11111111-1111-1111-1111-111111111111",
                                   "type": "BUY",
                                   "quantity": 1.00000000,
@@ -109,6 +113,7 @@ class TransactionControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "portfolioId": "22222222-2222-2222-2222-222222222222",
                                   "assetId": null,
                                   "type": "BUY",
                                   "quantity": 0,
@@ -122,8 +127,10 @@ class TransactionControllerTest {
 
     @Test
     void getTransactionHistoryShouldReturnPagedFilteredResult() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
         TransactionResponseDTO response = new TransactionResponseDTO(
                 UUID.randomUUID(),
+                portfolioId,
                 UUID.randomUUID(),
                 "PETR4",
                 TransactionType.BUY,
@@ -139,6 +146,7 @@ class TransactionControllerTest {
 
         when(transactionService.getTransactionHistory(
                 any(),
+                eq(portfolioId),
                 eq("PETR4"),
                 eq(TransactionType.BUY),
                 eq(startDate),
@@ -148,6 +156,7 @@ class TransactionControllerTest {
                 .thenReturn(new PageImpl<>(List.of(response), PageRequest.of(0, 20), 1));
 
         mockMvc.perform(get("/transactions")
+                        .param("portfolioId", portfolioId.toString())
                         .param("ticker", "PETR4")
                         .param("type", "BUY")
                         .param("startDate", "2026-03-01T00:00:00Z")
@@ -158,5 +167,19 @@ class TransactionControllerTest {
                 .andExpect(jsonPath("$.content[0].ticker").value("PETR4"))
                 .andExpect(jsonPath("$.content[0].type").value("BUY"))
                 .andExpect(jsonPath("$.size").value(20));
+    }
+
+    @Test
+    void getTransactionHistoryShouldReturnBadRequestWhenPortfolioIdIsMissing() throws Exception {
+        mockMvc.perform(get("/transactions"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("portfolioId: parametro obrigatorio."));
+    }
+
+    @Test
+    void getTransactionHistoryShouldReturnBadRequestWhenPortfolioIdIsInvalid() throws Exception {
+        mockMvc.perform(get("/transactions").param("portfolioId", "not-a-uuid"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("portfolioId: valor invalido."));
     }
 }

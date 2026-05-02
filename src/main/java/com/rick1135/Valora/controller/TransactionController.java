@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/transactions")
@@ -38,12 +39,21 @@ public class TransactionController {
     @GetMapping
     public ResponseEntity<Page<TransactionResponseDTO>> getTransactionHistory(
             @AuthenticationPrincipal User user,
+            @RequestParam UUID portfolioId,
             @RequestParam(required = false) String ticker,
             @RequestParam(required = false) TransactionType type,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant endDate,
             @PageableDefault(size = 20, sort = "transactionDate", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        return ResponseEntity.ok(transactionService.getTransactionHistory(user, ticker, type, startDate, endDate, pageable));
+        return ResponseEntity.ok(transactionService.getTransactionHistory(
+                user,
+                portfolioId,
+                ticker,
+                type,
+                startDate,
+                endDate,
+                pageable
+        ));
     }
 }

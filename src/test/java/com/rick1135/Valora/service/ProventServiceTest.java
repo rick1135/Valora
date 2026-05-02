@@ -5,6 +5,7 @@ import com.rick1135.Valora.dto.response.ProventProvisionResponseDTO;
 import com.rick1135.Valora.dto.response.ProventResponseDTO;
 import com.rick1135.Valora.entity.*;
 import com.rick1135.Valora.exception.AssetNotFoundException;
+import com.rick1135.Valora.exception.PortfolioNotFoundException;
 import com.rick1135.Valora.exception.ProventAlreadyExistsException;
 import com.rick1135.Valora.mapper.ProventMapper;
 import com.rick1135.Valora.repository.*;
@@ -45,7 +46,9 @@ class ProventServiceTest {
     @Mock
     private TransactionRepository transactionRepository;
     @Mock
-    private UserRepository userRepository;
+    private PortfolioRepository portfolioRepository;
+    @Mock
+    private PortfolioService portfolioService;
 
     @Spy
     private ProventMapper proventMapper = Mappers.getMapper(ProventMapper.class);
@@ -61,11 +64,7 @@ class ProventServiceTest {
         asset.setName("Itausa");
         asset.setCategory(AssetCategory.ACOES);
 
-        User user = new User();
-        user.setId(UUID.randomUUID());
-        user.setEmail("investor@valora.dev");
-        user.setPasswordHash("hash");
-        user.setRole(UserRole.USER);
+        Portfolio portfolio = portfolio();
 
         Instant comDate = Instant.parse("2026-03-20T00:00:00Z");
         Instant paymentDate = Instant.parse("2026-03-30T00:00:00Z");
@@ -85,9 +84,9 @@ class ProventServiceTest {
             provent.setId(UUID.randomUUID());
             return provent;
         });
-        when(transactionRepository.findUserHoldingsByAssetAtDate(asset.getId(), comDate, TransactionType.BUY))
-                .thenReturn(List.of(holding(user.getId(), new BigDecimal("10.00000000"))));
-        when(userRepository.findAllById(any())).thenReturn(List.of(user));
+        when(transactionRepository.findPortfolioHoldingsByAssetAtDate(asset.getId(), comDate, TransactionType.BUY))
+                .thenReturn(List.of(holding(portfolio.getId(), new BigDecimal("10.00000000"))));
+        when(portfolioRepository.findAllById(any())).thenReturn(List.of(portfolio));
 
         ProventResponseDTO response = proventService.createProvent(request);
 
@@ -101,6 +100,7 @@ class ProventServiceTest {
         assertThat(provision.getWithholdingTaxAmount()).isEqualByComparingTo("0.00000000");
         assertThat(provision.getNetAmount()).isEqualByComparingTo("12.30000000");
         assertThat(provision.getStatus()).isEqualTo(ProventStatus.PENDING);
+        assertThat(provision.getPortfolio()).isSameAs(portfolio);
 
         ArgumentCaptor<Provent> proventCaptor = ArgumentCaptor.forClass(Provent.class);
         verify(proventRepository).save(proventCaptor.capture());
@@ -116,11 +116,7 @@ class ProventServiceTest {
         asset.setTicker("BBAS3");
         asset.setCategory(AssetCategory.ACOES);
 
-        User user = new User();
-        user.setId(UUID.randomUUID());
-        user.setEmail("jcp@valora.dev");
-        user.setPasswordHash("hash");
-        user.setRole(UserRole.USER);
+        Portfolio portfolio = portfolio();
 
         Instant comDate = Instant.parse("2026-03-20T00:00:00Z");
         Instant paymentDate = Instant.parse("2026-04-05T00:00:00Z");
@@ -140,9 +136,9 @@ class ProventServiceTest {
             provent.setId(UUID.randomUUID());
             return provent;
         });
-        when(transactionRepository.findUserHoldingsByAssetAtDate(asset.getId(), comDate, TransactionType.BUY))
-                .thenReturn(List.of(holding(user.getId(), new BigDecimal("10.00000000"))));
-        when(userRepository.findAllById(any())).thenReturn(List.of(user));
+        when(transactionRepository.findPortfolioHoldingsByAssetAtDate(asset.getId(), comDate, TransactionType.BUY))
+                .thenReturn(List.of(holding(portfolio.getId(), new BigDecimal("10.00000000"))));
+        when(portfolioRepository.findAllById(any())).thenReturn(List.of(portfolio));
 
         proventService.createProvent(request);
 
@@ -217,6 +213,8 @@ class ProventServiceTest {
     void getMyProventsShouldMapRepositoryResult() {
         User user = new User();
         user.setId(UUID.randomUUID());
+        Portfolio portfolio = portfolio();
+        portfolio.setUser(user);
 
         Asset asset = new Asset();
         asset.setId(UUID.randomUUID());
@@ -235,7 +233,7 @@ class ProventServiceTest {
 
         ProventProvision provision = new ProventProvision();
         provision.setId(UUID.randomUUID());
-        provision.setUser(user);
+        provision.setPortfolio(portfolio);
         provision.setAsset(asset);
         provision.setProvent(provent);
         provision.setQuantityOnComDate(new BigDecimal("100.00000000"));
@@ -245,10 +243,11 @@ class ProventServiceTest {
         provision.setStatus(ProventStatus.PENDING);
 
         PageRequest pageable = PageRequest.of(0, 20);
-        when(proventProvisionRepository.findByUser(user, pageable))
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(proventProvisionRepository.findByPortfolio(portfolio, pageable))
                 .thenReturn(new PageImpl<>(List.of(provision), pageable, 1));
 
-        Page<ProventProvisionResponseDTO> result = proventService.getMyProvents(user, pageable);
+        Page<ProventProvisionResponseDTO> result = proventService.getMyProvents(user, portfolio.getId(), pageable);
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().getFirst().ticker()).isEqualTo("TAEE11");
@@ -256,11 +255,26 @@ class ProventServiceTest {
         assertThat(result.getContent().getFirst().originEventKey()).isEqualTo("manual-key");
     }
 
-    private UserAssetHoldingProjection holding(UUID userId, BigDecimal quantity) {
+    @Test
+    void getMyProventsShouldRejectPortfolioNotOwnedBeforeQueryingProvisions() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        UUID portfolioId = UUID.randomUUID();
+        PageRequest pageable = PageRequest.of(0, 20);
+
+        when(portfolioService.resolveOwnedPortfolio(user, portfolioId))
+                .thenThrow(new PortfolioNotFoundException("Carteira nao encontrada."));
+
+        assertThatThrownBy(() -> proventService.getMyProvents(user, portfolioId, pageable))
+                .isInstanceOf(PortfolioNotFoundException.class);
+        verify(proventProvisionRepository, never()).findByPortfolio(any(), any());
+    }
+
+    private UserAssetHoldingProjection holding(UUID portfolioId, BigDecimal quantity) {
         return new UserAssetHoldingProjection() {
             @Override
-            public UUID getUserId() {
-                return userId;
+            public UUID getPortfolioId() {
+                return portfolioId;
             }
 
             @Override
@@ -268,5 +282,19 @@ class ProventServiceTest {
                 return quantity;
             }
         };
+    }
+
+    private Portfolio portfolio() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setEmail("investor@valora.dev");
+        user.setPasswordHash("hash");
+        user.setRole(UserRole.USER);
+
+        Portfolio portfolio = new Portfolio();
+        portfolio.setId(UUID.randomUUID());
+        portfolio.setUser(user);
+        portfolio.setName("Principal");
+        return portfolio;
     }
 }
