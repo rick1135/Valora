@@ -13,6 +13,9 @@ import com.rick1135.Valora.mapper.TransactionMapper;
 import com.rick1135.Valora.repository.AssetRepository;
 import com.rick1135.Valora.repository.PositionRepository;
 import com.rick1135.Valora.repository.TransactionRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -21,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -162,5 +166,60 @@ class TransactionServiceTest {
         assertThatThrownBy(() -> transactionService.processTransaction(user, dto))
                 .isInstanceOf(InsufficientPositionException.class)
                 .hasMessageContaining("Quantidade insuficiente");
+    }
+
+    @Test
+    void getTransactionHistoryShouldReturnPagedHistoryUsingNormalizedTickerFilter() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("PETR4");
+
+        Transaction transaction = new Transaction();
+        transaction.setId(UUID.randomUUID());
+        transaction.setAsset(asset);
+        transaction.setType(TransactionType.BUY);
+        transaction.setQuantity(new BigDecimal("2.00000000"));
+        transaction.setUnitPrice(new BigDecimal("30.00000000"));
+        transaction.setTransactionDate(Instant.parse("2026-04-01T10:00:00Z"));
+
+        TransactionResponseDTO response = new TransactionResponseDTO(
+                transaction.getId(),
+                asset.getId(),
+                asset.getTicker(),
+                transaction.getType(),
+                transaction.getQuantity(),
+                transaction.getUnitPrice(),
+                transaction.getTransactionDate(),
+                null,
+                null
+        );
+
+        PageRequest pageable = PageRequest.of(0, 20);
+        when(transactionRepository.findTransactionHistoryByUserAndFilters(user, "PETR4", TransactionType.BUY, pageable))
+                .thenReturn(new PageImpl<>(List.of(transaction), pageable, 1));
+        when(transactionMapper.toHistoryResponse(transaction)).thenReturn(response);
+
+        Page<TransactionResponseDTO> result = transactionService.getTransactionHistory(user, " petr4 ", TransactionType.BUY, pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().getFirst().ticker()).isEqualTo("PETR4");
+        assertThat(result.getContent().getFirst().type()).isEqualTo(TransactionType.BUY);
+    }
+
+    @Test
+    void getTransactionHistoryShouldPassNullFiltersWhenNotProvided() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+
+        PageRequest pageable = PageRequest.of(1, 10);
+        when(transactionRepository.findTransactionHistoryByUserAndFilters(user, null, null, pageable))
+                .thenReturn(Page.empty(pageable));
+
+        Page<TransactionResponseDTO> result = transactionService.getTransactionHistory(user, null, null, pageable);
+
+        assertThat(result).isEmpty();
     }
 }

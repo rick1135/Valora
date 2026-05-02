@@ -14,11 +14,14 @@ import com.rick1135.Valora.repository.AssetRepository;
 import com.rick1135.Valora.repository.PositionRepository;
 import com.rick1135.Valora.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -58,6 +61,13 @@ public class TransactionService {
         return transactionMapper.toResponse(savedTransaction, asset, savedPosition);
     }
 
+    @Transactional(readOnly = true)
+    public Page<TransactionResponseDTO> getTransactionHistory(User user, String ticker, TransactionType type, Pageable pageable) {
+        String normalizedTicker = normalizeTicker(ticker);
+        return transactionRepository.findTransactionHistoryByUserAndFilters(user, normalizedTicker, type, pageable)
+                .map(transactionMapper::toHistoryResponse);
+    }
+
     private void handleBuy(Position position, TransactionDTO dto) {
         BigDecimal currentQuantity = position.getQuantity();
         BigDecimal currentAvgPrice = position.getAveragePrice();
@@ -87,5 +97,14 @@ public class TransactionService {
         if (newQuantity.compareTo(BigDecimal.ZERO) == 0) {
             position.setAveragePrice(BigDecimal.ZERO);
         }
+    }
+
+    private String normalizeTicker(String ticker) {
+        if (ticker == null) {
+            return null;
+        }
+
+        String normalized = ticker.trim().toUpperCase(Locale.ROOT);
+        return normalized.isBlank() ? null : normalized;
     }
 }

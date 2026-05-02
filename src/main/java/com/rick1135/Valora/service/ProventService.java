@@ -6,6 +6,7 @@ import com.rick1135.Valora.dto.response.ProventResponseDTO;
 import com.rick1135.Valora.entity.*;
 import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.exception.ProventAlreadyExistsException;
+import com.rick1135.Valora.mapper.ProventMapper;
 import com.rick1135.Valora.repository.*;
 import com.rick1135.Valora.repository.projection.UserAssetHoldingProjection;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,7 @@ public class ProventService {
     private final ProventProvisionRepository proventProvisionRepository;
     private final TransactionRepository transactionRepository;
     private final UserRepository userRepository;
+    private final ProventMapper proventMapper;
 
     @Transactional
     public ProventResponseDTO createProvent(ProventRequestDTO dto) {
@@ -62,12 +64,8 @@ public class ProventService {
             throw new ProventAlreadyExistsException("Ja existe um provento igual para esse evento de origem.");
         }
 
-        Provent provent = new Provent();
+        Provent provent = proventMapper.toEntity(dto);
         provent.setAsset(asset);
-        provent.setType(dto.type());
-        provent.setAmountPerShare(dto.amountPerShare());
-        provent.setComDate(dto.comDate());
-        provent.setPaymentDate(dto.paymentDate());
         provent.setOriginSource(originMetadata.source());
         provent.setOriginEventKey(originMetadata.sourceEventKey());
         provent.setOriginLabel(originMetadata.sourceLabel());
@@ -125,47 +123,13 @@ public class ProventService {
 
         proventProvisionRepository.saveAll(provisions);
 
-        return new ProventResponseDTO(
-                savedProvent.getId(),
-                asset.getId(),
-                asset.getTicker(),
-                savedProvent.getType(),
-                savedProvent.getAmountPerShare(),
-                savedProvent.getComDate(),
-                savedProvent.getPaymentDate(),
-                provisions.size(),
-                savedProvent.getOriginSource(),
-                savedProvent.getOriginEventKey(),
-                savedProvent.getOriginRateBasis()
-        );
+        return proventMapper.toResponse(savedProvent, asset, provisions.size());
     }
 
     @Transactional(readOnly = true)
     public Page<ProventProvisionResponseDTO> getMyProvents(User user, Pageable pageable) {
         return proventProvisionRepository.findByUser(user, pageable)
-                .map(this::toResponse);
-    }
-
-    private ProventProvisionResponseDTO toResponse(ProventProvision provision) {
-        Provent provent = provision.getProvent();
-        return new ProventProvisionResponseDTO(
-                provision.getId(),
-                provent.getId(),
-                provision.getAsset().getId(),
-                provision.getAsset().getTicker(),
-                provent.getType(),
-                provent.getAmountPerShare(),
-                provent.getComDate(),
-                provent.getPaymentDate(),
-                provision.getQuantityOnComDate(),
-                provision.getGrossAmount(),
-                provision.getWithholdingTaxAmount(),
-                provision.getNetAmount(),
-                provision.getStatus(),
-                provent.getOriginSource(),
-                provent.getOriginEventKey(),
-                provent.getOriginRateBasis()
-        );
+                .map(proventMapper::toProvisionResponse);
     }
 
     private void validateDates(ProventRequestDTO dto) {

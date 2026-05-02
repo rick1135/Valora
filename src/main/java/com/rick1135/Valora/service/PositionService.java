@@ -3,6 +3,7 @@ package com.rick1135.Valora.service;
 import com.rick1135.Valora.dto.response.PositionResponseDTO;
 import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.User;
+import com.rick1135.Valora.mapper.PositionMapper;
 import com.rick1135.Valora.repository.PositionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ import java.util.List;
 public class PositionService {
     private final PositionRepository positionRepository;
     private final QuoteService quoteService;
+    private final PositionMapper positionMapper;
 
     @Transactional(readOnly = true)
     public List<PositionResponseDTO> getUserPortfolio(User user) {
@@ -49,12 +51,8 @@ public class PositionService {
                                 .multiply(new BigDecimal("100"));
                     }
 
-                    return new PositionResponseDTO(
-                            position.getAsset().getId(),
-                            position.getAsset().getTicker(),
-                            position.getAsset().getName(),
-                            quantity,
-                            averagePrice,
+                    return positionMapper.toResponse(
+                            position,
                             totalCost,
                             currentPrice,
                             currentTotalValue,

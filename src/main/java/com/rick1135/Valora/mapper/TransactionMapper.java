@@ -7,8 +7,9 @@ import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.Transaction;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.ReportingPolicy;
 
-@Mapper(componentModel = "spring")
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface TransactionMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "user", ignore = true)
@@ -25,4 +26,15 @@ public interface TransactionMapper {
     @Mapping(target = "positionQuantity", source = "position.quantity")
     @Mapping(target = "averagePrice", source = "position.averagePrice")
     TransactionResponseDTO toResponse(Transaction transaction, Asset asset, Position position);
+
+    @Mapping(target = "transactionId", source = "id")
+    @Mapping(target = "assetId", source = "asset.id")
+    @Mapping(target = "ticker", source = "asset.ticker")
+    @Mapping(target = "type", source = "type")
+    @Mapping(target = "quantity", source = "quantity")
+    @Mapping(target = "unitPrice", source = "unitPrice")
+    @Mapping(target = "transactionDate", source = "transactionDate")
+    @Mapping(target = "positionQuantity", ignore = true)
+    @Mapping(target = "averagePrice", ignore = true)
+    TransactionResponseDTO toHistoryResponse(Transaction transaction);
 }

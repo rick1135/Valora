@@ -6,13 +6,16 @@ import com.rick1135.Valora.dto.response.ProventResponseDTO;
 import com.rick1135.Valora.entity.*;
 import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.exception.ProventAlreadyExistsException;
+import com.rick1135.Valora.mapper.ProventMapper;
 import com.rick1135.Valora.repository.*;
 import com.rick1135.Valora.repository.projection.UserAssetHoldingProjection;
+import org.mapstruct.factory.Mappers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -43,6 +46,9 @@ class ProventServiceTest {
     private TransactionRepository transactionRepository;
     @Mock
     private UserRepository userRepository;
+
+    @Spy
+    private ProventMapper proventMapper = Mappers.getMapper(ProventMapper.class);
 
     @InjectMocks
     private ProventService proventService;

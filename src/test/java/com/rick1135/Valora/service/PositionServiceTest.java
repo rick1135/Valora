@@ -4,11 +4,14 @@ import com.rick1135.Valora.dto.response.PositionResponseDTO;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.User;
+import com.rick1135.Valora.mapper.PositionMapper;
 import com.rick1135.Valora.repository.PositionRepository;
+import org.mapstruct.factory.Mappers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
@@ -27,6 +30,9 @@ class PositionServiceTest {
 
     @Mock
     private QuoteService quoteService;
+
+    @Spy
+    private PositionMapper positionMapper = Mappers.getMapper(PositionMapper.class);
 
     @InjectMocks
     private PositionService positionService;
