@@ -2,6 +2,7 @@ package com.rick1135.Valora.repository;
 
 import com.rick1135.Valora.entity.Transaction;
 import com.rick1135.Valora.entity.TransactionType;
+import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.repository.projection.UserAssetHoldingProjection;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Page;
@@ -43,11 +44,15 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
            where t.user = :user
              and (:ticker is null or t.asset.ticker = :ticker)
              and (:type is null or t.type = :type)
+             and (:startDate is null or t.transactionDate >= :startDate)
+             and (:endDate is null or t.transactionDate <= :endDate)
            """)
     Page<Transaction> findTransactionHistoryByUserAndFilters(
-            @Param("user") com.rick1135.Valora.entity.User user,
+            @Param("user") User user,
             @Param("ticker") String ticker,
             @Param("type") TransactionType type,
+            @Param("startDate") Instant startDate,
+            @Param("endDate") Instant endDate,
             Pageable pageable
     );
 }

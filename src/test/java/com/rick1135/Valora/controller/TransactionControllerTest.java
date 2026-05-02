@@ -134,12 +134,24 @@ class TransactionControllerTest {
                 null
         );
 
-        when(transactionService.getTransactionHistory(any(), eq("PETR4"), eq(TransactionType.BUY), any()))
+        Instant startDate = Instant.parse("2026-03-01T00:00:00Z");
+        Instant endDate = Instant.parse("2026-03-31T23:59:59Z");
+
+        when(transactionService.getTransactionHistory(
+                any(),
+                eq("PETR4"),
+                eq(TransactionType.BUY),
+                eq(startDate),
+                eq(endDate),
+                any()
+        ))
                 .thenReturn(new PageImpl<>(List.of(response), PageRequest.of(0, 20), 1));
 
         mockMvc.perform(get("/transactions")
                         .param("ticker", "PETR4")
                         .param("type", "BUY")
+                        .param("startDate", "2026-03-01T00:00:00Z")
+                        .param("endDate", "2026-03-31T23:59:59Z")
                         .param("page", "0")
                         .param("size", "20"))
                 .andExpect(status().isOk())

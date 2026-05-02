@@ -31,6 +31,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -198,11 +199,11 @@ class TransactionServiceTest {
         );
 
         PageRequest pageable = PageRequest.of(0, 20);
-        when(transactionRepository.findTransactionHistoryByUserAndFilters(user, "PETR4", TransactionType.BUY, pageable))
+        when(transactionRepository.findTransactionHistoryByUserAndFilters(user, "PETR4", TransactionType.BUY, null, null, pageable))
                 .thenReturn(new PageImpl<>(List.of(transaction), pageable, 1));
         when(transactionMapper.toHistoryResponse(transaction)).thenReturn(response);
 
-        Page<TransactionResponseDTO> result = transactionService.getTransactionHistory(user, " petr4 ", TransactionType.BUY, pageable);
+        Page<TransactionResponseDTO> result = transactionService.getTransactionHistory(user, " petr4 ", TransactionType.BUY, null, null, pageable);
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().getFirst().ticker()).isEqualTo("PETR4");
@@ -215,11 +216,67 @@ class TransactionServiceTest {
         user.setId(UUID.randomUUID());
 
         PageRequest pageable = PageRequest.of(1, 10);
-        when(transactionRepository.findTransactionHistoryByUserAndFilters(user, null, null, pageable))
+        when(transactionRepository.findTransactionHistoryByUserAndFilters(user, null, null, null, null, pageable))
                 .thenReturn(Page.empty(pageable));
 
-        Page<TransactionResponseDTO> result = transactionService.getTransactionHistory(user, null, null, pageable);
+        Page<TransactionResponseDTO> result = transactionService.getTransactionHistory(user, null, null, null, null, pageable);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getTransactionHistoryShouldPassDateRangeFiltersToRepository() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("VALE3");
+
+        Instant startDate = Instant.parse("2026-03-01T00:00:00Z");
+        Instant endDate = Instant.parse("2026-03-31T23:59:59Z");
+
+        Transaction transaction = new Transaction();
+        transaction.setId(UUID.randomUUID());
+        transaction.setAsset(asset);
+        transaction.setType(TransactionType.SELL);
+        transaction.setQuantity(new BigDecimal("3.00000000"));
+        transaction.setUnitPrice(new BigDecimal("60.00000000"));
+        transaction.setTransactionDate(Instant.parse("2026-03-15T12:00:00Z"));
+
+        TransactionResponseDTO response = new TransactionResponseDTO(
+                transaction.getId(),
+                asset.getId(),
+                asset.getTicker(),
+                transaction.getType(),
+                transaction.getQuantity(),
+                transaction.getUnitPrice(),
+                transaction.getTransactionDate(),
+                null,
+                null
+        );
+
+        PageRequest pageable = PageRequest.of(0, 20);
+        when(transactionRepository.findTransactionHistoryByUserAndFilters(
+                eq(user),
+                eq("VALE3"),
+                eq(TransactionType.SELL),
+                eq(startDate),
+                eq(endDate),
+                eq(pageable)
+        )).thenReturn(new PageImpl<>(List.of(transaction), pageable, 1));
+        when(transactionMapper.toHistoryResponse(transaction)).thenReturn(response);
+
+        Page<TransactionResponseDTO> result = transactionService.getTransactionHistory(
+                user,
+                "vale3",
+                TransactionType.SELL,
+                startDate,
+                endDate,
+                pageable
+        );
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().getFirst().transactionDate()).isBetween(startDate, endDate);
     }
 }

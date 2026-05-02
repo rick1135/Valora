@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.Locale;
 
 @Service
@@ -62,9 +63,23 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
-    public Page<TransactionResponseDTO> getTransactionHistory(User user, String ticker, TransactionType type, Pageable pageable) {
+    public Page<TransactionResponseDTO> getTransactionHistory(
+            User user,
+            String ticker,
+            TransactionType type,
+            Instant startDate,
+            Instant endDate,
+            Pageable pageable
+    ) {
         String normalizedTicker = normalizeTicker(ticker);
-        return transactionRepository.findTransactionHistoryByUserAndFilters(user, normalizedTicker, type, pageable)
+        return transactionRepository.findTransactionHistoryByUserAndFilters(
+                        user,
+                        normalizedTicker,
+                        type,
+                        startDate,
+                        endDate,
+                        pageable
+                )
                 .map(transactionMapper::toHistoryResponse);
     }
 
