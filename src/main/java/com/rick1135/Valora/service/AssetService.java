@@ -52,13 +52,14 @@ public class AssetService {
             Asset savedAsset = assetRepository.saveAndFlush(asset);
             return assetMapper.toResponse(savedAsset);
         } catch (DataIntegrityViolationException exception) {
-            String message = exception.getMostSpecificCause() != null && exception.getMostSpecificCause().getMessage() != null 
-                    ? exception.getMostSpecificCause().getMessage().toLowerCase() 
-                    : "";
-            if (message.contains("uk_assets_ticker") || message.contains("duplicate key value") || message.contains("unique constraint") || message.contains("duplicate")) {
-                throw new AssetAlreadyExistsException("Ativo com ticker '" + normalizedTicker + "' ja cadastrado.");
+            Throwable rootCause = exception.getMostSpecificCause();
+            if (rootCause instanceof java.sql.SQLException sqlException) {
+                String sqlState = sqlException.getSQLState();
+                if ("23505".equals(sqlState)) {
+                    throw new AssetAlreadyExistsException("Ativo com ticker '" + normalizedTicker + "' ja cadastrado.");
+                }
             }
-            throw new IllegalArgumentException("Erro de integridade de dados ao salvar o ativo: " + (exception.getMostSpecificCause() != null ? exception.getMostSpecificCause().getMessage() : ""));
+            throw new IllegalArgumentException("Erro de integridade de dados ao salvar o ativo: " + (rootCause != null ? rootCause.getMessage() : ""));
         }
     }
 

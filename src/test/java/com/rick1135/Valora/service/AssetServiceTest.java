@@ -83,7 +83,7 @@ class AssetServiceTest {
         Asset mappedAsset = new Asset();
         when(assetRepository.findByTickerIgnoreCase("PETR4")).thenReturn(Optional.empty());
         when(assetMapper.toEntity(request)).thenReturn(mappedAsset);
-        when(assetRepository.saveAndFlush(any(Asset.class))).thenThrow(new DataIntegrityViolationException("duplicate", new RuntimeException("uk_assets_ticker")));
+        when(assetRepository.saveAndFlush(any(Asset.class))).thenThrow(new DataIntegrityViolationException("duplicate", new java.sql.SQLException("duplicate key value violates unique constraint", "23505")));
 
         assertThatThrownBy(() -> assetService.createAsset(request))
                 .isInstanceOf(AssetAlreadyExistsException.class)

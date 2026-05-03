@@ -38,7 +38,7 @@ public class AssetServiceQaTest {
         
         when(assetRepository.findByTickerIgnoreCase(any())).thenReturn(Optional.empty());
         when(assetMapper.toEntity(any())).thenReturn(new com.rick1135.Valora.entity.Asset());
-        when(assetRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("Value too long for column 'issuer'", new RuntimeException("Value too long for column 'issuer'")));
+        when(assetRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("Value too long for column 'issuer'", new java.sql.SQLException("Value too long for column 'issuer'", "22001")));
         
         assertThatThrownBy(() -> assetService.createAsset(request))
                 .isInstanceOf(IllegalArgumentException.class)
