@@ -43,6 +43,12 @@ class TransactionAndPositionIntegrationTest extends AbstractPostgresIntegrationT
     private PortfolioRepository portfolioRepository;
 
     @Autowired
+    private ProventProvisionRepository proventProvisionRepository;
+
+    @Autowired
+    private ProventRepository proventRepository;
+
+    @Autowired
     private AssetRepository assetRepository;
 
     private User user;
@@ -51,6 +57,8 @@ class TransactionAndPositionIntegrationTest extends AbstractPostgresIntegrationT
 
     @BeforeEach
     void setUp() {
+        proventProvisionRepository.deleteAll();
+        proventRepository.deleteAll();
         transactionRepository.deleteAll();
         positionRepository.deleteAll();
         portfolioRepository.deleteAll();

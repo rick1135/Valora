@@ -43,3 +43,16 @@ build/
 ### Local Maven cache ###
 .m2/
 
+/node_modules/.package-lock.json
+/node_modules/.bin/codex
+/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex/codex
+/node_modules/@openai/codex/bin/codex.js
+/src/test/resources/docker-java.properties
+/node_modules/@openai/codex/package.json
+/node_modules/@openai/codex-linux-x64/package.json
+/package.json
+/package-lock.json
+/node_modules/@openai/codex/README.md
+/node_modules/@openai/codex-linux-x64/README.md
+/node_modules/@openai/codex/bin/rg
+/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/path/rg

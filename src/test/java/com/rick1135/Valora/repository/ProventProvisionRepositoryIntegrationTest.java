@@ -77,6 +77,8 @@ class ProventProvisionRepositoryIntegrationTest extends AbstractPostgresIntegrat
         pastProvent.setAmountPerShare(new BigDecimal("1.0"));
         pastProvent.setOriginSource(ProventSource.BRAPI);
         pastProvent.setOriginEventKey("evt_past");
+        pastProvent.setOriginRate(new BigDecimal("1.0"));
+        pastProvent.setOriginRateBasis(ProventRateBasis.NET);
         pastProvent.setComDate(past.minusDays(5));
         pastProvent.setPaymentDate(past);
         proventRepository.saveAndFlush(pastProvent);
@@ -87,6 +89,8 @@ class ProventProvisionRepositoryIntegrationTest extends AbstractPostgresIntegrat
         futureProvent.setAmountPerShare(new BigDecimal("1.0"));
         futureProvent.setOriginSource(ProventSource.BRAPI);
         futureProvent.setOriginEventKey("evt_future");
+        futureProvent.setOriginRate(new BigDecimal("1.0"));
+        futureProvent.setOriginRateBasis(ProventRateBasis.NET);
         futureProvent.setComDate(past);
         futureProvent.setPaymentDate(future);
         proventRepository.saveAndFlush(futureProvent);

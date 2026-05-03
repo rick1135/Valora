@@ -7,6 +7,7 @@ import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.entity.UserRole;
 import com.rick1135.Valora.repository.AssetRepository;
+import com.rick1135.Valora.repository.PortfolioRepository;
 import com.rick1135.Valora.repository.PositionRepository;
 import com.rick1135.Valora.repository.ProventProvisionRepository;
 import com.rick1135.Valora.repository.ProventRepository;
@@ -57,6 +58,8 @@ class ProventControllerSecurityTest extends AbstractPostgresIntegrationTest {
     private ProventRepository proventRepository;
     @Autowired
     private ProventProvisionRepository proventProvisionRepository;
+    @Autowired
+    private PortfolioRepository portfolioRepository;
 
     private MockMvc mockMvc;
 
@@ -142,6 +145,7 @@ class ProventControllerSecurityTest extends AbstractPostgresIntegrationTest {
         proventRepository.deleteAll();
         transactionRepository.deleteAll();
         positionRepository.deleteAll();
+        portfolioRepository.deleteAll();
         assetRepository.deleteAll();
         userRepository.deleteAll();
     }
