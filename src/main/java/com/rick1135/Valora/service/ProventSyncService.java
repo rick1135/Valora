@@ -35,6 +35,7 @@ public class ProventSyncService {
     private final BrapiClient brapiClient;
     private final ProventService proventService;
     private final Clock clock;
+    private final MarketCalendar marketCalendar;
 
     @Value("${brapi.token:}")
     private String brapiToken;
@@ -99,8 +100,8 @@ public class ProventSyncService {
                         asset.getId(),
                         type,
                         amountPerShare,
-                        event.lastDatePrior(),
-                        event.paymentDate()
+                        marketCalendar.financialDate(event.lastDatePrior()),
+                        marketCalendar.financialDate(event.paymentDate())
                 );
 
                 ProventOriginMetadata originMetadata = ProventOriginMetadata.brapi(

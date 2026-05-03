@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -35,7 +36,7 @@ public interface ProventProvisionRepository extends JpaRepository<ProventProvisi
             update ProventProvision pp
             set pp.status = com.rick1135.Valora.entity.ProventStatus.PAID
             where pp.status = com.rick1135.Valora.entity.ProventStatus.PENDING
-            and pp.provent.paymentDate <= :now
-            """)
-    int updatePendingToPaid(@Param("now") java.time.Instant now);
+            and pp.provent.paymentDate <= :currentDate
+             """)
+    int updatePendingToPaid(@Param("currentDate") LocalDate currentDate);
 }

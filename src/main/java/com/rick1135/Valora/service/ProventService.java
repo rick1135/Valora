@@ -23,9 +23,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class ProventService {
-    private static final java.time.ZoneId MARKET_ZONE = java.time.ZoneId.of("America/Sao_Paulo");
-    private static final java.time.ZoneOffset API_DATE_ZONE = java.time.ZoneOffset.UTC;
-
     private final AssetRepository assetRepository;
     private final ProventRepository proventRepository;
     private final ProventProvisionRepository proventProvisionRepository;
@@ -33,6 +30,7 @@ public class ProventService {
     private final PortfolioRepository portfolioRepository;
     private final PortfolioService portfolioService;
     private final ProventMapper proventMapper;
+    private final MarketCalendar marketCalendar;
 
     @Transactional
     public ProventResponseDTO createProvent(ProventRequestDTO dto) {
@@ -90,7 +88,7 @@ public class ProventService {
 
         List<UserAssetHoldingProjection> holdings = transactionRepository.findPortfolioHoldingsByAssetAtDate(
                 asset.getId(),
-                endOfMarketDay(dto.comDate()),
+                marketCalendar.endOfMarketDay(dto.comDate()),
                 TransactionType.BUY
         );
 
@@ -137,7 +135,7 @@ public class ProventService {
     }
 
     private void validateDates(ProventRequestDTO dto) {
-        if (financialDate(dto.paymentDate()).isBefore(financialDate(dto.comDate()))) {
+        if (dto.paymentDate().isBefore(dto.comDate())) {
             throw new IllegalArgumentException("A data de pagamento nao pode ser anterior a data COM.");
         }
     }
@@ -154,15 +152,4 @@ public class ProventService {
         }
     }
 
-    private java.time.Instant endOfMarketDay(java.time.Instant instant) {
-        return financialDate(instant)
-                .plusDays(1)
-                .atStartOfDay(MARKET_ZONE)
-                .toInstant()
-                .minusNanos(1);
-    }
-
-    private java.time.LocalDate financialDate(java.time.Instant instant) {
-        return instant.atOffset(API_DATE_ZONE).toLocalDate();
-    }
 }

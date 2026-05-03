@@ -152,8 +152,8 @@ class ProventControllerSecurityTest extends AbstractPostgresIntegrationTest {
                   "assetId": "%s",
                   "type": "DIVIDEND",
                   "amountPerShare": 1.23,
-                  "comDate": "2026-03-20T00:00:00Z",
-                  "paymentDate": "2026-03-30T00:00:00Z"
+                  "comDate": "2026-03-20",
+                  "paymentDate": "2026-03-30"
                 }
                 """.formatted(assetId);
     }

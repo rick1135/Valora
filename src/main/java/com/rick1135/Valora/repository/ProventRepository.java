@@ -5,7 +5,7 @@ import com.rick1135.Valora.entity.ProventSource;
 import com.rick1135.Valora.entity.ProventType;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 public interface ProventRepository extends JpaRepository<Provent, UUID> {
@@ -14,7 +14,7 @@ public interface ProventRepository extends JpaRepository<Provent, UUID> {
     boolean existsByAssetIdAndTypeAndComDateAndPaymentDate(
             UUID assetId,
             ProventType type,
-            Instant comDate,
-            Instant paymentDate
+            LocalDate comDate,
+            LocalDate paymentDate
     );
 }

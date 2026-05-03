@@ -25,7 +25,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 import java.math.BigDecimal;
-import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -76,8 +76,8 @@ class ProventControllerTest {
                 "ITSA4",
                 ProventType.DIVIDEND,
                 new BigDecimal("1.23000000"),
-                Instant.parse("2026-03-20T00:00:00Z"),
-                Instant.parse("2026-03-30T00:00:00Z"),
+                LocalDate.of(2026, 3, 20),
+                LocalDate.of(2026, 3, 30),
                 2,
                 ProventSource.MANUAL,
                 "origin-key",
@@ -91,8 +91,8 @@ class ProventControllerTest {
                                   "assetId": "%s",
                                   "type": "DIVIDEND",
                                   "amountPerShare": 1.23,
-                                  "comDate": "2026-03-20T00:00:00Z",
-                                  "paymentDate": "2026-03-30T00:00:00Z"
+                                  "comDate": "2026-03-20",
+                                  "paymentDate": "2026-03-30"
                                 }
                                 """.formatted(assetId)))
                 .andExpect(status().isCreated())
@@ -108,8 +108,8 @@ class ProventControllerTest {
                                 {
                                   "type": "DIVIDEND",
                                   "amountPerShare": 0,
-                                  "comDate": "2026-03-20T00:00:00Z",
-                                  "paymentDate": "2026-03-30T00:00:00Z"
+                                  "comDate": "2026-03-20",
+                                  "paymentDate": "2026-03-30"
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -128,8 +128,8 @@ class ProventControllerTest {
                         "TAEE11",
                         ProventType.JCP,
                         new BigDecimal("1.00000000"),
-                        Instant.parse("2026-03-20T00:00:00Z"),
-                        Instant.parse("2026-03-30T00:00:00Z"),
+                        LocalDate.of(2026, 3, 20),
+                        LocalDate.of(2026, 3, 30),
                         new BigDecimal("10.00000000"),
                         new BigDecimal("10.00000000"),
                         new BigDecimal("1.50000000"),

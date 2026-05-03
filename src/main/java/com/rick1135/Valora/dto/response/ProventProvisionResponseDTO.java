@@ -6,7 +6,7 @@ import com.rick1135.Valora.entity.ProventStatus;
 import com.rick1135.Valora.entity.ProventType;
 
 import java.math.BigDecimal;
-import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 public record ProventProvisionResponseDTO(
@@ -17,8 +17,8 @@ public record ProventProvisionResponseDTO(
         String ticker,
         ProventType type,
         BigDecimal amountPerShare,
-        Instant comDate,
-        Instant paymentDate,
+        LocalDate comDate,
+        LocalDate paymentDate,
         BigDecimal quantityOnComDate,
         BigDecimal grossAmount,
         BigDecimal withholdingTaxAmount,

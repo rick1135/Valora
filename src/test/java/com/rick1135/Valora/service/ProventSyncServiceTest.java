@@ -22,6 +22,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -42,6 +43,8 @@ class ProventSyncServiceTest {
     private ProventService proventService;
     @Mock
     private Clock clock;
+    @Mock
+    private MarketCalendar marketCalendar;
 
     @InjectMocks
     private ProventSyncService proventSyncService;
@@ -115,6 +118,14 @@ class ProventSyncServiceTest {
                 .thenReturn(new BrapiResponseDTO(List.of(
                         new BrapiResultDTO("ITSA4", new BigDecimal("10.00"), new BrapiDividendsDataDTO(List.of(validDividend, validJcp)))
                 )));
+        when(marketCalendar.financialDate(Instant.parse("2026-03-30T00:00:00Z")))
+                .thenReturn(LocalDate.of(2026, 3, 30));
+        when(marketCalendar.financialDate(Instant.parse("2026-04-10T00:00:00Z")))
+                .thenReturn(LocalDate.of(2026, 4, 10));
+        when(marketCalendar.financialDate(Instant.parse("2026-03-31T00:00:00Z")))
+                .thenReturn(LocalDate.of(2026, 3, 31));
+        when(marketCalendar.financialDate(Instant.parse("2026-04-20T00:00:00Z")))
+                .thenReturn(LocalDate.of(2026, 4, 20));
 
         lenient().doThrow(new ProventAlreadyExistsException("duplicate"))
                 .when(proventService)
@@ -212,6 +223,6 @@ class ProventSyncServiceTest {
 
         assertThat(response.assetsScanned()).isZero();
         assertThat(response.integrationErrors()).isZero();
-        verifyNoInteractions(transactionRepository, positionRepository, brapiClient, proventService);
+        verifyNoInteractions(transactionRepository, positionRepository, brapiClient, proventService, marketCalendar);
     }
 }

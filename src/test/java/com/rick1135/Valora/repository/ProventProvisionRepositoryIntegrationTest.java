@@ -11,8 +11,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,9 +67,9 @@ class ProventProvisionRepositoryIntegrationTest extends AbstractPostgresIntegrat
         portfolio.setDescription("Test");
         portfolioRepository.saveAndFlush(portfolio);
 
-        Instant now = Instant.now();
-        Instant past = now.minus(1, ChronoUnit.DAYS);
-        Instant future = now.plus(1, ChronoUnit.DAYS);
+        LocalDate today = LocalDate.of(2026, 3, 20);
+        LocalDate past = today.minusDays(1);
+        LocalDate future = today.plusDays(1);
 
         Provent pastProvent = new Provent();
         pastProvent.setAsset(asset);
@@ -78,7 +77,7 @@ class ProventProvisionRepositoryIntegrationTest extends AbstractPostgresIntegrat
         pastProvent.setAmountPerShare(new BigDecimal("1.0"));
         pastProvent.setOriginSource(ProventSource.BRAPI);
         pastProvent.setOriginEventKey("evt_past");
-        pastProvent.setComDate(past.minus(5, ChronoUnit.DAYS));
+        pastProvent.setComDate(past.minusDays(5));
         pastProvent.setPaymentDate(past);
         proventRepository.saveAndFlush(pastProvent);
 
@@ -115,7 +114,7 @@ class ProventProvisionRepositoryIntegrationTest extends AbstractPostgresIntegrat
         proventProvisionRepository.saveAndFlush(futureProvision);
 
         // When
-        int updated = proventProvisionRepository.updatePendingToPaid(now);
+        int updated = proventProvisionRepository.updatePendingToPaid(today);
 
         // Then
         assertThat(updated).isEqualTo(1);
@@ -138,7 +137,7 @@ class ProventProvisionRepositoryIntegrationTest extends AbstractPostgresIntegrat
 
     @Test
     void shouldReturnZeroWhenNoProvisionsExist() {
-        int updated = proventProvisionRepository.updatePendingToPaid(Instant.now());
+        int updated = proventProvisionRepository.updatePendingToPaid(LocalDate.of(2026, 3, 20));
         assertThat(updated).isEqualTo(0);
     }
 }

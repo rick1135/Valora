@@ -18,6 +18,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
@@ -79,8 +80,8 @@ public class Provent {
     private ProventRateBasis originRateBasis;
 
     @Column(name = "com_date", nullable = false)
-    private Instant comDate;
+    private LocalDate comDate;
 
     @Column(name = "payment_date", nullable = false)
-    private Instant paymentDate;
+    private LocalDate paymentDate;
 }

@@ -51,6 +51,8 @@ class ProventServiceTest {
     private PortfolioRepository portfolioRepository;
     @Mock
     private PortfolioService portfolioService;
+    @Mock
+    private MarketCalendar marketCalendar;
 
     @Spy
     private ProventMapper proventMapper = Mappers.getMapper(ProventMapper.class);
@@ -68,8 +70,8 @@ class ProventServiceTest {
 
         Portfolio portfolio = portfolio();
 
-        Instant comDate = Instant.parse("2026-03-20T00:00:00Z");
-        Instant paymentDate = Instant.parse("2026-03-30T00:00:00Z");
+        LocalDate comDate = LocalDate.of(2026, 3, 20);
+        LocalDate paymentDate = LocalDate.of(2026, 3, 30);
         ProventRequestDTO request = new ProventRequestDTO(
                 asset.getId(),
                 ProventType.DIVIDEND,
@@ -89,6 +91,7 @@ class ProventServiceTest {
         when(transactionRepository.findPortfolioHoldingsByAssetAtDate(eq(asset.getId()), any(Instant.class), eq(TransactionType.BUY)))
                 .thenReturn(List.of(holding(portfolio.getId(), new BigDecimal("10.00000000"))));
         when(portfolioRepository.findAllById(any())).thenReturn(List.of(portfolio));
+        when(marketCalendar.endOfMarketDay(comDate)).thenReturn(Instant.parse("2026-03-21T02:59:59.999999999Z"));
 
         ProventResponseDTO response = proventService.createProvent(request);
 
@@ -120,8 +123,8 @@ class ProventServiceTest {
 
         Portfolio portfolio = portfolio();
 
-        Instant comDate = Instant.parse("2026-03-20T00:00:00Z");
-        Instant paymentDate = Instant.parse("2026-04-05T00:00:00Z");
+        LocalDate comDate = LocalDate.of(2026, 3, 20);
+        LocalDate paymentDate = LocalDate.of(2026, 4, 5);
         ProventRequestDTO request = new ProventRequestDTO(
                 asset.getId(),
                 ProventType.JCP,
@@ -141,6 +144,7 @@ class ProventServiceTest {
         when(transactionRepository.findPortfolioHoldingsByAssetAtDate(eq(asset.getId()), any(Instant.class), eq(TransactionType.BUY)))
                 .thenReturn(List.of(holding(portfolio.getId(), new BigDecimal("10.00000000"))));
         when(portfolioRepository.findAllById(any())).thenReturn(List.of(portfolio));
+        when(marketCalendar.endOfMarketDay(comDate)).thenReturn(Instant.parse("2026-03-21T02:59:59.999999999Z"));
 
         proventService.createProvent(request);
 
@@ -163,8 +167,8 @@ class ProventServiceTest {
                 UUID.randomUUID(),
                 ProventType.DIVIDEND,
                 new BigDecimal("1.00000000"),
-                Instant.parse("2026-03-20T00:00:00Z"),
-                Instant.parse("2026-03-19T00:00:00Z")
+                LocalDate.of(2026, 3, 20),
+                LocalDate.of(2026, 3, 19)
         );
 
         assertThatThrownBy(() -> proventService.createProvent(request))
@@ -173,19 +177,19 @@ class ProventServiceTest {
     }
 
     @Test
-    void createProventShouldUseEndOfComDateMarketDayWhenInputIsMidnightUtc() {
+    void createProventShouldUseEndOfComDateMarketDay() {
         Asset asset = new Asset();
         asset.setId(UUID.randomUUID());
         asset.setTicker("TAEE11");
         asset.setCategory(AssetCategory.ACOES);
 
-        Instant comDate = Instant.parse("2026-03-20T00:00:00Z");
+        LocalDate comDate = LocalDate.of(2026, 3, 20);
         ProventRequestDTO request = new ProventRequestDTO(
                 asset.getId(),
                 ProventType.DIVIDEND,
                 new BigDecimal("0.50000000"),
                 comDate,
-                Instant.parse("2026-03-30T00:00:00Z")
+                LocalDate.of(2026, 3, 30)
         );
 
         when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
@@ -199,6 +203,12 @@ class ProventServiceTest {
         when(transactionRepository.findPortfolioHoldingsByAssetAtDate(eq(asset.getId()), any(Instant.class), eq(TransactionType.BUY)))
                 .thenReturn(List.of());
         when(portfolioRepository.findAllById(any())).thenReturn(List.of());
+        Instant expectedEndOfMarketDay = LocalDate.of(2026, 3, 20)
+                .plusDays(1)
+                .atStartOfDay(ZoneId.of("America/Sao_Paulo"))
+                .toInstant()
+                .minusNanos(1);
+        when(marketCalendar.endOfMarketDay(comDate)).thenReturn(expectedEndOfMarketDay);
 
         proventService.createProvent(request);
 
@@ -208,19 +218,14 @@ class ProventServiceTest {
                 dateCaptor.capture(),
                 eq(TransactionType.BUY)
         );
-        Instant expectedEndOfMarketDay = LocalDate.of(2026, 3, 20)
-                .plusDays(1)
-                .atStartOfDay(ZoneId.of("America/Sao_Paulo"))
-                .toInstant()
-                .minusNanos(1);
         assertThat(dateCaptor.getValue()).isEqualTo(expectedEndOfMarketDay);
     }
 
     @Test
     void createProventShouldRejectWhenDuplicated() {
         UUID assetId = UUID.randomUUID();
-        Instant comDate = Instant.parse("2026-03-20T00:00:00Z");
-        Instant paymentDate = Instant.parse("2026-03-25T00:00:00Z");
+        LocalDate comDate = LocalDate.of(2026, 3, 20);
+        LocalDate paymentDate = LocalDate.of(2026, 3, 25);
         ProventRequestDTO request = new ProventRequestDTO(
                 assetId,
                 ProventType.DIVIDEND,
@@ -246,8 +251,8 @@ class ProventServiceTest {
                 assetId,
                 ProventType.DIVIDEND,
                 new BigDecimal("1.00000000"),
-                Instant.parse("2026-03-20T00:00:00Z"),
-                Instant.parse("2026-03-25T00:00:00Z")
+                LocalDate.of(2026, 3, 20),
+                LocalDate.of(2026, 3, 25)
         );
         when(assetRepository.findById(assetId)).thenReturn(Optional.empty());
 
@@ -274,8 +279,8 @@ class ProventServiceTest {
         provent.setOriginSource(ProventSource.MANUAL);
         provent.setOriginEventKey("manual-key");
         provent.setOriginRateBasis(ProventRateBasis.NET);
-        provent.setComDate(Instant.parse("2026-03-10T00:00:00Z"));
-        provent.setPaymentDate(Instant.parse("2026-03-20T00:00:00Z"));
+        provent.setComDate(LocalDate.of(2026, 3, 10));
+        provent.setPaymentDate(LocalDate.of(2026, 3, 20));
 
         ProventProvision provision = new ProventProvision();
         provision.setId(UUID.randomUUID());

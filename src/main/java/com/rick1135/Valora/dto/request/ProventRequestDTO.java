@@ -5,7 +5,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
-import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 public record ProventRequestDTO(
@@ -17,8 +17,8 @@ public record ProventRequestDTO(
         @DecimalMin(value = "0.00000001", message = "O valor por cota deve ser positivo.")
         BigDecimal amountPerShare,
         @NotNull(message = "A data COM e obrigatoria.")
-        Instant comDate,
+        LocalDate comDate,
         @NotNull(message = "A data de pagamento e obrigatoria.")
-        Instant paymentDate
+        LocalDate paymentDate
 ) {
 }

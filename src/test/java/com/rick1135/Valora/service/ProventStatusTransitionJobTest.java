@@ -8,7 +8,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.Instant;
+import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -20,21 +20,23 @@ public class ProventStatusTransitionJobTest {
 
     @Mock
     private ProventProvisionRepository proventProvisionRepository;
+    @Mock
+    private MarketCalendar marketCalendar;
 
     @InjectMocks
     private ProventStatusTransitionJob job;
 
     @Test
-    void transitionPendingToPaidShouldCallRepositoryWithCurrentInstant() {
-        when(proventProvisionRepository.updatePendingToPaid(any(Instant.class))).thenReturn(5);
+    void transitionPendingToPaidShouldCallRepositoryWithCurrentMarketDate() {
+        LocalDate currentDate = LocalDate.of(2026, 3, 20);
+        when(marketCalendar.today()).thenReturn(currentDate);
+        when(proventProvisionRepository.updatePendingToPaid(any(LocalDate.class))).thenReturn(5);
 
         job.transitionPendingToPaid();
 
-        ArgumentCaptor<Instant> captor = ArgumentCaptor.forClass(Instant.class);
+        ArgumentCaptor<LocalDate> captor = ArgumentCaptor.forClass(LocalDate.class);
         verify(proventProvisionRepository).updatePendingToPaid(captor.capture());
 
-        Instant passedInstant = captor.getValue();
-        assertThat(passedInstant).isNotNull();
-        assertThat(passedInstant).isBeforeOrEqualTo(Instant.now());
+        assertThat(captor.getValue()).isEqualTo(currentDate);
     }
 }

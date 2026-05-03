@@ -7,24 +7,27 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
-
 @Service
 public class ProventStatusTransitionJob {
 
     private static final Logger logger = LoggerFactory.getLogger(ProventStatusTransitionJob.class);
 
     private final ProventProvisionRepository proventProvisionRepository;
+    private final MarketCalendar marketCalendar;
 
-    public ProventStatusTransitionJob(ProventProvisionRepository proventProvisionRepository) {
+    public ProventStatusTransitionJob(
+            ProventProvisionRepository proventProvisionRepository,
+            MarketCalendar marketCalendar
+    ) {
         this.proventProvisionRepository = proventProvisionRepository;
+        this.marketCalendar = marketCalendar;
     }
 
     @Scheduled(cron = "0 0 1 * * *", zone = "America/Sao_Paulo")
     @Transactional
     public void transitionPendingToPaid() {
         logger.info("Iniciando transicao de proventos de PENDING para PAID");
-        int updatedCount = proventProvisionRepository.updatePendingToPaid(Instant.now());
+        int updatedCount = proventProvisionRepository.updatePendingToPaid(marketCalendar.today());
         logger.info("Transicao concluida. {} proventos foram atualizados para PAID", updatedCount);
     }
 }
