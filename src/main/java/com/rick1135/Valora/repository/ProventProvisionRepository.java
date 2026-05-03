@@ -29,4 +29,13 @@ public interface ProventProvisionRepository extends JpaRepository<ProventProvisi
             @Param("portfolio") Portfolio portfolio,
             @Param("status") ProventStatus status
     );
+
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
+    @Query("""
+            update ProventProvision pp
+            set pp.status = com.rick1135.Valora.entity.ProventStatus.PAID
+            where pp.status = com.rick1135.Valora.entity.ProventStatus.PENDING
+            and pp.provent.paymentDate <= :now
+            """)
+    int updatePendingToPaid(@Param("now") java.time.Instant now);
 }
