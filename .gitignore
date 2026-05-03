@@ -1,4 +1,7 @@
 HELP.md
+AGENTS.md
+GEMINI.md
+*.toml
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/

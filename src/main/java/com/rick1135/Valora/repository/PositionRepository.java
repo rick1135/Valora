@@ -3,6 +3,7 @@ package com.rick1135.Valora.repository;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Position;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,6 +16,9 @@ import java.util.UUID;
 public interface PositionRepository extends JpaRepository<Position, UUID> {
     Optional<Position> findByPortfolioAndAsset(Portfolio portfolio, Asset asset);
     List<Position> findByPortfolio(Portfolio portfolio);
+
+    @EntityGraph(attributePaths = "asset")
+    List<Position> findByPortfolioAndQuantityGreaterThan(Portfolio portfolio, BigDecimal quantity);
 
     boolean existsByPortfolio(Portfolio portfolio);
 

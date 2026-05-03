@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 public record BrapiResultDTO(
         String symbol,
         BigDecimal regularMarketPrice,
+        BigDecimal regularMarketChange,
         BigDecimal regularMarketChangePercent,
         Long regularMarketVolume,
         BigDecimal regularMarketDayHigh,
@@ -12,11 +13,11 @@ public record BrapiResultDTO(
         BrapiDividendsDataDTO dividendsData
 ) {
     public BrapiResultDTO(String symbol, BigDecimal regularMarketPrice) {
-        this(symbol, regularMarketPrice, null, null, null, null, null);
+        this(symbol, regularMarketPrice, null, null, null, null, null, null);
     }
 
     public BrapiResultDTO(String symbol, BigDecimal regularMarketPrice, BrapiDividendsDataDTO dividendsData) {
-        this(symbol, regularMarketPrice, null, null, null, null, dividendsData);
+        this(symbol, regularMarketPrice, null, null, null, null, null, dividendsData);
     }
 
     public BrapiResultDTO(
@@ -27,6 +28,18 @@ public record BrapiResultDTO(
             BigDecimal regularMarketDayHigh,
             BigDecimal regularMarketDayLow
     ) {
-        this(symbol, regularMarketPrice, regularMarketChangePercent, regularMarketVolume, regularMarketDayHigh, regularMarketDayLow, null);
+        this(symbol, regularMarketPrice, null, regularMarketChangePercent, regularMarketVolume, regularMarketDayHigh, regularMarketDayLow, null);
+    }
+
+    public BrapiResultDTO(
+            String symbol,
+            BigDecimal regularMarketPrice,
+            BigDecimal regularMarketChange,
+            BigDecimal regularMarketChangePercent,
+            Long regularMarketVolume,
+            BigDecimal regularMarketDayHigh,
+            BigDecimal regularMarketDayLow
+    ) {
+        this(symbol, regularMarketPrice, regularMarketChange, regularMarketChangePercent, regularMarketVolume, regularMarketDayHigh, regularMarketDayLow, null);
     }
 }

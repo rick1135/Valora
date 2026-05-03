@@ -70,18 +70,29 @@ class PortfolioControllerTest {
                 new BigDecimal("350.00"),
                 new BigDecimal("300.00"),
                 new BigDecimal("50.00"),
-                new BigDecimal("100.00"),
-                new BigDecimal("33.3333"),
+                new PortfolioSummaryDTO.ProfitabilityDTO(
+                        new BigDecimal("100.00"),
+                        new BigDecimal("33.3333"),
+                        new BigDecimal("5.00"),
+                        new BigDecimal("1.4493"),
+                        true
+                ),
                 List.of(
                         new AssetAllocationDTO("ACOES", new BigDecimal("250.00"), new BigDecimal("71.4286")),
                         new AssetAllocationDTO("ETF", new BigDecimal("100.00"), new BigDecimal("28.5714"))
-                )
+                ),
+                true,
+                List.of("ETF11")
         );
         when(portfolioService.getPortfolioSummary(any(), eq(portfolioId))).thenReturn(summary);
 
         mockMvc.perform(get("/portfolios/{portfolioId}/summary", portfolioId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalPatrimony").value(350.0))
+                .andExpect(jsonPath("$.profitability.absoluteProfit").value(100.0))
+                .andExpect(jsonPath("$.profitability.dayAbsoluteVariation").value(5.0))
+                .andExpect(jsonPath("$.fallbackQuoteUsed").value(true))
+                .andExpect(jsonPath("$.fallbackTickers[0]").value("ETF11"))
                 .andExpect(jsonPath("$.allocations[0].category").value("ACOES"))
                 .andExpect(jsonPath("$.allocations[0].percentage").value(71.4286));
     }

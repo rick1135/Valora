@@ -7,8 +7,17 @@ public record PortfolioSummaryDTO(
         BigDecimal totalPatrimony,
         BigDecimal totalInvested,
         BigDecimal totalProvents,
-        BigDecimal absoluteProfitLoss,
-        BigDecimal percentageProfitLoss,
-        List<AssetAllocationDTO> allocations
+        ProfitabilityDTO profitability,
+        List<AssetAllocationDTO> allocations,
+        boolean fallbackQuoteUsed,
+        List<String> fallbackTickers
 ) {
+    public record ProfitabilityDTO(
+            BigDecimal absoluteProfit,
+            BigDecimal totalPercentage,
+            BigDecimal dayAbsoluteVariation,
+            BigDecimal dayPercentageVariation,
+            boolean dayChangeAvailable
+    ) {
+    }
 }

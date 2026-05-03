@@ -2,6 +2,7 @@ package com.rick1135.Valora.service;
 
 import com.rick1135.Valora.dto.response.AssetAllocationDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
+import com.rick1135.Valora.dto.response.QuoteDTO;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.entity.Portfolio;
@@ -56,6 +57,9 @@ class PortfolioServiceTest {
     @Spy
     private PortfolioMapper portfolioMapper = Mappers.getMapper(PortfolioMapper.class);
 
+    @Spy
+    private PortfolioPerformanceCalculator performanceCalculator = new PortfolioPerformanceCalculator();
+
     @InjectMocks
     private PortfolioService portfolioService;
 
@@ -66,12 +70,20 @@ class PortfolioServiceTest {
 
         Position stockPosition = buildPosition("VALE3", AssetCategory.ACOES, "5.00000000", "40.00");
         Position etfPosition = buildPosition("BOVA11", AssetCategory.ETF, "2.00000000", "50.00");
-        Position zeroPosition = buildPosition("PETR4", AssetCategory.ACOES, "0.00000000", "30.00");
 
         when(portfolioRepository.findByIdAndUser(portfolio.getId(), user)).thenReturn(Optional.of(portfolio));
-        when(positionRepository.findByPortfolio(portfolio)).thenReturn(List.of(stockPosition, etfPosition, zeroPosition));
-        when(quoteService.getCurrentPrices(List.of("VALE3", "BOVA11")))
-                .thenReturn(Map.of("VALE3", new BigDecimal("50.00")));
+        when(positionRepository.findByPortfolioAndQuantityGreaterThan(portfolio, BigDecimal.ZERO))
+                .thenReturn(List.of(stockPosition, etfPosition));
+        when(quoteService.getCurrentQuotes(List.of("VALE3", "BOVA11")))
+                .thenReturn(Map.of("VALE3", new QuoteDTO(
+                        "VALE3",
+                        new BigDecimal("50.00"),
+                        new BigDecimal("1.00"),
+                        new BigDecimal("2.0408"),
+                        null,
+                        null,
+                        null
+                )));
         when(proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID))
                 .thenReturn(new BigDecimal("50.00"));
 
@@ -80,8 +92,13 @@ class PortfolioServiceTest {
         assertThat(summary.totalInvested()).isEqualByComparingTo("300.0000000000");
         assertThat(summary.totalPatrimony()).isEqualByComparingTo("350.0000000000");
         assertThat(summary.totalProvents()).isEqualByComparingTo("50.00");
-        assertThat(summary.absoluteProfitLoss()).isEqualByComparingTo("100.0000000000");
-        assertThat(summary.percentageProfitLoss()).isEqualByComparingTo("33.3333");
+        assertThat(summary.profitability().absoluteProfit()).isEqualByComparingTo("100.0000000000");
+        assertThat(summary.profitability().totalPercentage()).isEqualByComparingTo("33.3333");
+        assertThat(summary.profitability().dayAbsoluteVariation()).isEqualByComparingTo("5.00000000");
+        assertThat(summary.profitability().dayPercentageVariation()).isEqualByComparingTo("1.4493");
+        assertThat(summary.profitability().dayChangeAvailable()).isTrue();
+        assertThat(summary.fallbackQuoteUsed()).isTrue();
+        assertThat(summary.fallbackTickers()).containsExactly("BOVA11");
         assertThat(summary.allocations()).extracting(AssetAllocationDTO::category)
                 .containsExactly("ACOES", "ETF");
         assertThat(summary.allocations().getFirst().totalValue()).isEqualByComparingTo("250.0000000000");
@@ -90,6 +107,7 @@ class PortfolioServiceTest {
                 .map(AssetAllocationDTO::percentage)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         assertThat(allocationSum).isEqualByComparingTo("100.0000");
+        verify(quoteService).getCurrentQuotes(List.of("VALE3", "BOVA11"));
     }
 
     @Test
@@ -97,8 +115,7 @@ class PortfolioServiceTest {
         User user = new User();
         Portfolio portfolio = portfolio(user);
         when(portfolioRepository.findByIdAndUser(portfolio.getId(), user)).thenReturn(Optional.of(portfolio));
-        when(positionRepository.findByPortfolio(portfolio)).thenReturn(List.of());
-        when(quoteService.getCurrentPrices(List.of())).thenReturn(Map.of());
+        when(positionRepository.findByPortfolioAndQuantityGreaterThan(portfolio, BigDecimal.ZERO)).thenReturn(List.of());
         when(proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID))
                 .thenReturn(null);
 
@@ -107,9 +124,38 @@ class PortfolioServiceTest {
         assertThat(summary.totalInvested()).isEqualByComparingTo("0");
         assertThat(summary.totalPatrimony()).isEqualByComparingTo("0");
         assertThat(summary.totalProvents()).isEqualByComparingTo("0");
-        assertThat(summary.absoluteProfitLoss()).isEqualByComparingTo("0");
-        assertThat(summary.percentageProfitLoss()).isEqualByComparingTo("0");
+        assertThat(summary.profitability().absoluteProfit()).isEqualByComparingTo("0");
+        assertThat(summary.profitability().totalPercentage()).isEqualByComparingTo("0");
+        assertThat(summary.profitability().dayAbsoluteVariation()).isEqualByComparingTo("0");
+        assertThat(summary.profitability().dayPercentageVariation()).isEqualByComparingTo("0");
+        assertThat(summary.profitability().dayChangeAvailable()).isFalse();
+        assertThat(summary.fallbackQuoteUsed()).isFalse();
+        assertThat(summary.fallbackTickers()).isEmpty();
         assertThat(summary.allocations()).isEmpty();
+        verify(quoteService, never()).getCurrentQuotes(any());
+    }
+
+    @Test
+    void getPortfolioSummaryShouldUseAveragePriceFallbackWhenQuoteIsNull() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+        Position position = buildPosition("ITSA4", AssetCategory.ACOES, "10.00000000", "12.00");
+
+        when(portfolioRepository.findByIdAndUser(portfolio.getId(), user)).thenReturn(Optional.of(portfolio));
+        when(positionRepository.findByPortfolioAndQuantityGreaterThan(portfolio, BigDecimal.ZERO))
+                .thenReturn(List.of(position));
+        when(quoteService.getCurrentQuotes(List.of("ITSA4"))).thenReturn(Map.of());
+        when(proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID))
+                .thenReturn(BigDecimal.ZERO);
+
+        PortfolioSummaryDTO summary = portfolioService.getPortfolioSummary(user, portfolio.getId());
+
+        assertThat(summary.totalInvested()).isEqualByComparingTo("120.0000000000");
+        assertThat(summary.totalPatrimony()).isEqualByComparingTo("120.0000000000");
+        assertThat(summary.profitability().absoluteProfit()).isEqualByComparingTo("0");
+        assertThat(summary.profitability().dayChangeAvailable()).isFalse();
+        assertThat(summary.fallbackQuoteUsed()).isTrue();
+        assertThat(summary.fallbackTickers()).containsExactly("ITSA4");
     }
 
     @Test
@@ -132,8 +178,9 @@ class PortfolioServiceTest {
 
         assertThatThrownBy(() -> portfolioService.getPortfolioSummary(user, portfolioId))
                 .isInstanceOf(PortfolioNotFoundException.class);
-        verify(positionRepository, never()).findByPortfolio(any());
+        verify(positionRepository, never()).findByPortfolioAndQuantityGreaterThan(any(), any());
         verify(proventProvisionRepository, never()).sumNetAmountByPortfolioAndStatus(any(), any());
+        verify(quoteService, never()).getCurrentQuotes(any());
     }
 
     @Test

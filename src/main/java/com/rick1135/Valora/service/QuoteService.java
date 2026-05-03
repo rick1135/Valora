@@ -155,6 +155,7 @@ public class QuoteService {
         return new QuoteDTO(
                 result.symbol(),
                 result.regularMarketPrice(),
+                result.regularMarketChange(),
                 result.regularMarketChangePercent(),
                 result.regularMarketVolume(),
                 result.regularMarketDayHigh(),
@@ -171,11 +172,11 @@ public class QuoteService {
             return quote.price() != null && quote.price().compareTo(BigDecimal.ZERO) > 0 ? quote : null;
         }
         if (cachedValue instanceof BigDecimal bigDecimal) {
-            return bigDecimal.compareTo(BigDecimal.ZERO) > 0 ? new QuoteDTO(ticker, bigDecimal, null, null, null, null) : null;
+            return bigDecimal.compareTo(BigDecimal.ZERO) > 0 ? new QuoteDTO(ticker, bigDecimal, null, null, null, null, null) : null;
         }
-        if (cachedValue instanceof Number number) {
-            BigDecimal price = BigDecimal.valueOf(number.doubleValue());
-            return price.compareTo(BigDecimal.ZERO) > 0 ? new QuoteDTO(ticker, price, null, null, null, null) : null;
+        if (cachedValue instanceof Number) {
+            log.warn("Tipo numerico impreciso encontrado no cache de cotacao para ticker={}. Ignorando valor.", ticker);
+            return null;
         }
         if (cachedValue instanceof Optional<?> optionalValue) {
             return optionalValue.stream()
@@ -187,7 +188,7 @@ public class QuoteService {
         if (cachedValue instanceof String stringValue && !stringValue.isBlank()) {
             try {
                 BigDecimal price = new BigDecimal(stringValue);
-                return price.compareTo(BigDecimal.ZERO) > 0 ? new QuoteDTO(ticker, price, null, null, null, null) : null;
+                return price.compareTo(BigDecimal.ZERO) > 0 ? new QuoteDTO(ticker, price, null, null, null, null, null) : null;
             } catch (NumberFormatException exception) {
                 log.warn("Valor de cotacao invalido encontrado no cache: {}", stringValue);
             }

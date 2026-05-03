@@ -74,6 +74,7 @@ class QuoteServiceTest {
                 .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO(
                         "PETR4",
                         new BigDecimal("36.15"),
+                        new BigDecimal("0.45"),
                         new BigDecimal("1.25"),
                         1234567L,
                         new BigDecimal("36.50"),
@@ -83,6 +84,7 @@ class QuoteServiceTest {
         QuoteDTO result = quoteService.getCurrentQuote("PETR4").orElseThrow();
 
         assertThat(result.price()).isEqualByComparingTo("36.15");
+        assertThat(result.change()).isEqualByComparingTo("0.45");
         assertThat(result.changePercent()).isEqualByComparingTo("1.25");
         assertThat(result.volume()).isEqualTo(1234567L);
         assertThat(result.high()).isEqualByComparingTo("36.50");
@@ -120,7 +122,7 @@ class QuoteServiceTest {
         ReflectionTestUtils.setField(quoteService, "brapiToken", "token-ok");
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.multiGet(List.of("quotes::PETR4", "quotes::VALE3")))
-                .thenReturn(java.util.Arrays.asList(new QuoteDTO("PETR4", new BigDecimal("31.10"), null, null, null, null), null));
+                .thenReturn(java.util.Arrays.asList(new QuoteDTO("PETR4", new BigDecimal("31.10"), null, null, null, null, null), null));
         when(brapiClient.getQuote("VALE3", "token-ok"))
                 .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO("VALE3", new BigDecimal("66.40")))));
 

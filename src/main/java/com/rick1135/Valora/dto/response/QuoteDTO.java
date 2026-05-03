@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 public record QuoteDTO(
         String symbol,
         BigDecimal price,
+        BigDecimal change,
         BigDecimal changePercent,
         Long volume,
         BigDecimal high,
