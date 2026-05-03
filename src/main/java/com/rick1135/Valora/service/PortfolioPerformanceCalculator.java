@@ -1,5 +1,6 @@
 package com.rick1135.Valora.service;
 
+import com.rick1135.Valora.common.FinancialConstants;
 import com.rick1135.Valora.dto.response.AssetAllocationDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.dto.response.QuoteDTO;
@@ -7,7 +8,6 @@ import com.rick1135.Valora.entity.Position;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -16,7 +16,6 @@ import java.util.stream.Collectors;
 @Component
 public class PortfolioPerformanceCalculator {
     private static final BigDecimal ZERO = BigDecimal.ZERO;
-    private static final int PERCENTAGE_SCALE = 4;
 
     public PortfolioSummaryDTO calculate(
             List<Position> positions,
@@ -42,7 +41,7 @@ public class PortfolioPerformanceCalculator {
         BigDecimal totalPercentage = totalInvested.compareTo(ZERO) > 0
                 ? absoluteProfit
                 .multiply(new BigDecimal("100"))
-                .divide(totalInvested, PERCENTAGE_SCALE, RoundingMode.HALF_UP)
+                .divide(totalInvested, FinancialConstants.PERCENTAGE_SCALE, FinancialConstants.DEFAULT_ROUNDING)
                 : ZERO;
 
         BigDecimal dayAbsoluteVariation = positionLines.stream()
@@ -52,7 +51,7 @@ public class PortfolioPerformanceCalculator {
         BigDecimal dayPercentageVariation = previousPatrimony.compareTo(ZERO) > 0
                 ? dayAbsoluteVariation
                 .multiply(new BigDecimal("100"))
-                .divide(previousPatrimony, PERCENTAGE_SCALE, RoundingMode.HALF_UP)
+                .divide(previousPatrimony, FinancialConstants.PERCENTAGE_SCALE, FinancialConstants.DEFAULT_ROUNDING)
                 : ZERO;
         boolean dayChangeAvailable = positionLines.stream().anyMatch(PositionSummaryLine::dayChangeAvailable);
 
@@ -95,7 +94,7 @@ public class PortfolioPerformanceCalculator {
                         totalPatrimony.compareTo(ZERO) > 0
                                 ? entry.getValue()
                                 .multiply(new BigDecimal("100"))
-                                .divide(totalPatrimony, PERCENTAGE_SCALE, RoundingMode.HALF_UP)
+                                .divide(totalPatrimony, FinancialConstants.PERCENTAGE_SCALE, FinancialConstants.DEFAULT_ROUNDING)
                                 : ZERO
                 ))
                 .sorted(Comparator.comparing(AssetAllocationDTO::totalValue).reversed())
@@ -141,12 +140,12 @@ public class PortfolioPerformanceCalculator {
             return new DayVariation(ZERO, false);
         }
 
-        BigDecimal changeRate = quote.changePercent().divide(new BigDecimal("100"), 10, RoundingMode.HALF_UP);
+        BigDecimal changeRate = quote.changePercent().divide(new BigDecimal("100"), FinancialConstants.ASSET_QUANTITY_SCALE, FinancialConstants.DEFAULT_ROUNDING);
         BigDecimal denominator = BigDecimal.ONE.add(changeRate);
         if (denominator.compareTo(ZERO) == 0) {
             return new DayVariation(ZERO, false);
         }
-        BigDecimal previousPrice = currentPrice.divide(denominator, 10, RoundingMode.HALF_UP);
+        BigDecimal previousPrice = currentPrice.divide(denominator, FinancialConstants.ASSET_QUANTITY_SCALE, FinancialConstants.DEFAULT_ROUNDING);
         return new DayVariation(quantity.multiply(currentPrice.subtract(previousPrice)), true);
     }
 

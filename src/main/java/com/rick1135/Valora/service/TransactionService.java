@@ -100,7 +100,7 @@ public class TransactionService {
         BigDecimal newQuantity = currentQuantity.add(buyQuantity);
 
         BigDecimal newAvgPrice = currentTotalValue.add(buyTotalValue)
-                .divide(newQuantity, 8, RoundingMode.HALF_UP);
+                .divide(newQuantity, com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
 
         position.setQuantity(newQuantity);
         position.setAveragePrice(newAvgPrice);

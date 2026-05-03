@@ -50,7 +50,7 @@ public class PositionService {
                     BigDecimal profitability = null;
                     if (currentTotalValue != null && totalCost.compareTo(BigDecimal.ZERO) > 0) {
                         profitability = currentTotalValue.subtract(totalCost)
-                                .divide(totalCost, 4, RoundingMode.HALF_UP)
+                                .divide(totalCost, com.rick1135.Valora.common.FinancialConstants.PERCENTAGE_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING)
                                 .multiply(new BigDecimal("100"));
                     }
 

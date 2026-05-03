@@ -105,16 +105,16 @@ public class ProventService {
             }
 
             BigDecimal quantity = holding.getQuantity();
-            BigDecimal grossAmount = quantity.multiply(savedProvent.getAmountPerShare()).setScale(8, RoundingMode.HALF_UP);
+            BigDecimal grossAmount = quantity.multiply(savedProvent.getAmountPerShare()).setScale(com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
 
-            BigDecimal withholdingTaxAmount = BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
-            BigDecimal netAmount = grossAmount.subtract(withholdingTaxAmount).setScale(8, RoundingMode.HALF_UP);
+            BigDecimal withholdingTaxAmount = BigDecimal.ZERO.setScale(com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
+            BigDecimal netAmount = grossAmount.subtract(withholdingTaxAmount).setScale(com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
 
             ProventProvision provision = new ProventProvision();
             provision.setProvent(savedProvent);
             provision.setPortfolio(portfolio);
             provision.setAsset(asset);
-            provision.setQuantityOnComDate(quantity.setScale(8, RoundingMode.HALF_UP));
+            provision.setQuantityOnComDate(quantity.setScale(com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING));
             provision.setGrossAmount(grossAmount);
             provision.setWithholdingTaxAmount(withholdingTaxAmount);
             provision.setNetAmount(netAmount);
