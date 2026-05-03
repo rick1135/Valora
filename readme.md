@@ -1,7 +1,7 @@
 # Valora - Investment Portfolio API
 
 ![Java](https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=java)
-![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.x-brightgreen?style=for-the-badge&logo=spring)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.x-brightgreen?style=for-the-badge&logo=spring)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?style=for-the-badge&logo=postgresql)
 ![Redis](https://img.shields.io/badge/Redis-7-red?style=for-the-badge&logo=redis)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=for-the-badge&logo=docker)
@@ -52,12 +52,12 @@ O projeto está sendo desenvolvido em fases:
 ## Tecnologias e Stack
 
 * **Linguagem:** Java 21
-* **Framework:** Spring Boot 3.x (Web, Data JPA, Security, Validation)
+* **Framework:** Spring Boot 4.x (Web MVC, Data JPA, Security, Validation)
 * **Banco de Dados:** PostgreSQL 16
 * **Cache:** Redis 7
 * **Migrações:** Flyway
 * **Segurança:** Auth0 Java-JWT
-* **Testes:** JUnit 5, Mockito, MockMvc (Testes Unitários e de Integração usando H2 Database)
+* **Testes:** JUnit 5, Mockito, MockMvc e Testcontainers com PostgreSQL
 * **Infraestrutura:** Docker & Docker Compose
 * **Utilitários:** Lombok
 

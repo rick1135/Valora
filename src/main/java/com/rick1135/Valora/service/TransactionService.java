@@ -21,7 +21,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Locale;
 
@@ -91,6 +90,7 @@ public class TransactionService {
     private void handleBuy(Position position, TransactionDTO dto) {
         BigDecimal currentQuantity = position.getQuantity();
         BigDecimal currentAvgPrice = position.getAveragePrice();
+        boolean openingPosition = currentQuantity.compareTo(BigDecimal.ZERO) == 0;
 
         BigDecimal buyQuantity = dto.quantity();
         BigDecimal buyAvgPrice = dto.unitPrice();
@@ -105,7 +105,7 @@ public class TransactionService {
         position.setQuantity(newQuantity);
         position.setAveragePrice(newAvgPrice);
 
-        if (position.getPurchaseDate() == null) {
+        if (openingPosition || position.getPurchaseDate() == null) {
             position.setPurchaseDate(dto.transactionDate().atZone(java.time.ZoneId.of("America/Sao_Paulo")).toLocalDate());
         }
     }
@@ -120,6 +120,7 @@ public class TransactionService {
 
         if (newQuantity.compareTo(BigDecimal.ZERO) == 0) {
             position.setAveragePrice(BigDecimal.ZERO);
+            position.setPurchaseDate(null);
         }
     }
 

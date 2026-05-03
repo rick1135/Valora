@@ -18,6 +18,7 @@ import com.rick1135.Valora.repository.TransactionRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -26,6 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
@@ -204,6 +207,101 @@ class TransactionServiceTest {
         assertThatThrownBy(() -> transactionService.processTransaction(user, dto))
                 .isInstanceOf(InsufficientPositionException.class)
                 .hasMessageContaining("Quantidade insuficiente");
+    }
+
+    @Test
+    void processTransactionShouldClearPurchaseDateWhenSellClosesPosition() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("CDB001");
+
+        Position position = new Position();
+        position.setPortfolio(portfolio);
+        position.setAsset(asset);
+        position.setQuantity(new BigDecimal("5.00000000"));
+        position.setAveragePrice(new BigDecimal("100.00000000"));
+        position.setPurchaseDate(LocalDate.of(2025, 1, 10));
+
+        TransactionDTO dto = new TransactionDTO(
+                portfolio.getId(),
+                asset.getId(),
+                TransactionType.SELL,
+                new BigDecimal("5.00000000"),
+                new BigDecimal("110.00000000"),
+                Instant.parse("2026-03-10T12:00:00Z")
+        );
+
+        Transaction mappedTransaction = new Transaction();
+        mappedTransaction.setType(TransactionType.SELL);
+        mappedTransaction.setQuantity(dto.quantity());
+        mappedTransaction.setUnitPrice(dto.unitPrice());
+        mappedTransaction.setTransactionDate(dto.transactionDate());
+
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(transactionMapper.toEntity(dto)).thenReturn(mappedTransaction);
+        when(transactionRepository.save(any(Transaction.class))).thenReturn(mappedTransaction);
+        when(positionRepository.findByPortfolioAndAsset(portfolio, asset)).thenReturn(Optional.of(position));
+        when(positionRepository.save(any(Position.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(transactionMapper.toResponse(any(Transaction.class), any(Asset.class), any(Position.class)))
+                .thenReturn(null);
+
+        transactionService.processTransaction(user, dto);
+
+        ArgumentCaptor<Position> captor = ArgumentCaptor.forClass(Position.class);
+        verify(positionRepository).save(captor.capture());
+        assertThat(captor.getValue().getQuantity()).isEqualByComparingTo("0.00000000");
+        assertThat(captor.getValue().getAveragePrice()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(captor.getValue().getPurchaseDate()).isNull();
+    }
+
+    @Test
+    void processTransactionShouldReplaceStalePurchaseDateWhenBuyingClosedPosition() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("CDB002");
+
+        Position position = new Position();
+        position.setPortfolio(portfolio);
+        position.setAsset(asset);
+        position.setQuantity(BigDecimal.ZERO.setScale(8));
+        position.setAveragePrice(BigDecimal.ZERO.setScale(8));
+        position.setPurchaseDate(LocalDate.of(2024, 5, 1));
+
+        TransactionDTO dto = new TransactionDTO(
+                portfolio.getId(),
+                asset.getId(),
+                TransactionType.BUY,
+                new BigDecimal("2.00000000"),
+                new BigDecimal("100.00000000"),
+                Instant.parse("2026-03-10T12:00:00Z")
+        );
+
+        Transaction mappedTransaction = new Transaction();
+        mappedTransaction.setType(TransactionType.BUY);
+        mappedTransaction.setQuantity(dto.quantity());
+        mappedTransaction.setUnitPrice(dto.unitPrice());
+        mappedTransaction.setTransactionDate(dto.transactionDate());
+
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(transactionMapper.toEntity(dto)).thenReturn(mappedTransaction);
+        when(transactionRepository.save(any(Transaction.class))).thenReturn(mappedTransaction);
+        when(positionRepository.findByPortfolioAndAsset(portfolio, asset)).thenReturn(Optional.of(position));
+        when(positionRepository.save(any(Position.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(transactionMapper.toResponse(any(Transaction.class), any(Asset.class), any(Position.class)))
+                .thenReturn(null);
+
+        transactionService.processTransaction(user, dto);
+
+        ArgumentCaptor<Position> captor = ArgumentCaptor.forClass(Position.class);
+        verify(positionRepository).save(captor.capture());
+        assertThat(captor.getValue().getQuantity()).isEqualByComparingTo("2.00000000");
+        assertThat(captor.getValue().getPurchaseDate()).isEqualTo(LocalDate.of(2026, 3, 10));
     }
 
     @Test

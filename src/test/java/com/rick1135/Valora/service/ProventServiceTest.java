@@ -24,6 +24,8 @@ import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -84,7 +86,7 @@ class ProventServiceTest {
             provent.setId(UUID.randomUUID());
             return provent;
         });
-        when(transactionRepository.findPortfolioHoldingsByAssetAtDate(asset.getId(), comDate, TransactionType.BUY))
+        when(transactionRepository.findPortfolioHoldingsByAssetAtDate(eq(asset.getId()), any(Instant.class), eq(TransactionType.BUY)))
                 .thenReturn(List.of(holding(portfolio.getId(), new BigDecimal("10.00000000"))));
         when(portfolioRepository.findAllById(any())).thenReturn(List.of(portfolio));
 
@@ -136,7 +138,7 @@ class ProventServiceTest {
             provent.setId(UUID.randomUUID());
             return provent;
         });
-        when(transactionRepository.findPortfolioHoldingsByAssetAtDate(asset.getId(), comDate, TransactionType.BUY))
+        when(transactionRepository.findPortfolioHoldingsByAssetAtDate(eq(asset.getId()), any(Instant.class), eq(TransactionType.BUY)))
                 .thenReturn(List.of(holding(portfolio.getId(), new BigDecimal("10.00000000"))));
         when(portfolioRepository.findAllById(any())).thenReturn(List.of(portfolio));
 
@@ -168,6 +170,50 @@ class ProventServiceTest {
         assertThatThrownBy(() -> proventService.createProvent(request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("data de pagamento");
+    }
+
+    @Test
+    void createProventShouldUseEndOfComDateMarketDayWhenInputIsMidnightUtc() {
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("TAEE11");
+        asset.setCategory(AssetCategory.ACOES);
+
+        Instant comDate = Instant.parse("2026-03-20T00:00:00Z");
+        ProventRequestDTO request = new ProventRequestDTO(
+                asset.getId(),
+                ProventType.DIVIDEND,
+                new BigDecimal("0.50000000"),
+                comDate,
+                Instant.parse("2026-03-30T00:00:00Z")
+        );
+
+        when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(proventRepository.existsByOriginSourceAndOriginEventKey(eq(ProventSource.MANUAL), anyString()))
+                .thenReturn(false);
+        when(proventRepository.save(any(Provent.class))).thenAnswer(invocation -> {
+            Provent provent = invocation.getArgument(0);
+            provent.setId(UUID.randomUUID());
+            return provent;
+        });
+        when(transactionRepository.findPortfolioHoldingsByAssetAtDate(eq(asset.getId()), any(Instant.class), eq(TransactionType.BUY)))
+                .thenReturn(List.of());
+        when(portfolioRepository.findAllById(any())).thenReturn(List.of());
+
+        proventService.createProvent(request);
+
+        ArgumentCaptor<Instant> dateCaptor = ArgumentCaptor.forClass(Instant.class);
+        verify(transactionRepository).findPortfolioHoldingsByAssetAtDate(
+                eq(asset.getId()),
+                dateCaptor.capture(),
+                eq(TransactionType.BUY)
+        );
+        Instant expectedEndOfMarketDay = LocalDate.of(2026, 3, 20)
+                .plusDays(1)
+                .atStartOfDay(ZoneId.of("America/Sao_Paulo"))
+                .toInstant()
+                .minusNanos(1);
+        assertThat(dateCaptor.getValue()).isEqualTo(expectedEndOfMarketDay);
     }
 
     @Test
