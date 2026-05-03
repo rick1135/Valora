@@ -18,6 +18,10 @@ public record AssetRequestDTO(
         @Size(max = 255, message = "Nome deve ter no maximo 255 caracteres.")
         String name,
         @NotNull(message = "Categoria e obrigatoria.")
-        AssetCategory category
+        AssetCategory category,
+        com.rick1135.Valora.entity.FixedIncomeIndexer indexer,
+        java.math.BigDecimal annualRate,
+        String issuer,
+        java.time.LocalDate expirationDate
 ) {
 }

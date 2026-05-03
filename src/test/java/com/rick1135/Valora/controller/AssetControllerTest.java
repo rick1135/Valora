@@ -49,7 +49,7 @@ class AssetControllerTest {
     @Test
     void createAssetReturnsCreatedWhenPayloadIsValid() throws Exception {
         UUID id = UUID.randomUUID();
-        AssetResponseDTO response = new AssetResponseDTO(id, "PETR4", "Petrobras", AssetCategory.ACOES);
+        AssetResponseDTO response = new AssetResponseDTO(id, "PETR4", "Petrobras", AssetCategory.ACOES, null, null, null, null);
         when(assetService.createAsset(any())).thenReturn(response);
 
         mockMvc.perform(post("/assets")
@@ -101,7 +101,7 @@ class AssetControllerTest {
 
     @Test
     void searchAssetsReturnsMatchingAssets() throws Exception {
-        AssetResponseDTO response = new AssetResponseDTO(UUID.randomUUID(), "PETR4", "Petrobras", AssetCategory.ACOES);
+        AssetResponseDTO response = new AssetResponseDTO(UUID.randomUUID(), "PETR4", "Petrobras", AssetCategory.ACOES, null, null, null, null);
         when(assetService.searchAssets("petr")).thenReturn(List.of(response));
 
         mockMvc.perform(get("/assets/search")
@@ -112,7 +112,7 @@ class AssetControllerTest {
 
     @Test
     void getAllAssetsReturnsPagedResult() throws Exception {
-        AssetResponseDTO response = new AssetResponseDTO(UUID.randomUUID(), "ITSA4", "Itausa", AssetCategory.ACOES);
+        AssetResponseDTO response = new AssetResponseDTO(UUID.randomUUID(), "ITSA4", "Itausa", AssetCategory.ACOES, null, null, null, null);
         when(assetService.getAllAssets(eq(0), eq(20), eq("ticker"), eq("asc")))
                 .thenReturn(List.of(response));
 

@@ -1,0 +1,4 @@
+ALTER TABLE assets ADD COLUMN indexer VARCHAR(20);
+ALTER TABLE assets ADD COLUMN annual_rate NUMERIC(19, 4);
+ALTER TABLE assets ADD COLUMN issuer VARCHAR(255);
+ALTER TABLE assets ADD COLUMN expiration_date DATE;

@@ -26,6 +26,18 @@ public class AssetService {
     }
 
     public AssetResponseDTO createAsset(AssetRequestDTO request) {
+        if (request.category() == com.rick1135.Valora.entity.AssetCategory.RENDA_FIXA) {
+            if (request.indexer() == null || request.annualRate() == null || request.issuer() == null || request.expirationDate() == null) {
+                throw new IllegalArgumentException("Indexador, taxa anual, emissor e data de vencimento sao obrigatorios para ativos de renda fixa.");
+            }
+            if (request.expirationDate().isBefore(java.time.LocalDate.now())) {
+                throw new IllegalArgumentException("A data de vencimento nao pode estar no passado.");
+            }
+            if (request.annualRate().compareTo(java.math.BigDecimal.ZERO) < 0) {
+                throw new IllegalArgumentException("A taxa anual nao pode ser negativa.");
+            }
+        }
+
         String normalizedTicker = normalizeTicker(request.ticker());
 
         if (assetRepository.findByTickerIgnoreCase(normalizedTicker).isPresent()) {
@@ -40,7 +52,13 @@ public class AssetService {
             Asset savedAsset = assetRepository.saveAndFlush(asset);
             return assetMapper.toResponse(savedAsset);
         } catch (DataIntegrityViolationException exception) {
-            throw new AssetAlreadyExistsException("Ativo com ticker '" + normalizedTicker + "' ja cadastrado.");
+            String message = exception.getMostSpecificCause() != null && exception.getMostSpecificCause().getMessage() != null 
+                    ? exception.getMostSpecificCause().getMessage().toLowerCase() 
+                    : "";
+            if (message.contains("uk_assets_ticker") || message.contains("duplicate key value") || message.contains("unique constraint") || message.contains("duplicate")) {
+                throw new AssetAlreadyExistsException("Ativo com ticker '" + normalizedTicker + "' ja cadastrado.");
+            }
+            throw new IllegalArgumentException("Erro de integridade de dados ao salvar o ativo: " + (exception.getMostSpecificCause() != null ? exception.getMostSpecificCause().getMessage() : ""));
         }
     }
 

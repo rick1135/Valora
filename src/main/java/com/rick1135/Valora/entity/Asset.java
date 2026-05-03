@@ -31,6 +31,19 @@ public class Asset {
     @Column(nullable = false,   length = 50)
     private AssetCategory category;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private FixedIncomeIndexer indexer;
+
+    @Column(name = "annual_rate", precision = 19, scale = com.rick1135.Valora.common.FinancialConstants.PERCENTAGE_SCALE)
+    private java.math.BigDecimal annualRate;
+
+    @Column(length = 255)
+    private String issuer;
+
+    @Column(name = "expiration_date")
+    private java.time.LocalDate expirationDate;
+
     @PrePersist
     @PreUpdate
     private void normalizeFields() {
