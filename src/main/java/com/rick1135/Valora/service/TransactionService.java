@@ -104,6 +104,10 @@ public class TransactionService {
 
         position.setQuantity(newQuantity);
         position.setAveragePrice(newAvgPrice);
+
+        if (position.getPurchaseDate() == null) {
+            position.setPurchaseDate(dto.transactionDate().atZone(java.time.ZoneId.of("America/Sao_Paulo")).toLocalDate());
+        }
     }
 
     private void handleSell(Position position, TransactionDTO dto) {

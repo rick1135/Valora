@@ -41,6 +41,8 @@ public class Position {
 
     private BigDecimal averagePrice;
 
+    private java.time.LocalDate purchaseDate;
+
     @Version
     private Long version;
 }

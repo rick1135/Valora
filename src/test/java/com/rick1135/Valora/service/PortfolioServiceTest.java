@@ -58,7 +58,7 @@ class PortfolioServiceTest {
     private PortfolioMapper portfolioMapper = Mappers.getMapper(PortfolioMapper.class);
 
     @Spy
-    private PortfolioPerformanceCalculator performanceCalculator = new PortfolioPerformanceCalculator();
+    private PortfolioPerformanceCalculator performanceCalculator = new PortfolioPerformanceCalculator(new FixedIncomeYieldCalculator());
 
     @InjectMocks
     private PortfolioService portfolioService;

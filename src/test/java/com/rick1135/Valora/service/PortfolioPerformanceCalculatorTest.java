@@ -8,13 +8,15 @@ import com.rick1135.Valora.entity.Position;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class PortfolioPerformanceCalculatorTest {
-    private final PortfolioPerformanceCalculator calculator = new PortfolioPerformanceCalculator();
+    private final FixedIncomeYieldCalculator fixedIncomeYieldCalculator = new FixedIncomeYieldCalculator();
+    private final PortfolioPerformanceCalculator calculator = new PortfolioPerformanceCalculator(fixedIncomeYieldCalculator);
 
     @Test
     void calculateShouldUseAveragePriceFallbackForNullZeroAndNegativeQuotePrices() {
@@ -128,6 +130,29 @@ class PortfolioPerformanceCalculatorTest {
         assertThat(summary.profitability().dayAbsoluteVariation()).isEqualByComparingTo("20.0000000000");
         assertThat(summary.profitability().dayPercentageVariation()).isEqualByComparingTo("3.7037");
         assertThat(summary.profitability().dayChangeAvailable()).isTrue();
+    }
+
+    @Test
+    void calculateShouldHandleFixedIncomeYield() {
+        Asset asset = new Asset();
+        asset.setTicker("CDB_TEST");
+        asset.setCategory(AssetCategory.RENDA_FIXA);
+        asset.setAnnualRate(new BigDecimal("10.00"));
+
+        Position position = new Position();
+        position.setAsset(asset);
+        position.setQuantity(new BigDecimal("1"));
+        position.setAveragePrice(new BigDecimal("1000.00"));
+        position.setPurchaseDate(LocalDate.now().minusYears(1));
+
+        PortfolioSummaryDTO summary = calculator.calculate(
+                List.of(position),
+                Map.of(), // No quotes needed for Renda Fixa
+                BigDecimal.ZERO
+        );
+
+        assertThat(summary.totalPatrimony()).isEqualByComparingTo("1100.0000000000");
+        assertThat(summary.totalInvested()).isEqualByComparingTo("1000.0000000000");
     }
 
     private Position position(String ticker, AssetCategory category, String quantity, String averagePrice) {

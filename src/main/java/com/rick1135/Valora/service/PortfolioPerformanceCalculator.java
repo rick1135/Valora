@@ -16,6 +16,11 @@ import java.util.stream.Collectors;
 @Component
 public class PortfolioPerformanceCalculator {
     private static final BigDecimal ZERO = BigDecimal.ZERO;
+    private final FixedIncomeYieldCalculator fixedIncomeYieldCalculator;
+
+    public PortfolioPerformanceCalculator(FixedIncomeYieldCalculator fixedIncomeYieldCalculator) {
+        this.fixedIncomeYieldCalculator = fixedIncomeYieldCalculator;
+    }
 
     public PortfolioSummaryDTO calculate(
             List<Position> positions,
@@ -105,13 +110,31 @@ public class PortfolioPerformanceCalculator {
         String ticker = position.getAsset().getTicker();
         BigDecimal quantity = defaultBigDecimal(position.getQuantity());
         BigDecimal fallbackPrice = defaultBigDecimal(position.getAveragePrice());
-        QuoteDTO quote = currentQuotes.get(ticker);
-        BigDecimal quotePrice = quote == null ? ZERO : defaultBigDecimal(quote.price());
-        boolean hasValidQuote = quotePrice.compareTo(ZERO) > 0;
-        BigDecimal effectivePrice = hasValidQuote ? quotePrice : fallbackPrice;
-        BigDecimal patrimony = safeMultiply(quantity, effectivePrice);
 
-        DayVariation dayVariation = calculateDayVariation(quantity, effectivePrice, quote, hasValidQuote);
+        BigDecimal effectivePrice;
+        QuoteDTO quote = null;
+        boolean hasValidQuote;
+
+        if (position.getAsset().getCategory() == com.rick1135.Valora.entity.AssetCategory.RENDA_FIXA) {
+            BigDecimal currentValue = fixedIncomeYieldCalculator.calculateCurrentValue(
+                    position.getAveragePrice(),
+                    position.getQuantity(),
+                    position.getPurchaseDate(),
+                    position.getAsset().getAnnualRate()
+            );
+            effectivePrice = (quantity.compareTo(ZERO) > 0)
+                    ? currentValue.divide(quantity, FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING)
+                    : fallbackPrice;
+            hasValidQuote = true;
+        } else {
+            quote = currentQuotes.get(ticker);
+            BigDecimal quotePrice = quote == null ? ZERO : defaultBigDecimal(quote.price());
+            hasValidQuote = quotePrice.compareTo(ZERO) > 0;
+            effectivePrice = hasValidQuote ? quotePrice : fallbackPrice;
+        }
+
+        BigDecimal patrimony = safeMultiply(quantity, effectivePrice);
+        DayVariation dayVariation = calculateDayVariation(quantity, effectivePrice, quote, hasValidQuote && quote != null);
 
         return new PositionSummaryLine(
                 ticker,
