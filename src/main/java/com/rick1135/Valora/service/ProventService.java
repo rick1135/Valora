@@ -105,16 +105,16 @@ public class ProventService {
             }
 
             BigDecimal quantity = holding.getQuantity();
-            BigDecimal grossAmount = quantity.multiply(savedProvent.getAmountPerShare()).setScale(com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
+            BigDecimal grossAmount = quantity.multiply(savedProvent.getAmountPerShare()).setScale(com.rick1135.Valora.common.FinancialConstants.EXTENDED_PRECISION_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
 
-            BigDecimal withholdingTaxAmount = BigDecimal.ZERO.setScale(com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
-            BigDecimal netAmount = grossAmount.subtract(withholdingTaxAmount).setScale(com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
+            BigDecimal withholdingTaxAmount = BigDecimal.ZERO.setScale(com.rick1135.Valora.common.FinancialConstants.EXTENDED_PRECISION_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
+            BigDecimal netAmount = grossAmount.subtract(withholdingTaxAmount).setScale(com.rick1135.Valora.common.FinancialConstants.EXTENDED_PRECISION_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
 
             ProventProvision provision = new ProventProvision();
             provision.setProvent(savedProvent);
             provision.setPortfolio(portfolio);
             provision.setAsset(asset);
-            provision.setQuantityOnComDate(quantity.setScale(com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING));
+            provision.setQuantityOnComDate(quantity.setScale(com.rick1135.Valora.common.FinancialConstants.QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING));
             provision.setGrossAmount(grossAmount);
             provision.setWithholdingTaxAmount(withholdingTaxAmount);
             provision.setNetAmount(netAmount);

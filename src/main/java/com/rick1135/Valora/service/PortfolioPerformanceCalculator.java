@@ -140,12 +140,12 @@ public class PortfolioPerformanceCalculator {
             return new DayVariation(ZERO, false);
         }
 
-        BigDecimal changeRate = quote.changePercent().divide(new BigDecimal("100"), FinancialConstants.ASSET_QUANTITY_SCALE, FinancialConstants.DEFAULT_ROUNDING);
+        BigDecimal changeRate = quote.changePercent().divide(new BigDecimal("100"), FinancialConstants.INTERMEDIATE_CALCULATION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
         BigDecimal denominator = BigDecimal.ONE.add(changeRate);
         if (denominator.compareTo(ZERO) == 0) {
             return new DayVariation(ZERO, false);
         }
-        BigDecimal previousPrice = currentPrice.divide(denominator, FinancialConstants.ASSET_QUANTITY_SCALE, FinancialConstants.DEFAULT_ROUNDING);
+        BigDecimal previousPrice = currentPrice.divide(denominator, FinancialConstants.INTERMEDIATE_CALCULATION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
         return new DayVariation(quantity.multiply(currentPrice.subtract(previousPrice)), true);
     }
 

@@ -192,8 +192,8 @@ public class ProventSyncService {
 
     private BigDecimal normalizeAmountPerShare(ProventType type, BigDecimal originalRate) {
         if (type == ProventType.JCP && jcpRateIsGross) {
-            return originalRate.multiply(JCP_NET_FACTOR).setScale(com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
+            return originalRate.multiply(JCP_NET_FACTOR).setScale(com.rick1135.Valora.common.FinancialConstants.EXTENDED_PRECISION_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
         }
-        return originalRate.setScale(com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
+        return originalRate.setScale(com.rick1135.Valora.common.FinancialConstants.EXTENDED_PRECISION_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
     }
 }

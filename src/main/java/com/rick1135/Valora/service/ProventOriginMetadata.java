@@ -46,7 +46,7 @@ public record ProventOriginMetadata(
                 null,
                 null,
                 null,
-                dto.amountPerShare().setScale(8, java.math.RoundingMode.HALF_UP),
+                dto.amountPerShare().setScale(com.rick1135.Valora.common.FinancialConstants.EXTENDED_PRECISION_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING),
                 ProventRateBasis.NET
         );
     }
@@ -83,7 +83,7 @@ public record ProventOriginMetadata(
                 event.remarks(),
                 event.approvedOn(),
                 event.lastDatePrior(),
-                event.rate().setScale(com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING),
+                event.rate().setScale(com.rick1135.Valora.common.FinancialConstants.EXTENDED_PRECISION_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING),
                 sourceRateIsGross ? ProventRateBasis.GROSS : ProventRateBasis.NET
         );
     }
@@ -93,7 +93,7 @@ public record ProventOriginMetadata(
     }
 
     private static String scale(BigDecimal value) {
-        return value == null ? "" : value.setScale(com.rick1135.Valora.common.FinancialConstants.ASSET_QUANTITY_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING).toPlainString();
+        return value == null ? "" : value.setScale(com.rick1135.Valora.common.FinancialConstants.EXTENDED_PRECISION_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING).toPlainString();
     }
 
     private static String value(Object value) {
