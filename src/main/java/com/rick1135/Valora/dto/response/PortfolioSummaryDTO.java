@@ -9,9 +9,22 @@ public record PortfolioSummaryDTO(
         BigDecimal totalProvents,
         ProfitabilityDTO profitability,
         List<AssetAllocationDTO> allocations,
+        List<AssetPositionSummaryDTO> positions,
         boolean fallbackQuoteUsed,
         List<String> fallbackTickers
 ) {
+    public PortfolioSummaryDTO(
+            BigDecimal totalPatrimony,
+            BigDecimal totalInvested,
+            BigDecimal totalProvents,
+            ProfitabilityDTO profitability,
+            List<AssetAllocationDTO> allocations,
+            boolean fallbackQuoteUsed,
+            List<String> fallbackTickers
+    ) {
+        this(totalPatrimony, totalInvested, totalProvents, profitability, allocations, List.of(), fallbackQuoteUsed, fallbackTickers);
+    }
+
     public record ProfitabilityDTO(
             BigDecimal absoluteProfit,
             BigDecimal totalPercentage,

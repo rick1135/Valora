@@ -23,9 +23,20 @@ public class PortfolioTarget {
     private Portfolio portfolio;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "asset_category", nullable = false, length = 20)
+    @Column(name = "asset_category", length = 20)
     private AssetCategory assetCategory;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "asset_id")
+    private Asset asset;
 
     @Column(name = "target_percentage", nullable = false, precision = 5, scale = 2)
     private BigDecimal targetPercentage;
+
+    public PortfolioTarget(UUID id, Portfolio portfolio, AssetCategory assetCategory, BigDecimal targetPercentage) {
+        this.id = id;
+        this.portfolio = portfolio;
+        this.assetCategory = assetCategory;
+        this.targetPercentage = targetPercentage;
+    }
 }

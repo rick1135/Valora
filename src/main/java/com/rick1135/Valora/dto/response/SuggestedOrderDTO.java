@@ -1,22 +1,18 @@
 package com.rick1135.Valora.dto.response;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 public record SuggestedOrderDTO(
         String category,
+        UUID assetId,
+        String ticker,
         BigDecimal currentAmount,
         BigDecimal idealAmount,
         BigDecimal gapAmount,
         BigDecimal suggestedInvestment,
         BigDecimal currentPrice,
-        /**
-         * Theoretical whole-share quantity calculated from the category reference price.
-         * While targets are defined by AssetCategory, this quantity is based on the
-         * category weighted average price and does not represent an executable order for
-         * a specific ticker. Phase 9 should replace this approximation with ticker-level
-         * suggestions.
-         */
-        Long theoreticalCategoryQuantity,
+        Long suggestedQuantity,
         BigDecimal actualInvestmentAmount,
         BigDecimal residualCashAmount,
         boolean marketPriceReliable

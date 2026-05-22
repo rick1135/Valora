@@ -2,6 +2,7 @@ package com.rick1135.Valora.service;
 
 import com.rick1135.Valora.common.FinancialConstants;
 import com.rick1135.Valora.dto.response.AssetAllocationDTO;
+import com.rick1135.Valora.dto.response.AssetPositionSummaryDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.dto.response.QuoteDTO;
 import com.rick1135.Valora.entity.Position;
@@ -63,6 +64,7 @@ public class PortfolioPerformanceCalculator {
         boolean dayChangeAvailable = positionLines.stream().anyMatch(PositionSummaryLine::dayChangeAvailable);
 
         List<AssetAllocationDTO> allocations = buildAllocations(positionLines, totalPatrimony);
+        List<AssetPositionSummaryDTO> positionSummaries = buildPositionSummaries(positionLines);
         List<String> fallbackTickers = positionLines.stream()
                 .filter(PositionSummaryLine::fallbackQuoteUsed)
                 .map(PositionSummaryLine::ticker)
@@ -82,9 +84,24 @@ public class PortfolioPerformanceCalculator {
                         benchmarkComparisons
                 ),
                 allocations,
+                positionSummaries,
                 !fallbackTickers.isEmpty(),
                 fallbackTickers
         );
+    }
+
+    private List<AssetPositionSummaryDTO> buildPositionSummaries(List<PositionSummaryLine> positionLines) {
+        return positionLines.stream()
+                .map(line -> new AssetPositionSummaryDTO(
+                        line.assetId(),
+                        line.ticker(),
+                        line.category(),
+                        line.patrimony(),
+                        line.quantity(),
+                        line.currentPrice(),
+                        !line.fallbackQuoteUsed()
+                ))
+                .toList();
     }
 
     private List<AssetAllocationDTO> buildAllocations(List<PositionSummaryLine> positionLines, BigDecimal totalPatrimony) {
@@ -157,8 +174,10 @@ public class PortfolioPerformanceCalculator {
 
         return new PositionSummaryLine(
                 ticker,
+                position.getAsset().getId(),
                 position.getAsset().getCategory().name(),
                 quantity,
+                effectivePrice,
                 safeMultiply(quantity, fallbackPrice),
                 patrimony,
                 dayVariation.absoluteVariation(),
@@ -202,8 +221,10 @@ public class PortfolioPerformanceCalculator {
 
     private record PositionSummaryLine(
             String ticker,
+            java.util.UUID assetId,
             String category,
             BigDecimal quantity,
+            BigDecimal currentPrice,
             BigDecimal invested,
             BigDecimal patrimony,
             BigDecimal dayAbsoluteVariation,
