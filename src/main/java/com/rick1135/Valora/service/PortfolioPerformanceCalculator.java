@@ -8,6 +8,7 @@ import com.rick1135.Valora.entity.Position;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -87,25 +88,41 @@ public class PortfolioPerformanceCalculator {
     }
 
     private List<AssetAllocationDTO> buildAllocations(List<PositionSummaryLine> positionLines, BigDecimal totalPatrimony) {
-        Map<String, BigDecimal> allocationByCategory = positionLines.stream()
-                .collect(Collectors.toMap(
+        Map<String, CategoryAllocationAccumulator> allocationByCategory = positionLines.stream()
+                .collect(Collectors.groupingBy(
                         PositionSummaryLine::category,
-                        PositionSummaryLine::patrimony,
-                        BigDecimal::add
+                        Collectors.collectingAndThen(Collectors.toList(), this::accumulateCategoryAllocation)
                 ));
 
         return allocationByCategory.entrySet().stream()
                 .map(entry -> new AssetAllocationDTO(
                         entry.getKey(),
-                        entry.getValue(),
+                        entry.getValue().totalValue(),
                         totalPatrimony.compareTo(ZERO) > 0
-                                ? entry.getValue()
+                                ? entry.getValue().totalValue()
                                 .multiply(new BigDecimal("100"))
                                 .divide(totalPatrimony, FinancialConstants.PERCENTAGE_SCALE, FinancialConstants.DEFAULT_ROUNDING)
-                                : ZERO
+                                : ZERO,
+                        entry.getValue().currentPrice(),
+                        entry.getValue().marketPriceReliable()
                 ))
                 .sorted(Comparator.comparing(AssetAllocationDTO::totalValue).reversed())
                 .toList();
+    }
+
+    private CategoryAllocationAccumulator accumulateCategoryAllocation(List<PositionSummaryLine> lines) {
+        BigDecimal totalValue = lines.stream()
+                .map(PositionSummaryLine::patrimony)
+                .reduce(ZERO, BigDecimal::add);
+        BigDecimal totalQuantity = lines.stream()
+                .map(PositionSummaryLine::quantity)
+                .reduce(ZERO, BigDecimal::add);
+        BigDecimal currentPrice = totalQuantity.compareTo(ZERO) > 0
+                ? totalValue.divide(totalQuantity, FinancialConstants.EXTENDED_PRECISION_SCALE, RoundingMode.HALF_UP)
+                : ZERO;
+        boolean marketPriceReliable = lines.stream().noneMatch(PositionSummaryLine::fallbackQuoteUsed);
+
+        return new CategoryAllocationAccumulator(totalValue, currentPrice, marketPriceReliable);
     }
 
     private PositionSummaryLine buildPositionSummaryLine(Position position, Map<String, QuoteDTO> currentQuotes) {
@@ -141,6 +158,7 @@ public class PortfolioPerformanceCalculator {
         return new PositionSummaryLine(
                 ticker,
                 position.getAsset().getCategory().name(),
+                quantity,
                 safeMultiply(quantity, fallbackPrice),
                 patrimony,
                 dayVariation.absoluteVariation(),
@@ -185,11 +203,19 @@ public class PortfolioPerformanceCalculator {
     private record PositionSummaryLine(
             String ticker,
             String category,
+            BigDecimal quantity,
             BigDecimal invested,
             BigDecimal patrimony,
             BigDecimal dayAbsoluteVariation,
             boolean dayChangeAvailable,
             boolean fallbackQuoteUsed
+    ) {
+    }
+
+    private record CategoryAllocationAccumulator(
+            BigDecimal totalValue,
+            BigDecimal currentPrice,
+            boolean marketPriceReliable
     ) {
     }
 

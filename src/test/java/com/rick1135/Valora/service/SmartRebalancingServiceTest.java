@@ -52,8 +52,8 @@ class SmartRebalancingServiceTest {
                 BigDecimal.ZERO,
                 null,
                 List.of(
-                        new AssetAllocationDTO("ACOES", new BigDecimal("6000.00"), new BigDecimal("66.67")),
-                        new AssetAllocationDTO("FII", new BigDecimal("3000.00"), new BigDecimal("33.33"))
+                        new AssetAllocationDTO("ACOES", new BigDecimal("6000.00"), new BigDecimal("66.67"), new BigDecimal("50.00"), true),
+                        new AssetAllocationDTO("FII", new BigDecimal("3000.00"), new BigDecimal("33.33"), new BigDecimal("210.00"), true)
                 ),
                 false,
                 List.of()
@@ -78,6 +78,12 @@ class SmartRebalancingServiceTest {
         
         assertThat(fiiOrder.gapAmount()).isEqualByComparingTo("2000.00");
         assertThat(fiiOrder.suggestedInvestment()).isEqualByComparingTo("1000.00");
+        assertThat(fiiOrder.currentPrice()).isEqualByComparingTo("210.00");
+        assertThat(fiiOrder.theoreticalCategoryQuantity()).isEqualTo(4L);
+        assertThat(fiiOrder.actualInvestmentAmount()).isEqualByComparingTo("840.00");
+        assertThat(fiiOrder.residualCashAmount()).isEqualByComparingTo("160.00");
+        assertThat(fiiOrder.actualInvestmentAmount().add(fiiOrder.residualCashAmount()))
+                .isEqualByComparingTo(fiiOrder.suggestedInvestment());
         assertThat(fiiOrder.marketPriceReliable()).isTrue();
 
         SuggestedOrderDTO stockOrder = suggestions.stream()
@@ -86,6 +92,93 @@ class SmartRebalancingServiceTest {
 
         assertThat(stockOrder.gapAmount()).isEqualByComparingTo("-1000.00");
         assertThat(stockOrder.suggestedInvestment()).isEqualByComparingTo("0.00");
+        assertThat(stockOrder.theoreticalCategoryQuantity()).isZero();
+        assertThat(stockOrder.actualInvestmentAmount()).isEqualByComparingTo("0.00");
+        assertThat(stockOrder.residualCashAmount()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void shouldExposeResidualCashWhenContributionIsLowerThanCategoryReferencePrice() {
+        User user = new User();
+        UUID portfolioId = UUID.randomUUID();
+        Portfolio portfolio = new Portfolio();
+        portfolio.setId(portfolioId);
+
+        PortfolioSummaryDTO summary = new PortfolioSummaryDTO(
+                new BigDecimal("1000.00"),
+                new BigDecimal("1000.00"),
+                BigDecimal.ZERO,
+                null,
+                List.of(
+                        new AssetAllocationDTO("ACOES", new BigDecimal("1000.00"), new BigDecimal("100.00"), new BigDecimal("80.00"), true)
+                ),
+                false,
+                List.of()
+        );
+
+        List<PortfolioTarget> targets = List.of(
+                new PortfolioTarget(UUID.randomUUID(), portfolio, AssetCategory.ACOES, new BigDecimal("100.00"))
+        );
+
+        when(portfolioService.resolveOwnedPortfolio(user, portfolioId)).thenReturn(portfolio);
+        when(portfolioService.getPortfolioSummary(user, portfolioId)).thenReturn(summary);
+        when(targetRepository.findByPortfolio(portfolio)).thenReturn(targets);
+
+        List<SuggestedOrderDTO> suggestions = rebalancingService.calculateSuggestedOrders(user, portfolioId, new BigDecimal("50.00"));
+
+        SuggestedOrderDTO stockOrder = suggestions.getFirst();
+        assertThat(stockOrder.suggestedInvestment()).isEqualByComparingTo("50.00");
+        assertThat(stockOrder.currentPrice()).isEqualByComparingTo("80.00");
+        assertThat(stockOrder.theoreticalCategoryQuantity()).isZero();
+        assertThat(stockOrder.actualInvestmentAmount()).isEqualByComparingTo("0.00");
+        assertThat(stockOrder.residualCashAmount()).isEqualByComparingTo("50.00");
+        assertThat(stockOrder.actualInvestmentAmount().add(stockOrder.residualCashAmount()))
+                .isEqualByComparingTo(stockOrder.suggestedInvestment());
+    }
+
+    @Test
+    void shouldKeepMarketPriceUnreliableWhenSuggestedQuantityUsesFallbackPrice() {
+        User user = new User();
+        UUID portfolioId = UUID.randomUUID();
+        Portfolio portfolio = new Portfolio();
+        portfolio.setId(portfolioId);
+
+        PortfolioSummaryDTO summary = new PortfolioSummaryDTO(
+                new BigDecimal("9000.00"),
+                new BigDecimal("8000.00"),
+                BigDecimal.ZERO,
+                null,
+                List.of(
+                        new AssetAllocationDTO("ACOES", new BigDecimal("6000.00"), new BigDecimal("66.67"), new BigDecimal("50.00"), true),
+                        new AssetAllocationDTO("FII", new BigDecimal("3000.00"), new BigDecimal("33.33"), new BigDecimal("210.00"), false)
+                ),
+                true,
+                List.of("KNRI11")
+        );
+
+        List<PortfolioTarget> targets = List.of(
+                new PortfolioTarget(UUID.randomUUID(), portfolio, AssetCategory.ACOES, new BigDecimal("50.00")),
+                new PortfolioTarget(UUID.randomUUID(), portfolio, AssetCategory.FII, new BigDecimal("50.00"))
+        );
+
+        when(portfolioService.resolveOwnedPortfolio(user, portfolioId)).thenReturn(portfolio);
+        when(portfolioService.getPortfolioSummary(user, portfolioId)).thenReturn(summary);
+        when(targetRepository.findByPortfolio(portfolio)).thenReturn(targets);
+
+        List<SuggestedOrderDTO> suggestions = rebalancingService.calculateSuggestedOrders(user, portfolioId, new BigDecimal("1000.00"));
+
+        SuggestedOrderDTO fiiOrder = suggestions.stream()
+                .filter(o -> o.category().equals("FII"))
+                .findFirst().orElseThrow();
+
+        assertThat(fiiOrder.currentPrice()).isEqualByComparingTo("210.00");
+        assertThat(fiiOrder.suggestedInvestment()).isEqualByComparingTo("1000.00");
+        assertThat(fiiOrder.theoreticalCategoryQuantity()).isEqualTo(4L);
+        assertThat(fiiOrder.actualInvestmentAmount()).isEqualByComparingTo("840.00");
+        assertThat(fiiOrder.residualCashAmount()).isEqualByComparingTo("160.00");
+        assertThat(fiiOrder.actualInvestmentAmount().add(fiiOrder.residualCashAmount()))
+                .isEqualByComparingTo(fiiOrder.suggestedInvestment());
+        assertThat(fiiOrder.marketPriceReliable()).isFalse();
     }
 
     @Test
@@ -122,10 +215,16 @@ class SmartRebalancingServiceTest {
         SuggestedOrderDTO fiiOrder = suggestions.stream().filter(o -> o.category().equals("FII")).findFirst().get();
         assertThat(fiiOrder.gapAmount()).isEqualByComparingTo("2000.00"); // 5000 - 3000
         assertThat(fiiOrder.suggestedInvestment()).isEqualByComparingTo("0.00");
+        assertThat(fiiOrder.theoreticalCategoryQuantity()).isZero();
+        assertThat(fiiOrder.actualInvestmentAmount()).isEqualByComparingTo("0.00");
+        assertThat(fiiOrder.residualCashAmount()).isEqualByComparingTo("0.00");
 
         SuggestedOrderDTO stockOrder = suggestions.stream().filter(o -> o.category().equals("ACOES")).findFirst().get();
         assertThat(stockOrder.gapAmount()).isEqualByComparingTo("-2000.00"); // 5000 - 7000
         assertThat(stockOrder.suggestedInvestment()).isEqualByComparingTo("0.00");
+        assertThat(stockOrder.theoreticalCategoryQuantity()).isZero();
+        assertThat(stockOrder.actualInvestmentAmount()).isEqualByComparingTo("0.00");
+        assertThat(stockOrder.residualCashAmount()).isEqualByComparingTo("0.00");
     }
 
     @Test

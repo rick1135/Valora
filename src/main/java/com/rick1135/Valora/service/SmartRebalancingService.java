@@ -37,12 +37,11 @@ public class SmartRebalancingService {
             return Collections.emptyList();
         }
 
-        boolean marketPriceReliable = !summary.fallbackQuoteUsed();
         BigDecimal currentPatrimony = summary.totalPatrimony();
         BigDecimal targetPatrimony = currentPatrimony.add(contributionAmount);
 
-        Map<String, BigDecimal> currentAllocations = summary.allocations().stream()
-                .collect(Collectors.toMap(AssetAllocationDTO::category, AssetAllocationDTO::totalValue));
+        Map<String, AssetAllocationDTO> allocationsByCategory = summary.allocations().stream()
+                .collect(Collectors.toMap(AssetAllocationDTO::category, allocation -> allocation));
 
         List<SuggestedOrderDTO> orders = new ArrayList<>();
         BigDecimal remainingContribution = contributionAmount;
@@ -51,11 +50,14 @@ public class SmartRebalancingService {
         List<GapAnalysis> gaps = targets.stream()
                 .map(target -> {
                     String category = target.getAssetCategory().name();
-                    BigDecimal currentAmount = currentAllocations.getOrDefault(category, BigDecimal.ZERO);
+                    AssetAllocationDTO allocation = allocationsByCategory.get(category);
+                    BigDecimal currentAmount = allocation == null ? BigDecimal.ZERO : allocation.totalValue();
                     BigDecimal idealAmount = targetPatrimony.multiply(target.getTargetPercentage())
                             .divide(HUNDRED, 2, RoundingMode.HALF_UP);
                     BigDecimal gapAmount = idealAmount.subtract(currentAmount);
-                    return new GapAnalysis(category, currentAmount, idealAmount, gapAmount);
+                    BigDecimal currentPrice = allocation == null ? BigDecimal.ZERO : allocation.currentPrice();
+                    boolean marketPriceReliable = allocation != null && allocation.marketPriceReliable();
+                    return new GapAnalysis(category, currentAmount, idealAmount, gapAmount, currentPrice, marketPriceReliable);
                 })
                 .sorted(Comparator.comparing(GapAnalysis::gapAmount).reversed())
                 .collect(Collectors.toList());
@@ -67,18 +69,56 @@ public class SmartRebalancingService {
                 investment = gap.gapAmount.min(remainingContribution);
                 remainingContribution = remainingContribution.subtract(investment);
             }
-            
+            CategoryQuantityProjection quantityProjection = calculateCategoryQuantityProjection(investment, gap.currentPrice);
+
             orders.add(new SuggestedOrderDTO(
                     gap.category,
                     gap.currentAmount,
                     gap.idealAmount,
                     gap.gapAmount,
                     investment,
-                    marketPriceReliable
+                    gap.currentPrice,
+                    quantityProjection.theoreticalQuantity,
+                    quantityProjection.actualInvestmentAmount,
+                    quantityProjection.residualCashAmount,
+                    gap.marketPriceReliable
             ));
         }
 
         return orders;
+    }
+
+    private CategoryQuantityProjection calculateCategoryQuantityProjection(BigDecimal suggestedInvestment, BigDecimal currentPrice) {
+        if (suggestedInvestment == null || currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return new CategoryQuantityProjection(0L, BigDecimal.ZERO, defaultBigDecimal(suggestedInvestment));
+        }
+        if (suggestedInvestment.compareTo(BigDecimal.ZERO) <= 0) {
+            return new CategoryQuantityProjection(0L, BigDecimal.ZERO, BigDecimal.ZERO);
+        }
+
+        /*
+         * Current portfolio targets are defined by AssetCategory, not by ticker.
+         * Therefore currentPrice is a category reference price. When there is more
+         * than one asset in the category, PortfolioPerformanceCalculator provides a
+         * weighted average price for the category. This quantity is intentionally
+         * theoretical and should not be interpreted as an executable ticker-level
+         * order until Phase 9 introduces individual ticker targets/recommendations.
+         *
+         * RoundingMode.DOWN preserves market constraints for standard stocks/FIIs:
+         * fractional shares are not suggested and the remainder is explicitly exposed
+         * as residualCashAmount instead of being silently ignored.
+         */
+        Long theoreticalQuantity = suggestedInvestment
+                .divide(currentPrice, 0, RoundingMode.DOWN)
+                .longValue();
+        BigDecimal actualInvestmentAmount = currentPrice.multiply(BigDecimal.valueOf(theoreticalQuantity));
+        BigDecimal residualCashAmount = suggestedInvestment.subtract(actualInvestmentAmount);
+
+        return new CategoryQuantityProjection(theoreticalQuantity, actualInvestmentAmount, residualCashAmount);
+    }
+
+    private BigDecimal defaultBigDecimal(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 
     @Transactional
@@ -108,6 +148,14 @@ public class SmartRebalancingService {
             String category,
             BigDecimal currentAmount,
             BigDecimal idealAmount,
-            BigDecimal gapAmount
+            BigDecimal gapAmount,
+            BigDecimal currentPrice,
+            boolean marketPriceReliable
+    ) {}
+
+    private record CategoryQuantityProjection(
+            Long theoreticalQuantity,
+            BigDecimal actualInvestmentAmount,
+            BigDecimal residualCashAmount
     ) {}
 }
