@@ -1,5 +1,7 @@
 package com.rick1135.Valora.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rick1135.Valora.exception.GlobalExceptionHandler;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,9 +29,11 @@ import java.util.List;
 public class SecurityConfigurations {
 
     private final SecurityFilter securityFilter;
+    private final ObjectMapper objectMapper;
 
-    public SecurityConfigurations(SecurityFilter securityFilter) {
+    public SecurityConfigurations(SecurityFilter securityFilter, ObjectMapper objectMapper) {
         this.securityFilter = securityFilter;
+        this.objectMapper = objectMapper;
     }
 
     @Bean
@@ -39,7 +43,14 @@ public class SecurityConfigurations {
                 .csrf(AbstractHttpConfigurer::disable)
                 .anonymous(AbstractHttpConfigurer::disable)
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(
-                        (request, response, authException) -> response.sendError(HttpServletResponse.SC_UNAUTHORIZED)
+                        (request, response, authException) -> {
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType("application/json");
+                            objectMapper.writeValue(
+                                    response.getOutputStream(),
+                                    GlobalExceptionHandler.unauthorizedResponse(request.getRequestURI())
+                            );
+                        }
                 ))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth

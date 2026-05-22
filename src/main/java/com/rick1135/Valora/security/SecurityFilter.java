@@ -1,6 +1,7 @@
 package com.rick1135.Valora.security;
 
 import com.rick1135.Valora.exception.InvalidTokenException;
+import com.rick1135.Valora.exception.GlobalExceptionHandler;
 import com.rick1135.Valora.repository.UserRepository;
 import com.rick1135.Valora.service.TokenService;
 import jakarta.servlet.FilterChain;
@@ -39,12 +40,12 @@ public class SecurityFilter extends OncePerRequestFilter {
             return null;
         }
         if (!authHeader.startsWith("Bearer ")) {
-            throw new InvalidTokenException("Cabecalho Authorization invalido.");
+            throw new InvalidTokenException(GlobalExceptionHandler.GENERIC_UNAUTHORIZED_MESSAGE);
         }
 
         String token = authHeader.substring(7).trim();
         if (token.isBlank()) {
-            throw new InvalidTokenException("Token nao informado.");
+            throw new InvalidTokenException(GlobalExceptionHandler.GENERIC_UNAUTHORIZED_MESSAGE);
         }
 
         return token;
@@ -56,14 +57,15 @@ public class SecurityFilter extends OncePerRequestFilter {
             var token = recoverToken(request);
             if(token != null){
                 String email = tokenService.validateToken(token);
-                userRepository.findByEmail(email).ifPresent(user -> {
-                    var authentication = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
-                });
+                var user = userRepository.findByEmail(email)
+                        .orElseThrow(() -> new InvalidTokenException(GlobalExceptionHandler.GENERIC_UNAUTHORIZED_MESSAGE));
+                var authentication = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+                SecurityContextHolder.getContext().setAuthentication(authentication);
             }
 
             filterChain.doFilter(request, response);
         } catch (InvalidTokenException exception) {
+            SecurityContextHolder.clearContext();
             handlerExceptionResolver.resolveException(request, response, null, exception);
         }
     }

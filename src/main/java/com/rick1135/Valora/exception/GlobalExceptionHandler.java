@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+    public static final String GENERIC_UNAUTHORIZED_MESSAGE = "Token invalido ou expirado.";
 
     @ExceptionHandler(EmailAlreadyRegisteredException.class)
     public ResponseEntity<ApiErrorResponse> handleEmailAlreadyRegistered(
@@ -69,7 +70,7 @@ public class GlobalExceptionHandler {
             InvalidTokenException exception,
             HttpServletRequest request
     ) {
-        return buildError(HttpStatus.UNAUTHORIZED, exception.getMessage(), request);
+        return buildError(HttpStatus.UNAUTHORIZED, GENERIC_UNAUTHORIZED_MESSAGE, request);
     }
 
     @ExceptionHandler(TokenGenerationException.class)
@@ -185,15 +186,27 @@ public class GlobalExceptionHandler {
             String message,
             HttpServletRequest request
     ) {
-        ApiErrorResponse response = new ApiErrorResponse(
+        ApiErrorResponse response = buildResponse(status, message, request.getRequestURI());
+
+        return ResponseEntity.status(status).body(response);
+    }
+
+    public static ApiErrorResponse unauthorizedResponse(String path) {
+        return buildResponse(HttpStatus.UNAUTHORIZED, GENERIC_UNAUTHORIZED_MESSAGE, path);
+    }
+
+    private static ApiErrorResponse buildResponse(
+            HttpStatus status,
+            String message,
+            String path
+    ) {
+        return new ApiErrorResponse(
                 OffsetDateTime.now(),
                 status.value(),
                 status.getReasonPhrase(),
                 message,
-                request.getRequestURI()
+                path
         );
-
-        return ResponseEntity.status(status).body(response);
     }
 
     private String formatFieldError(FieldError fieldError) {
