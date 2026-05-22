@@ -17,7 +17,14 @@ public record PortfolioSummaryDTO(
             BigDecimal totalPercentage,
             BigDecimal dayAbsoluteVariation,
             BigDecimal dayPercentageVariation,
-            boolean dayChangeAvailable
+            boolean dayChangeAvailable,
+            List<BenchmarkComparisonDTO> benchmarkComparisons
+    ) {
+    }
+
+    public record BenchmarkComparisonDTO(
+            String name,
+            BigDecimal percentage
     ) {
     }
 }

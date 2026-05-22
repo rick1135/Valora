@@ -56,5 +56,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             Pageable pageable
     );
 
+    @Query("SELECT MIN(t.transactionDate) FROM Transaction t WHERE t.portfolio = :portfolio")
+    java.util.Optional<java.time.Instant> findFirstTransactionDateByPortfolio(Portfolio portfolio);
+
     boolean existsByPortfolio(Portfolio portfolio);
 }

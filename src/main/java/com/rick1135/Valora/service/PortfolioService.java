@@ -10,10 +10,7 @@ import com.rick1135.Valora.entity.ProventStatus;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.PortfolioNotFoundException;
 import com.rick1135.Valora.mapper.PortfolioMapper;
-import com.rick1135.Valora.repository.PortfolioRepository;
-import com.rick1135.Valora.repository.PositionRepository;
-import com.rick1135.Valora.repository.ProventProvisionRepository;
-import com.rick1135.Valora.repository.TransactionRepository;
+import com.rick1135.Valora.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -36,6 +33,9 @@ public class PortfolioService {
     private final QuoteService quoteService;
     private final PortfolioMapper portfolioMapper;
     private final PortfolioPerformanceCalculator performanceCalculator;
+    private final BenchmarkRepository benchmarkRepository;
+    private final BenchmarkValueRepository benchmarkValueRepository;
+    private final BenchmarkPerformanceCalculator benchmarkPerformanceCalculator;
 
     @Transactional
     public PortfolioResponseDTO createPortfolio(User user, PortfolioRequestDTO dto) {
@@ -111,7 +111,24 @@ public class PortfolioService {
                 proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID)
         );
 
-        return performanceCalculator.calculate(positions, currentQuotes, totalProvents);
+        List<PortfolioSummaryDTO.BenchmarkComparisonDTO> benchmarkComparisons = calculateBenchmarkComparisons(portfolio);
+
+        return performanceCalculator.calculate(positions, currentQuotes, totalProvents, benchmarkComparisons);
+    }
+
+    private List<PortfolioSummaryDTO.BenchmarkComparisonDTO> calculateBenchmarkComparisons(Portfolio portfolio) {
+        java.time.Instant firstTransactionInstant = transactionRepository.findFirstTransactionDateByPortfolio(portfolio)
+                .orElse(java.time.Instant.now());
+        java.time.LocalDate startDate = firstTransactionInstant.atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+        java.time.LocalDate endDate = java.time.LocalDate.now();
+
+        return benchmarkRepository.findAll().stream()
+                .map(benchmark -> {
+                    List<com.rick1135.Valora.entity.BenchmarkValue> values = benchmarkValueRepository.findByBenchmarkInRange(benchmark, startDate, endDate);
+                    BigDecimal yield = benchmarkPerformanceCalculator.calculateYield(benchmark, values, startDate, endDate);
+                    return new PortfolioSummaryDTO.BenchmarkComparisonDTO(benchmark.getName(), yield);
+                })
+                .toList();
     }
 
     @Transactional(readOnly = true)

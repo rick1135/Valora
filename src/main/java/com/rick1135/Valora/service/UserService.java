@@ -5,12 +5,16 @@ import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.entity.UserRole;
 import com.rick1135.Valora.exception.EmailAlreadyRegisteredException;
+import com.rick1135.Valora.exception.GlobalExceptionHandler;
+import com.rick1135.Valora.exception.InvalidTokenException;
 import com.rick1135.Valora.repository.PortfolioRepository;
 import com.rick1135.Valora.repository.UserRepository;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
 
 @Service
 public class UserService {
@@ -49,5 +53,11 @@ public class UserService {
     public User getByEmail(String email) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("Usuario nao encontrado."));
+    }
+
+    @Transactional(readOnly = true)
+    public User getById(UUID id) {
+        return userRepository.findById(id)
+                .orElseThrow(() -> new InvalidTokenException(GlobalExceptionHandler.GENERIC_REFRESH_TOKEN_MESSAGE));
     }
 }

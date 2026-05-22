@@ -33,4 +33,14 @@ public class MarketCalendar {
                 .toInstant()
                 .minusNanos(1);
     }
+
+    public boolean isBusinessDay(LocalDate date) {
+        java.time.DayOfWeek day = date.getDayOfWeek();
+        return day != java.time.DayOfWeek.SATURDAY && day != java.time.DayOfWeek.SUNDAY;
+    }
+
+    public boolean isMarketHoliday(LocalDate date) {
+        // Simple mock for now, can be expanded with real holiday table
+        return false;
+    }
 }

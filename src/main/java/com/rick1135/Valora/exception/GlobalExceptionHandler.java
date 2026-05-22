@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class GlobalExceptionHandler {
     public static final String GENERIC_UNAUTHORIZED_MESSAGE = "Token invalido ou expirado.";
+    public static final String GENERIC_REFRESH_TOKEN_MESSAGE = "Refresh token invalido ou expirado.";
 
     @ExceptionHandler(EmailAlreadyRegisteredException.class)
     public ResponseEntity<ApiErrorResponse> handleEmailAlreadyRegistered(
@@ -70,7 +71,10 @@ public class GlobalExceptionHandler {
             InvalidTokenException exception,
             HttpServletRequest request
     ) {
-        return buildError(HttpStatus.UNAUTHORIZED, GENERIC_UNAUTHORIZED_MESSAGE, request);
+        String message = GENERIC_REFRESH_TOKEN_MESSAGE.equals(exception.getMessage())
+                ? GENERIC_REFRESH_TOKEN_MESSAGE
+                : GENERIC_UNAUTHORIZED_MESSAGE;
+        return buildError(HttpStatus.UNAUTHORIZED, message, request);
     }
 
     @ExceptionHandler(TokenGenerationException.class)

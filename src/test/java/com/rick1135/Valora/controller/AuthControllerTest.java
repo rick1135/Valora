@@ -16,9 +16,13 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -139,11 +143,13 @@ class AuthControllerTest {
 
     @Test
     void refreshReturnsNewTokensWhenRefreshTokenIsValid() throws Exception {
+        UUID userId = UUID.randomUUID();
         User user = new User();
+        user.setId(userId);
         user.setEmail("refresh@valora.dev");
 
-        when(tokenService.consumeRefreshToken("refresh-token")).thenReturn("refresh@valora.dev");
-        when(userService.getByEmail("refresh@valora.dev")).thenReturn(user);
+        when(tokenService.consumeRefreshToken("refresh-token")).thenReturn(userId);
+        when(userService.getById(userId)).thenReturn(user);
         when(tokenService.generateToken(user)).thenReturn("jwt-refreshed");
         when(tokenService.generateRefreshToken(user)).thenReturn("refresh-rotated");
 
@@ -164,15 +170,73 @@ class AuthControllerTest {
         when(tokenService.consumeRefreshToken("refresh-token"))
                 .thenThrow(new InvalidTokenException("Refresh token invalido ou expirado."));
 
-        mockMvc.perform(post("/auth/refresh")
+        assertGenericRefreshUnauthorized(mockMvc.perform(post("/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
                                   "refreshToken": "refresh-token"
                                 }
-                                """))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("Refresh token invalido ou expirado."));
+                                """)), "refresh-token");
+    }
+
+    @Test
+    void refreshReturnsUnauthorizedWhenRefreshTokenWasAlreadyReused() throws Exception {
+        String reusedToken = "reused-refresh-token";
+        when(tokenService.consumeRefreshToken(reusedToken))
+                .thenThrow(new InvalidTokenException("Refresh token invalido ou expirado."));
+
+        assertGenericRefreshUnauthorized(mockMvc.perform(post("/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "refreshToken": "reused-refresh-token"
+                                }
+                                """)), reusedToken);
+    }
+
+    @Test
+    void refreshReturnsUnauthorizedWhenRefreshTokenWasRevokedOrMissing() throws Exception {
+        String revokedToken = "revoked-refresh-token";
+        when(tokenService.consumeRefreshToken(revokedToken))
+                .thenThrow(new InvalidTokenException("Refresh token invalido ou expirado."));
+
+        assertGenericRefreshUnauthorized(mockMvc.perform(post("/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "refreshToken": "revoked-refresh-token"
+                                }
+                                """)), revokedToken);
+    }
+
+    @Test
+    void refreshReturnsUnauthorizedWhenStoredUserIdIsStale() throws Exception {
+        UUID staleUserId = UUID.randomUUID();
+        when(tokenService.consumeRefreshToken("refresh-token")).thenReturn(staleUserId);
+        when(userService.getById(staleUserId))
+                .thenThrow(new InvalidTokenException("Refresh token invalido ou expirado."));
+
+        assertGenericRefreshUnauthorized(mockMvc.perform(post("/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "refreshToken": "refresh-token"
+                                }
+                                """)), "refresh-token");
+    }
+
+    @Test
+    void refreshReturnsUnauthorizedWhenRefreshTokenIsBlank() throws Exception {
+        when(tokenService.consumeRefreshToken("   "))
+                .thenThrow(new InvalidTokenException("Refresh token invalido ou expirado."));
+
+        assertGenericRefreshUnauthorized(mockMvc.perform(post("/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "refreshToken": "   "
+                                }
+                                """)), null);
     }
 
     @Test
@@ -188,5 +252,24 @@ class AuthControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").exists());
+    }
+
+    private void assertGenericRefreshUnauthorized(ResultActions resultActions, String sensitiveValue) throws Exception {
+        resultActions
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Refresh token invalido ou expirado."))
+                .andExpect(result -> {
+                    String body = result.getResponse().getContentAsString();
+                    if (sensitiveValue != null) {
+                        assertThat(body).doesNotContain(sensitiveValue);
+                    }
+                    assertThat(body)
+                            .doesNotContain("Redis")
+                            .doesNotContain("getAndDelete")
+                            .doesNotContain("Exception")
+                            .doesNotContain("stackTrace")
+                            .doesNotContain("trace")
+                            .doesNotContain("auth:refresh:");
+                });
     }
 }

@@ -4,6 +4,7 @@ import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.JWTCreationException;
 import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.rick1135.Valora.exception.GlobalExceptionHandler;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.InvalidTokenException;
 import com.rick1135.Valora.exception.TokenGenerationException;
@@ -71,9 +72,12 @@ public class TokenService {
     public String generateRefreshToken(User user) {
         String refreshToken = UUID.randomUUID() + "." + UUID.randomUUID();
         try {
+            if (user.getId() == null) {
+                throw new IllegalArgumentException("User id is required to generate refresh token.");
+            }
             redisTemplate.opsForValue().set(
                     buildRefreshKey(refreshToken),
-                    user.getEmail(),
+                    user.getId().toString(),
                     Duration.ofDays(refreshExpirationDays)
             );
             return refreshToken;
@@ -82,23 +86,39 @@ public class TokenService {
         }
     }
 
-    public String consumeRefreshToken(String refreshToken) {
+    public UUID consumeRefreshToken(String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) {
-            throw new InvalidTokenException("Refresh token invalido ou expirado.");
+            throw new InvalidTokenException(GlobalExceptionHandler.GENERIC_REFRESH_TOKEN_MESSAGE);
         }
 
         Object storedValue;
         try {
             storedValue = redisTemplate.opsForValue().getAndDelete(buildRefreshKey(refreshToken));
         } catch (Exception exception) {
-            throw new InvalidTokenException("Refresh token invalido ou expirado.");
+            throw new InvalidTokenException(GlobalExceptionHandler.GENERIC_REFRESH_TOKEN_MESSAGE);
         }
 
-        if (!(storedValue instanceof String email) || email.isBlank()) {
-            throw new InvalidTokenException("Refresh token invalido ou expirado.");
+        if (!(storedValue instanceof String userId) || userId.isBlank()) {
+            throw new InvalidTokenException(GlobalExceptionHandler.GENERIC_REFRESH_TOKEN_MESSAGE);
         }
 
-        return email;
+        try {
+            return UUID.fromString(userId);
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidTokenException(GlobalExceptionHandler.GENERIC_REFRESH_TOKEN_MESSAGE);
+        }
+    }
+
+    public void revokeRefreshToken(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return;
+        }
+
+        try {
+            redisTemplate.delete(buildRefreshKey(refreshToken));
+        } catch (Exception ignored) {
+            // Revocation is intentionally idempotent and must not expose storage details.
+        }
     }
 
     private Instant genExpirationDate() {

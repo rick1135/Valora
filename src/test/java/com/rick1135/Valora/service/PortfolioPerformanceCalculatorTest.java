@@ -31,7 +31,8 @@ class PortfolioPerformanceCalculatorTest {
                         "BOVA11", new QuoteDTO("BOVA11", BigDecimal.ZERO, null, null, null, null, null),
                         "BTC", new QuoteDTO("BTC", new BigDecimal("-1.00"), null, null, null, null, null)
                 ),
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                List.of()
         );
 
         assertThat(summary.totalPatrimony()).isEqualByComparingTo("320.0000000000");
@@ -56,7 +57,8 @@ class PortfolioPerformanceCalculatorTest {
                         null,
                         null
                 )),
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                List.of()
         );
 
         assertThat(summary.totalPatrimony()).isEqualByComparingTo("250.0000000000");
@@ -80,7 +82,8 @@ class PortfolioPerformanceCalculatorTest {
                         null,
                         null
                 )),
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                List.of()
         );
 
         assertThat(summary.profitability().dayAbsoluteVariation()).isEqualByComparingTo("0");
@@ -101,7 +104,8 @@ class PortfolioPerformanceCalculatorTest {
                         "PETR4", new QuoteDTO("PETR4", new BigDecimal("35.00"), BigDecimal.ZERO, BigDecimal.ZERO, null, null, null),
                         "BOVA11", new QuoteDTO("BOVA11", new BigDecimal("100.00"), BigDecimal.ZERO, BigDecimal.ZERO, null, null, null)
                 ),
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                List.of()
         );
 
         assertThat(summary.allocations()).hasSize(2);
@@ -123,7 +127,8 @@ class PortfolioPerformanceCalculatorTest {
                         "VALE3", new QuoteDTO("VALE3", new BigDecimal("50.00"), new BigDecimal("2.00"), new BigDecimal("4.16"), null, null, null),
                         "ITSA4", new QuoteDTO("ITSA4", new BigDecimal("12.00"), null, null, null, null, null)
                 ),
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                List.of()
         );
 
         assertThat(summary.totalPatrimony()).isEqualByComparingTo("560.0000000000");
@@ -148,7 +153,8 @@ class PortfolioPerformanceCalculatorTest {
         PortfolioSummaryDTO summary = calculator.calculate(
                 List.of(position),
                 Map.of(), // No quotes needed for Renda Fixa
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                List.of()
         );
 
         assertThat(summary.totalPatrimony()).isEqualByComparingTo("1100.0000000000");

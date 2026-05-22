@@ -11,10 +11,7 @@ import com.rick1135.Valora.entity.ProventStatus;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.PortfolioNotFoundException;
 import com.rick1135.Valora.mapper.PortfolioMapper;
-import com.rick1135.Valora.repository.PortfolioRepository;
-import com.rick1135.Valora.repository.PositionRepository;
-import com.rick1135.Valora.repository.ProventProvisionRepository;
-import com.rick1135.Valora.repository.TransactionRepository;
+import com.rick1135.Valora.repository.*;
 import org.mapstruct.factory.Mappers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -54,6 +51,15 @@ class PortfolioServiceTest {
     @Mock
     private QuoteService quoteService;
 
+    @Mock
+    private BenchmarkRepository benchmarkRepository;
+
+    @Mock
+    private BenchmarkValueRepository benchmarkValueRepository;
+
+    @Mock
+    private BenchmarkPerformanceCalculator benchmarkPerformanceCalculator;
+
     @Spy
     private PortfolioMapper portfolioMapper = Mappers.getMapper(PortfolioMapper.class);
 
@@ -62,6 +68,12 @@ class PortfolioServiceTest {
 
     @InjectMocks
     private PortfolioService portfolioService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setupBenchmarks() {
+        org.mockito.Mockito.lenient().when(benchmarkRepository.findAll()).thenReturn(List.of());
+        org.mockito.Mockito.lenient().when(transactionRepository.findFirstTransactionDateByPortfolio(any())).thenReturn(Optional.empty());
+    }
 
     @Test
     void getPortfolioSummaryShouldCalculateTotalsAndAllocations() {

@@ -75,7 +75,8 @@ class PortfolioControllerTest {
                         new BigDecimal("33.3333"),
                         new BigDecimal("5.00"),
                         new BigDecimal("1.4493"),
-                        true
+                        true,
+                        List.of()
                 ),
                 List.of(
                         new AssetAllocationDTO("ACOES", new BigDecimal("250.00"), new BigDecimal("71.4286")),

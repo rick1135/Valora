@@ -1,0 +1,9 @@
+package com.rick1135.Valora.dto.brapi;
+
+import java.math.BigDecimal;
+
+public record BrapiHistoricalDataDTO(
+        Long date,
+        BigDecimal close
+) {
+}

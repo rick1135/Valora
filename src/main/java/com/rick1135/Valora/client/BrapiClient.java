@@ -17,19 +17,27 @@ public class BrapiClient {
     }
 
     public BrapiResponseDTO getQuote(String ticker, String token) {
-        return request(ticker, token, false);
+        return request(ticker, token, false, null);
     }
 
     public BrapiResponseDTO getQuoteWithDividends(String ticker, String token) {
-        return request(ticker, token, true);
+        return request(ticker, token, true, null);
     }
 
-    private BrapiResponseDTO request(String tickers, String token, boolean includeDividends) {
+    public BrapiResponseDTO getHistoricalQuote(String ticker, String range, String token) {
+        return request(ticker, token, false, range);
+    }
+
+    private BrapiResponseDTO request(String tickers, String token, boolean includeDividends, String range) {
         return restClient.get()
                 .uri(uriBuilder -> {
                     var builder = uriBuilder.path("/quote/{tickers}");
                     if (includeDividends) {
                         builder.queryParam("dividends", true);
+                    }
+                    if (range != null) {
+                        builder.queryParam("range", range);
+                        builder.queryParam("interval", "1d");
                     }
                     return builder.build(tickers);
                 })

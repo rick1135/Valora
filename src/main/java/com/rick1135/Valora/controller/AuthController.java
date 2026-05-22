@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.UUID;
+
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
@@ -49,8 +51,8 @@ public class AuthController {
 
     @PostMapping("/refresh")
     public ResponseEntity<LoginResponseDTO> refresh(@Valid @RequestBody RefreshTokenRequestDTO data) {
-        String email = tokenService.consumeRefreshToken(data.refreshToken());
-        User user = userService.getByEmail(email);
+        UUID userId = tokenService.consumeRefreshToken(data.refreshToken());
+        User user = userService.getById(userId);
         return ResponseEntity.ok(buildLoginResponse(user));
     }
 

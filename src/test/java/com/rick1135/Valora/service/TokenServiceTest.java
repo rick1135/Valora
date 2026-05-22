@@ -19,10 +19,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -55,13 +57,14 @@ class TokenServiceTest {
     @Test
     void generateRefreshTokenStoresHashedKeyWithTtl() {
         User user = new User();
+        user.setId(UUID.randomUUID());
         user.setEmail("user@valora.dev");
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
         String refreshToken = tokenService.generateRefreshToken(user);
 
         ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(valueOperations).set(keyCaptor.capture(), org.mockito.Mockito.eq("user@valora.dev"), org.mockito.Mockito.eq(Duration.ofDays(30)));
+        verify(valueOperations).set(keyCaptor.capture(), org.mockito.Mockito.eq(user.getId().toString()), org.mockito.Mockito.eq(Duration.ofDays(30)));
         String redisKey = keyCaptor.getValue();
 
         assertThat(refreshToken).isNotBlank();
@@ -72,11 +75,12 @@ class TokenServiceTest {
     @Test
     void consumeRefreshTokenUsesAtomicGetAndDelete() {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.getAndDelete(anyString())).thenReturn("user@valora.dev");
+        UUID userId = UUID.randomUUID();
+        when(valueOperations.getAndDelete(anyString())).thenReturn(userId.toString());
 
-        String email = tokenService.consumeRefreshToken("refresh-token");
+        UUID consumedUserId = tokenService.consumeRefreshToken("refresh-token");
 
-        assertThat(email).isEqualTo("user@valora.dev");
+        assertThat(consumedUserId).isEqualTo(userId);
         verify(valueOperations).getAndDelete(anyString());
     }
 
@@ -88,6 +92,115 @@ class TokenServiceTest {
         assertThatThrownBy(() -> tokenService.consumeRefreshToken("refresh-token"))
                 .isInstanceOf(InvalidTokenException.class)
                 .hasMessage("Refresh token invalido ou expirado.");
+    }
+
+    @Test
+    void consumeRefreshTokenRejectsBlankInput() {
+        assertThatThrownBy(() -> tokenService.consumeRefreshToken("   "))
+                .isInstanceOf(InvalidTokenException.class)
+                .hasMessage("Refresh token invalido ou expirado.");
+    }
+
+    @Test
+    void consumeRefreshTokenRejectsNonStringStoredValue() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.getAndDelete(anyString())).thenReturn(123L);
+
+        assertThatThrownBy(() -> tokenService.consumeRefreshToken("refresh-token"))
+                .isInstanceOf(InvalidTokenException.class)
+                .hasMessage("Refresh token invalido ou expirado.")
+                .hasMessageNotContaining("refresh-token")
+                .hasMessageNotContaining("Redis");
+    }
+
+    @Test
+    void consumeRefreshTokenRejectsBlankStoredValue() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.getAndDelete(anyString())).thenReturn("   ");
+
+        assertThatThrownBy(() -> tokenService.consumeRefreshToken("refresh-token"))
+                .isInstanceOf(InvalidTokenException.class)
+                .hasMessage("Refresh token invalido ou expirado.");
+    }
+
+    @Test
+    void consumeRefreshTokenRejectsLegacyEmailStoredValue() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.getAndDelete(anyString())).thenReturn("user@valora.dev");
+
+        assertThatThrownBy(() -> tokenService.consumeRefreshToken("refresh-token"))
+                .isInstanceOf(InvalidTokenException.class)
+                .hasMessage("Refresh token invalido ou expirado.")
+                .hasMessageNotContaining("user@valora.dev");
+    }
+
+    @Test
+    void consumeRefreshTokenRejectsInvalidUuidStoredValue() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.getAndDelete(anyString())).thenReturn("not-a-uuid");
+
+        assertThatThrownBy(() -> tokenService.consumeRefreshToken("refresh-token"))
+                .isInstanceOf(InvalidTokenException.class)
+                .hasMessage("Refresh token invalido ou expirado.")
+                .hasMessageNotContaining("not-a-uuid");
+    }
+
+    @Test
+    void consumeRefreshTokenRejectsRedisFailureWithGenericMessage() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.getAndDelete(anyString())).thenThrow(new RuntimeException("redis down"));
+
+        assertThatThrownBy(() -> tokenService.consumeRefreshToken("sensitive-refresh-token"))
+                .isInstanceOf(InvalidTokenException.class)
+                .hasMessage("Refresh token invalido ou expirado.")
+                .hasMessageNotContaining("sensitive-refresh-token")
+                .hasMessageNotContaining("redis down");
+    }
+
+    @Test
+    void revokeRefreshTokenDeletesHashedKey() {
+        String refreshToken = "refresh-token";
+
+        tokenService.revokeRefreshToken(refreshToken);
+
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(redisTemplate).delete(keyCaptor.capture());
+        String redisKey = keyCaptor.getValue();
+
+        assertThat(redisKey).startsWith("auth:refresh:");
+        assertThat(redisKey).doesNotContain(refreshToken);
+    }
+
+    @Test
+    void revokeRefreshTokenIgnoresBlankInput() {
+        tokenService.revokeRefreshToken("   ");
+
+        verify(redisTemplate, never()).delete(anyString());
+    }
+
+    @Test
+    void revokeRefreshTokenIgnoresNullInput() {
+        tokenService.revokeRefreshToken(null);
+
+        verify(redisTemplate, never()).delete(anyString());
+    }
+
+    @Test
+    void revokeRefreshTokenIgnoresMissingTokenDeleteResult() {
+        when(redisTemplate.delete(anyString())).thenReturn(false);
+
+        tokenService.revokeRefreshToken("refresh-token");
+
+        verify(redisTemplate).delete(anyString());
+    }
+
+    @Test
+    void revokeRefreshTokenIgnoresRedisDeleteFailure() {
+        when(redisTemplate.delete(anyString())).thenThrow(new RuntimeException("redis down"));
+
+        tokenService.revokeRefreshToken("refresh-token");
+
+        verify(redisTemplate).delete(anyString());
     }
 
     @Test

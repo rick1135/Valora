@@ -1,6 +1,7 @@
 package com.rick1135.Valora.dto.brapi;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public record BrapiResultDTO(
         String symbol,
@@ -10,14 +11,15 @@ public record BrapiResultDTO(
         Long regularMarketVolume,
         BigDecimal regularMarketDayHigh,
         BigDecimal regularMarketDayLow,
-        BrapiDividendsDataDTO dividendsData
+        BrapiDividendsDataDTO dividendsData,
+        List<BrapiHistoricalDataDTO> historicalDataPrice
 ) {
     public BrapiResultDTO(String symbol, BigDecimal regularMarketPrice) {
-        this(symbol, regularMarketPrice, null, null, null, null, null, null);
+        this(symbol, regularMarketPrice, null, null, null, null, null, null, null);
     }
 
     public BrapiResultDTO(String symbol, BigDecimal regularMarketPrice, BrapiDividendsDataDTO dividendsData) {
-        this(symbol, regularMarketPrice, null, null, null, null, null, dividendsData);
+        this(symbol, regularMarketPrice, null, null, null, null, null, dividendsData, null);
     }
 
     public BrapiResultDTO(
@@ -28,7 +30,7 @@ public record BrapiResultDTO(
             BigDecimal regularMarketDayHigh,
             BigDecimal regularMarketDayLow
     ) {
-        this(symbol, regularMarketPrice, null, regularMarketChangePercent, regularMarketVolume, regularMarketDayHigh, regularMarketDayLow, null);
+        this(symbol, regularMarketPrice, null, regularMarketChangePercent, regularMarketVolume, regularMarketDayHigh, regularMarketDayLow, null, null);
     }
 
     public BrapiResultDTO(
@@ -40,6 +42,6 @@ public record BrapiResultDTO(
             BigDecimal regularMarketDayHigh,
             BigDecimal regularMarketDayLow
     ) {
-        this(symbol, regularMarketPrice, regularMarketChange, regularMarketChangePercent, regularMarketVolume, regularMarketDayHigh, regularMarketDayLow, null);
+        this(symbol, regularMarketPrice, regularMarketChange, regularMarketChangePercent, regularMarketVolume, regularMarketDayHigh, regularMarketDayLow, null, null);
     }
 }

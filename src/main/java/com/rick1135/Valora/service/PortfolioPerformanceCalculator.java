@@ -25,7 +25,8 @@ public class PortfolioPerformanceCalculator {
     public PortfolioSummaryDTO calculate(
             List<Position> positions,
             Map<String, QuoteDTO> currentQuotes,
-            BigDecimal totalProvents
+            BigDecimal totalProvents,
+            List<PortfolioSummaryDTO.BenchmarkComparisonDTO> benchmarkComparisons
     ) {
         List<PositionSummaryLine> positionLines = positions.stream()
                 .map(position -> buildPositionSummaryLine(position, currentQuotes))
@@ -76,7 +77,8 @@ public class PortfolioPerformanceCalculator {
                         totalPercentage,
                         dayAbsoluteVariation,
                         dayPercentageVariation,
-                        dayChangeAvailable
+                        dayChangeAvailable,
+                        benchmarkComparisons
                 ),
                 allocations,
                 !fallbackTickers.isEmpty(),
