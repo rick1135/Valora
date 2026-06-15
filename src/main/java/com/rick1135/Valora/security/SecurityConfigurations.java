@@ -54,6 +54,15 @@ public class SecurityConfigurations {
                 ))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/",
+                                "/index.html",
+                                "/landing.css",
+                                "/dashboard.html",
+                                "/styles.css",
+                                "/dashboard.js"
+                        ).permitAll()
                         .requestMatchers("/auth/login", "/auth/register", "/auth/refresh").permitAll()
                         .requestMatchers(HttpMethod.POST, "/assets").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/provents", "/provents/sync").hasRole("ADMIN")

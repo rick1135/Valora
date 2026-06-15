@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Valora | Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar__inner">
+        <a class="brand" href="/" aria-label="Valora">Valora</a>
+        <span class="portfolio-label">Carteira</span>
+      </div>
+    </header>
+
+    <main class="shell dashboard">
+      <div class="workspace-nav">
+        <nav class="tabs" aria-label="Se&ccedil;&otilde;es da carteira">
+          <a class="tab tab--active" href="/dashboard.html" aria-current="page">Dashboard</a>
+          <a class="tab" href="#">Ativos</a>
+          <a class="tab" href="#">Proventos</a>
+          <a class="tab" href="#">Rentabilidade</a>
+          <a class="tab" href="#">Metas</a>
+          <a class="tab" href="#">Lan&ccedil;amentos</a>
+        </nav>
+
+        <div class="actions">
+          <button class="button button--ghost" type="button">Integra&ccedil;&atilde;o B3</button>
+          <button class="button button--primary" type="button">
+            <span class="button__icon" aria-hidden="true">+</span>
+            Adicionar ativo
+          </button>
+        </div>
+      </div>
+
+      <section class="summary" aria-labelledby="summary-title">
+        <h1 id="summary-title">Resumo da carteira</h1>
+        <p>Vis&atilde;o executiva dos investimentos, performance e distribui&ccedil;&atilde;o por classe de ativo.</p>
+      </section>
+
+      <section class="metric-grid" id="metric-grid" aria-label="Indicadores da carteira"></section>
+
+      <section class="insight-grid" aria-label="An&aacute;lises da carteira">
+        <article class="panel growth-panel" aria-labelledby="growth-title">
+          <div class="panel__header">
+            <h2 id="growth-title">Evolu&ccedil;&atilde;o do patrim&ocirc;nio</h2>
+            <div class="segmented-controls" aria-label="Filtros do gr&aacute;fico">
+              <button type="button">12 meses</button>
+              <button type="button">Todos os tipos</button>
+            </div>
+          </div>
+
+          <div class="chart-legend" aria-hidden="true">
+            <span>Valor aplicado</span>
+            <span>Ganho de capital</span>
+          </div>
+
+          <div class="bar-chart" id="equity-chart" aria-label="Evolu&ccedil;&atilde;o mensal do patrim&ocirc;nio"></div>
+        </article>
+
+        <article class="panel allocation-panel" aria-labelledby="allocation-title">
+          <h2 id="allocation-title">Ativos na carteira</h2>
+
+          <div class="allocation-content">
+            <div class="allocation-visual" aria-hidden="true">
+              <svg viewBox="0 0 320 320" role="img" aria-label="Distribui&ccedil;&atilde;o por classe de ativo">
+                <g transform="rotate(-90 160 160)">
+                  <circle class="allocation-ring allocation-ring--fiis" cx="160" cy="160" r="106"></circle>
+                  <circle class="allocation-ring allocation-ring--crypto" cx="160" cy="160" r="82"></circle>
+                  <circle class="allocation-ring allocation-ring--stocks" cx="160" cy="160" r="58"></circle>
+                </g>
+                <circle class="allocation-hole" cx="160" cy="160" r="54"></circle>
+              </svg>
+            </div>
+
+            <ul class="allocation-list" id="allocation-list"></ul>
+          </div>
+        </article>
+      </section>
+
+      <section class="assets" aria-labelledby="assets-title">
+        <h2 id="assets-title">Meus ativos</h2>
+
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Ativo</th>
+                <th scope="col">Qtd.</th>
+                <th scope="col">Pre&ccedil;o m&eacute;dio</th>
+                <th scope="col">Pre&ccedil;o atual</th>
+                <th scope="col">Varia&ccedil;&atilde;o</th>
+                <th scope="col">Rentab.</th>
+                <th scope="col">% carteira</th>
+                <th scope="col">Comprar?</th>
+              </tr>
+            </thead>
+            <tbody id="assets-table"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="dashboard.js"></script>
+  </body>
+</html>

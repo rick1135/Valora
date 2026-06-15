@@ -71,6 +71,22 @@ class AccessTokenSecurityTest {
     }
 
     @Test
+    void dashboardStaticFrontendShouldBePublic() throws Exception {
+        mockMvc.perform(get("/"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/index.html"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/landing.css"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/dashboard.html"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/styles.css"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/dashboard.js"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void globalAssetReadShouldReturnUnauthorizedWithGenericBodyWhenAuthenticationIsMissing() throws Exception {
         assertGenericUnauthorized(mockMvc.perform(get("/assets")), null);
     }
@@ -298,6 +314,10 @@ class AccessTokenSecurityTest {
     static class TestControllers {
         @GetMapping("/assets")
         void assets() {
+        }
+
+        @GetMapping({"/", "/index.html", "/landing.css", "/dashboard.html", "/styles.css", "/dashboard.js"})
+        void dashboardStaticFrontend() {
         }
 
         @GetMapping("/portfolios/{portfolioId}")
