@@ -155,7 +155,7 @@ function renderEvolutionChart() {
 
     const gain = document.createElement("span");
     gain.className = "gain-fill";
-    gain.style.setProperty("--gain", item.gain ? `${item.gain}px` : "0");
+    gain.style.height = item.gain ? `${item.gain}px` : "0";
 
     const label = document.createElement("span");
     label.className = "bar-label";

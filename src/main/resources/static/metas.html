@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Valora | Metas</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar__inner">
+        <a class="brand" href="/" aria-label="Valora">Valora</a>
+        <span class="portfolio-label">Carteira</span>
+      </div>
+    </header>
+
+    <main class="shell dashboard">
+      <div class="workspace-nav">
+        <nav class="tabs" aria-label="Se&ccedil;&otilde;es da carteira">
+          <a class="tab" href="/dashboard.html">Resumo</a>
+          <a class="tab" href="/proventos.html">Proventos</a>
+          <a class="tab" href="#">Patrim&ocirc;nio</a>
+          <a class="tab" href="/rentabilidade.html">Rentabilidade</a>
+          <a class="tab tab--active" href="/metas.html" aria-current="page">Metas</a>
+          <a class="tab" href="#">An&aacute;lise</a>
+          <a class="tab" href="#">Lan&ccedil;amentos</a>
+          <a class="tab" href="#">PRO</a>
+          <a class="tab" href="#">IRPF</a>
+        </nav>
+
+        <div class="actions">
+          <button class="button button--ghost" type="button">Integra&ccedil;&atilde;o B3</button>
+          <button class="button button--primary" type="button">
+            <span class="button__icon" aria-hidden="true">+</span>
+            Lan&ccedil;amento
+          </button>
+        </div>
+      </div>
+
+      <section class="goals-hero">
+        <div class="summary" aria-labelledby="goals-title">
+          <h1 id="goals-title">Metas</h1>
+          <p>Defina objetivos, acompanhe o progresso e veja o que j&aacute; foi conquistado. Uma sala de controle para o seu futuro eu.</p>
+        </div>
+
+        <button class="goals-create-button" type="button">
+          <span aria-hidden="true">+</span>
+          Criar nova meta
+        </button>
+      </section>
+
+      <section class="goals-summary-grid" id="goals-summary-grid" aria-label="Resumo das metas"></section>
+
+      <section class="goals-main-grid" aria-label="Metas em andamento">
+        <article class="panel goals-form-panel" aria-labelledby="create-goal-title">
+          <h2 id="create-goal-title">Criar meta</h2>
+          <p>Cadastre o destino, valor alvo e prazo.</p>
+
+          <form class="goal-form">
+            <label>
+              <span>Nome da meta</span>
+              <input type="text" value="Reserva de emerg&ecirc;ncia" aria-label="Nome da meta">
+            </label>
+
+            <div class="goal-form__row">
+              <label>
+                <span>Valor alvo</span>
+                <input type="text" value="R$ 12.000,00" aria-label="Valor alvo">
+              </label>
+
+              <label>
+                <span>Prazo</span>
+                <input type="text" value="12/2026" aria-label="Prazo">
+              </label>
+            </div>
+
+            <label>
+              <span>Categoria</span>
+              <input type="text" value="Seguran&ccedil;a financeira" aria-label="Categoria">
+            </label>
+
+            <button type="button">Salvar meta</button>
+          </form>
+        </article>
+
+        <article class="panel goals-active-panel" aria-labelledby="active-goals-title">
+          <div class="goals-section-header">
+            <h2 id="active-goals-title">Metas em andamento</h2>
+            <div class="goals-filter-row" aria-label="Filtros das metas">
+              <button class="goals-filter goals-filter--active" type="button">Todas</button>
+              <button class="goals-filter" type="button">Este ano</button>
+              <button class="goals-filter" type="button">Prioridade</button>
+            </div>
+          </div>
+
+          <div class="goals-card-grid" id="goals-card-grid"></div>
+        </article>
+      </section>
+
+      <section class="goals-bottom-grid" aria-label="Evolu&ccedil;&atilde;o e hist&oacute;rico das metas">
+        <article class="panel goals-evolution-panel" aria-labelledby="goals-evolution-title">
+          <h2 id="goals-evolution-title">Evolu&ccedil;&atilde;o das metas</h2>
+          <p>Progresso acumulado por m&ecirc;s</p>
+          <div class="goals-evolution-chart" id="goals-evolution-chart" aria-label="Evolu&ccedil;&atilde;o acumulada mensal das metas"></div>
+        </article>
+
+        <article class="panel goals-completed-panel" aria-labelledby="goals-completed-title">
+          <h2 id="goals-completed-title">Metas conclu&iacute;das</h2>
+          <p>Hist&oacute;rico de objetivos finalizados</p>
+          <div class="goals-completed-list" id="goals-completed-list"></div>
+        </article>
+      </section>
+    </main>
+
+    <script src="metas.js"></script>
+  </body>
+</html>

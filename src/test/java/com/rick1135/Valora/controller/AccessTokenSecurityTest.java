@@ -90,11 +90,19 @@ class AccessTokenSecurityTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/rentabilidade.html"))
                 .andExpect(status().isOk());
+        mockMvc.perform(get("/proventos.html"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/metas.html"))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/styles.css"))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/dashboard.js"))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/rentabilidade.js"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/proventos.js"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/metas.js"))
                 .andExpect(status().isOk());
     }
 
@@ -338,9 +346,13 @@ class AccessTokenSecurityTest {
                 "/auth.js",
                 "/dashboard.html",
                 "/rentabilidade.html",
+                "/proventos.html",
+                "/metas.html",
                 "/styles.css",
                 "/dashboard.js",
-                "/rentabilidade.js"
+                "/rentabilidade.js",
+                "/proventos.js",
+                "/metas.js"
         })
         void dashboardStaticFrontend() {
         }

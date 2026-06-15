@@ -391,12 +391,11 @@ a {
 }
 
 .gain-fill {
-  --gain: 0;
   position: absolute;
   bottom: -21px;
   display: block;
   width: min(58px, 74%);
-  height: var(--gain, 0);
+  height: 0;
   border-radius: 7px;
   background: var(--green-soft);
 }
@@ -709,6 +708,1041 @@ tbody tr:last-child td {
   color: var(--pink);
 }
 
+.provents-overview {
+  display: grid;
+  grid-template-columns: minmax(300px, 350px) minmax(0, 1fr);
+  gap: 28px;
+  align-items: stretch;
+  margin: 34px 0 42px;
+}
+
+.provents-summary-panel {
+  overflow: hidden;
+  background: #0d0f11;
+}
+
+.provents-summary-panel h2,
+.provents-chart-panel h2,
+.provents-table-panel h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(1.65rem, 2.25vw, 1.9rem);
+  line-height: 1.12;
+}
+
+.provents-summary-panel h2 {
+  padding: 30px 26px 8px;
+}
+
+.provents-summary-block {
+  padding: 25px 26px;
+  border-bottom: 1px solid var(--border);
+}
+
+.provents-summary-block:last-child {
+  border-bottom: 0;
+}
+
+.provents-summary-label {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 0.98rem;
+  font-weight: 750;
+}
+
+.provents-summary-percent,
+.provents-summary-value {
+  display: block;
+  color: var(--text);
+  font-size: clamp(1.65rem, 3vw, 2.05rem);
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.provents-summary-percent {
+  text-align: right;
+}
+
+.provents-progress {
+  height: 6px;
+  margin-top: 18px;
+  border-radius: 999px;
+  background: #2c3848;
+  overflow: hidden;
+}
+
+.provents-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+}
+
+.provents-summary-block--distribution {
+  padding-bottom: 22px;
+}
+
+.provents-distribution {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(132px, auto);
+  gap: 18px;
+  align-items: center;
+}
+
+.provents-ring {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+}
+
+.provents-ring svg {
+  width: min(160px, 100%);
+  height: auto;
+  overflow: visible;
+}
+
+.provents-ring__segment {
+  fill: none;
+  stroke-linecap: butt;
+  stroke-width: 10;
+  stroke-dasharray: 24 58 22 64 18 68;
+  stroke-dashoffset: 18;
+}
+
+.provents-ring__segment--blue {
+  stroke: var(--blue);
+}
+
+.provents-ring__segment--cyan {
+  stroke: #43d7e5;
+}
+
+.provents-ring__segment--yellow {
+  stroke: var(--yellow);
+}
+
+.provents-ring__segment--purple {
+  stroke: #9c7af1;
+}
+
+.provents-ring__hole {
+  fill: var(--surface);
+}
+
+.provents-distribution-list {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.provents-distribution-list li {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  color: var(--text-soft);
+  font-size: 0.95rem;
+  font-weight: 750;
+}
+
+.provents-distribution-list strong {
+  color: var(--text);
+}
+
+.provents-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.provents-chart-panel {
+  min-height: 578px;
+  padding: 30px 28px 34px;
+}
+
+.provents-panel-header,
+.provents-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.provents-filters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.provents-filter {
+  min-height: 40px;
+  border: 1px solid #203349;
+  border-radius: 12px;
+  padding: 0 18px;
+  color: var(--text-soft);
+  background: #0f1723;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.provents-filter--active {
+  border-color: #2d3b50;
+  background: #1b2434;
+  color: var(--text);
+}
+
+.provents-legend {
+  display: flex;
+  justify-content: center;
+  gap: 42px;
+  margin: 40px 0 20px;
+  color: var(--muted-strong);
+  font-size: 0.92rem;
+  font-weight: 750;
+}
+
+.provents-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.provents-legend-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+}
+
+.provents-legend-dot--received {
+  background: var(--blue);
+}
+
+.provents-legend-dot--pending {
+  background: #b5c6e4;
+}
+
+.provents-chart {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(13, minmax(54px, 1fr));
+  gap: 16px;
+  min-height: 370px;
+  padding: 36px 14px 0;
+  overflow-x: auto;
+}
+
+.provents-chart::before {
+  position: absolute;
+  inset: 22px 14px 72px;
+  pointer-events: none;
+  background:
+    linear-gradient(to bottom, transparent calc(100% - 1px), rgba(91, 106, 130, 0.38) 1px) 0 0 / 100% 25%,
+    linear-gradient(rgba(91, 106, 130, 0.38), rgba(91, 106, 130, 0.38)) 0 100% / 100% 1px;
+  background-repeat: repeat-y, no-repeat;
+  content: "";
+}
+
+.provents-chart-month {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: 286px 40px;
+  justify-items: center;
+  min-width: 54px;
+}
+
+.provents-bar-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+  height: 286px;
+}
+
+.provents-bar {
+  display: block;
+  width: min(58px, 82%);
+  margin-inline: auto;
+}
+
+.provents-bar--pending {
+  min-height: 0;
+  border-radius: 7px 7px 0 0;
+  background: #b5c6e4;
+}
+
+.provents-bar--received {
+  min-height: 34px;
+  border-radius: 7px 7px 4px 4px;
+  background: var(--blue);
+  box-shadow: 0 16px 30px rgba(87, 150, 242, 0.13);
+}
+
+.provents-bar--pending + .provents-bar--received {
+  border-radius: 0 0 7px 7px;
+}
+
+.provents-chart-label {
+  align-self: end;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.provents-table-panel {
+  margin-bottom: 36px;
+  overflow: hidden;
+}
+
+.provents-table-header {
+  padding: 24px 28px 16px;
+}
+
+.provents-table-scroll {
+  overflow-x: auto;
+}
+
+.provents-history-table {
+  min-width: 1420px;
+}
+
+.provents-detail-table {
+  min-width: 1280px;
+}
+
+.provents-history-table th,
+.provents-history-table td,
+.provents-detail-table th,
+.provents-detail-table td {
+  padding: 20px 24px;
+}
+
+.provents-history-table tbody th {
+  color: var(--text);
+}
+
+.provents-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 0 12px;
+  color: var(--text-soft);
+  background: #101926;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.provents-status--received {
+  color: var(--green);
+  background: rgba(8, 208, 150, 0.09);
+}
+
+.provents-status--pending {
+  color: #b5c6e4;
+  background: rgba(181, 198, 228, 0.1);
+}
+
+.goals-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 26px;
+  margin: 34px 0 42px;
+}
+
+.goals-metric-card .metric-card__value {
+  color: var(--green);
+}
+
+.goals-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(420px, 0.9fr);
+  gap: 30px;
+  margin-bottom: 42px;
+}
+
+.goals-allocation-panel,
+.goals-projection-panel {
+  min-height: 472px;
+  padding: 30px;
+}
+
+.goals-panel-header,
+.goals-table-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.goals-panel-header h2,
+.goals-table-panel h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(1.65rem, 2.3vw, 1.95rem);
+  line-height: 1.12;
+}
+
+.goals-panel-header p {
+  max-width: 560px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.98rem;
+  line-height: 1.45;
+}
+
+.goals-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid #203349;
+  border-radius: 999px;
+  padding: 0 18px;
+  color: var(--text-soft);
+  background: #0f1723;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.goals-allocation-list {
+  display: grid;
+  gap: 22px;
+  margin-top: 30px;
+}
+
+.goals-allocation-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(240px, 1.5fr) minmax(190px, 0.8fr);
+  gap: 22px;
+  align-items: center;
+  min-width: 0;
+}
+
+.goals-allocation-info,
+.goals-allocation-meta {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.goals-allocation-info {
+  grid-template-columns: 16px 1fr;
+  align-items: center;
+}
+
+.goals-allocation-info span:last-child {
+  grid-column: 2;
+}
+
+.goals-allocation-info strong,
+.goals-allocation-meta strong {
+  color: var(--text);
+}
+
+.goals-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.goals-allocation-track {
+  position: relative;
+  height: 16px;
+  border-radius: 999px;
+  background: #0d141e;
+  box-shadow: inset 0 0 0 1px #223045;
+}
+
+.goals-allocation-fill {
+  display: block;
+  height: 100%;
+  min-width: 6px;
+  border-radius: inherit;
+}
+
+.goals-allocation-target {
+  position: absolute;
+  top: -7px;
+  bottom: -7px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--text);
+  box-shadow: 0 0 0 4px rgba(237, 242, 247, 0.1);
+}
+
+.goals-status {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-style: normal;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.goals-status--positive {
+  color: var(--green);
+  background: rgba(8, 208, 150, 0.09);
+}
+
+.goals-status--warning {
+  color: var(--yellow);
+  background: rgba(255, 222, 112, 0.1);
+}
+
+.goals-status--neutral {
+  color: #b5c6e4;
+  background: rgba(181, 198, 228, 0.1);
+}
+
+.goals-projection-chart {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(34px, 1fr));
+  gap: 14px;
+  min-height: 315px;
+  margin-top: 38px;
+  padding: 24px 6px 0;
+  overflow-x: auto;
+}
+
+.goals-projection-chart::before {
+  position: absolute;
+  inset: 18px 6px 54px;
+  pointer-events: none;
+  background:
+    linear-gradient(to bottom, transparent calc(100% - 1px), rgba(91, 106, 130, 0.34) 1px) 0 0 / 100% 25%,
+    linear-gradient(rgba(91, 106, 130, 0.34), rgba(91, 106, 130, 0.34)) 0 100% / 100% 1px;
+  background-repeat: repeat-y, no-repeat;
+  content: "";
+}
+
+.goals-projection-month {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: 232px 34px;
+  justify-items: center;
+  min-width: 34px;
+}
+
+.goals-projection-bars {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  height: 232px;
+}
+
+.goals-projection-bar {
+  display: block;
+  width: min(18px, 42%);
+  min-height: 28px;
+  border-radius: 6px 6px 3px 3px;
+}
+
+.goals-projection-bar--current {
+  background: var(--green);
+}
+
+.goals-projection-bar--goal {
+  background: #b5c6e4;
+}
+
+.goals-projection-month > span {
+  align-self: end;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+
+.goals-table-panel {
+  overflow: hidden;
+  margin-bottom: 36px;
+}
+
+.goals-table-header {
+  align-items: center;
+  padding: 24px 28px 16px;
+}
+
+.goals-table-scroll {
+  overflow-x: auto;
+}
+
+.goals-table {
+  min-width: 1180px;
+}
+
+.goals-table th,
+.goals-table td {
+  padding: 20px 24px;
+}
+
+.goals-table-progress {
+  display: grid;
+  grid-template-columns: minmax(112px, 1fr) 46px;
+  gap: 12px;
+  align-items: center;
+}
+
+.goals-table-progress span {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--green);
+  box-shadow: 0 0 0 1px rgba(8, 208, 150, 0.12);
+}
+
+.goals-table-progress {
+  position: relative;
+}
+
+.goals-table-progress::before {
+  position: absolute;
+  right: 58px;
+  left: 0;
+  height: 8px;
+  border-radius: 999px;
+  background: #0d141e;
+  box-shadow: inset 0 0 0 1px #223045;
+  content: "";
+}
+
+.goals-table-progress span,
+.goals-table-progress strong {
+  position: relative;
+  z-index: 1;
+}
+
+.goals-table-progress strong {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.goals-priority {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 0 12px;
+  font-weight: 850;
+}
+
+.goals-priority--alta {
+  color: var(--pink);
+  background: rgba(255, 77, 131, 0.09);
+}
+
+.goals-priority--media {
+  color: var(--yellow);
+  background: rgba(255, 222, 112, 0.1);
+}
+
+.goals-priority--baixa {
+  color: var(--green);
+  background: rgba(8, 208, 150, 0.09);
+}
+
+.goals-hero {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 14px;
+}
+
+.goals-hero .summary {
+  margin-bottom: 0;
+}
+
+.goals-hero .summary p {
+  max-width: 690px;
+}
+
+.goals-create-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 198px;
+  min-height: 54px;
+  border: 0;
+  border-radius: 10px;
+  color: #06100d;
+  background: var(--green);
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.goals-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 28px;
+  margin: 22px 0 48px;
+}
+
+.goals-summary-card {
+  min-height: 138px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 23px;
+}
+
+.goals-summary-card p {
+  margin: 0 0 17px;
+  color: var(--text-soft);
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+.goals-summary-card strong {
+  display: block;
+  color: var(--text);
+  font-size: clamp(1.9rem, 3vw, 2.15rem);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.goals-summary-card span {
+  display: block;
+  margin-top: 13px;
+  color: var(--muted);
+  font-size: 0.96rem;
+  font-weight: 650;
+}
+
+.goals-summary-card--blue strong {
+  color: var(--blue);
+}
+
+.goals-summary-card--green strong {
+  color: var(--green);
+}
+
+.goals-summary-card--yellow strong {
+  color: var(--yellow);
+}
+
+.goals-main-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.52fr) minmax(0, 1fr);
+  gap: 38px;
+  margin-bottom: 48px;
+}
+
+.goals-form-panel,
+.goals-active-panel,
+.goals-evolution-panel,
+.goals-completed-panel {
+  padding: 34px;
+}
+
+.goals-form-panel h2,
+.goals-active-panel h2,
+.goals-evolution-panel h2,
+.goals-completed-panel h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(1.75rem, 2.4vw, 2.05rem);
+  line-height: 1.12;
+}
+
+.goals-form-panel > p,
+.goals-evolution-panel > p,
+.goals-completed-panel > p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.goal-form {
+  display: grid;
+  gap: 18px;
+  margin-top: 34px;
+}
+
+.goal-form label {
+  display: grid;
+  gap: 9px;
+  color: var(--muted-strong);
+  font-size: 0.92rem;
+  font-weight: 850;
+}
+
+.goal-form input {
+  width: 100%;
+  min-height: 50px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 16px;
+  color: #6f7d90;
+  background: var(--surface-soft);
+  font: inherit;
+  outline: none;
+}
+
+.goal-form__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.goal-form button {
+  min-height: 54px;
+  border: 0;
+  border-radius: 10px;
+  color: #06100d;
+  background: var(--green);
+  font-weight: 900;
+}
+
+.goals-section-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.goals-filter-row {
+  display: flex;
+  gap: 12px;
+}
+
+.goals-filter {
+  min-height: 40px;
+  border: 1px solid #203349;
+  border-radius: 12px;
+  padding: 0 18px;
+  color: var(--text-soft);
+  background: #0f1723;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.goals-filter--active {
+  border-color: #2d3b50;
+  background: #1b2434;
+  color: var(--text);
+}
+
+.goals-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px 40px;
+  margin-top: 32px;
+}
+
+.goal-progress-card {
+  position: relative;
+  min-height: 136px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #1b2434;
+  padding: 20px 22px 18px;
+}
+
+.goal-progress-card__top {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.goal-progress-card h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.18rem;
+  line-height: 1.15;
+}
+
+.goal-progress-card__top span,
+.goal-progress-card p {
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.goal-progress-card p {
+  margin: 10px 0 12px;
+}
+
+.goal-progress-card strong {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.goal-progress-card__progress {
+  height: 9px;
+  margin-top: 14px;
+  margin-right: 70px;
+  border-radius: 999px;
+  background: #344053;
+  overflow: hidden;
+}
+
+.goal-progress-card__progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--goal-color, var(--green));
+}
+
+.goal-progress-card em {
+  position: absolute;
+  right: 22px;
+  bottom: 16px;
+  color: var(--goal-color, var(--green));
+  font-style: normal;
+  font-size: 1.65rem;
+  font-weight: 900;
+}
+
+.goal-progress-card--green {
+  --goal-color: var(--green);
+}
+
+.goal-progress-card--blue {
+  --goal-color: var(--blue);
+}
+
+.goal-progress-card--yellow {
+  --goal-color: var(--yellow);
+}
+
+.goal-progress-card--purple {
+  --goal-color: #9c7af1;
+}
+
+.goals-bottom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(480px, 0.92fr);
+  gap: 40px;
+}
+
+.goals-evolution-chart {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(34px, 1fr));
+  gap: 18px;
+  align-items: end;
+  min-height: 282px;
+  margin-top: 42px;
+  padding: 28px 12px 0;
+  overflow-x: auto;
+}
+
+.goals-evolution-chart::before {
+  position: absolute;
+  inset: 22px 12px 52px;
+  pointer-events: none;
+  background:
+    linear-gradient(to bottom, transparent calc(100% - 1px), rgba(91, 106, 130, 0.38) 1px) 0 0 / 100% 25%,
+    linear-gradient(rgba(91, 106, 130, 0.38), rgba(91, 106, 130, 0.38)) 0 100% / 100% 1px;
+  background-repeat: repeat-y, no-repeat;
+  content: "";
+}
+
+.goals-evolution-month {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: 206px 34px;
+  justify-items: center;
+}
+
+.goals-evolution-month span {
+  align-self: end;
+  display: block;
+  width: min(32px, 76%);
+  min-height: 30px;
+  border-radius: 7px;
+  background: var(--green);
+}
+
+.goals-evolution-month strong {
+  align-self: end;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.goals-completed-list {
+  display: grid;
+  gap: 20px;
+  margin-top: 42px;
+}
+
+.completed-goal-card {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  min-height: 58px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: #1b2434;
+  padding: 12px 22px;
+}
+
+.completed-goal-card:nth-child(even) {
+  background: var(--surface-soft);
+}
+
+.completed-goal-card__check {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #05241b;
+  background: var(--green);
+  font-weight: 900;
+}
+
+.completed-goal-card h3,
+.completed-goal-card p {
+  margin: 0;
+}
+
+.completed-goal-card h3,
+.completed-goal-card strong {
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 850;
+}
+
+.completed-goal-card p {
+  margin-top: 2px;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.completed-goal-card div:last-child {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+}
+
+.completed-goal-card em {
+  color: var(--green);
+  font-style: normal;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
 @media (max-width: 1220px) {
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -732,6 +1766,40 @@ tbody tr:last-child td {
 
   .comparison-legend {
     justify-content: flex-start;
+  }
+
+  .provents-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .provents-summary-panel {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .provents-summary-panel h2 {
+    grid-column: 1 / -1;
+  }
+
+  .provents-summary-block--distribution {
+    grid-column: 1 / -1;
+  }
+
+  .goals-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .goals-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .goals-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .goals-main-grid,
+  .goals-bottom-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -765,6 +1833,45 @@ tbody tr:last-child td {
 
   .allocation-list {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .provents-panel-header,
+  .provents-table-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .provents-filters {
+    justify-content: flex-start;
+  }
+
+  .goals-panel-header,
+  .goals-table-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .goals-allocation-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .goals-hero,
+  .goals-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .goals-create-button {
+    width: 100%;
+  }
+
+  .goals-filter-row {
+    overflow-x: auto;
+  }
+
+  .goals-card-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -862,6 +1969,106 @@ tbody tr:last-child td {
 
   .return-matrix-panel h2 {
     padding-inline: 22px;
+  }
+
+  .provents-overview {
+    gap: 18px;
+    margin-top: 26px;
+  }
+
+  .provents-summary-panel {
+    display: block;
+  }
+
+  .provents-chart-panel,
+  .provents-table-header {
+    padding-inline: 22px;
+  }
+
+  .provents-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .provents-legend {
+    justify-content: flex-start;
+    gap: 24px;
+    overflow-x: auto;
+  }
+
+  .provents-chart {
+    grid-template-columns: repeat(13, 58px);
+    gap: 12px;
+    padding-inline: 0;
+  }
+
+  .provents-chart::before {
+    inset-inline: 0;
+  }
+
+  .provents-distribution {
+    grid-template-columns: 1fr;
+  }
+
+  .goals-metrics {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .goals-allocation-panel,
+  .goals-projection-panel,
+  .goals-table-header {
+    padding-inline: 22px;
+  }
+
+  .goals-projection-chart {
+    grid-template-columns: repeat(12, 44px);
+    gap: 12px;
+    padding-inline: 0;
+  }
+
+  .goals-projection-chart::before {
+    inset-inline: 0;
+  }
+
+  .goals-summary-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .goals-main-grid,
+  .goals-bottom-grid {
+    gap: 18px;
+  }
+
+  .goals-form-panel,
+  .goals-active-panel,
+  .goals-evolution-panel,
+  .goals-completed-panel {
+    padding: 22px;
+  }
+
+  .goal-form__row {
+    grid-template-columns: 1fr;
+  }
+
+  .goals-evolution-chart {
+    grid-template-columns: repeat(12, 42px);
+    gap: 12px;
+    padding-inline: 0;
+  }
+
+  .goals-evolution-chart::before {
+    inset-inline: 0;
+  }
+
+  .completed-goal-card {
+    grid-template-columns: 30px 1fr;
+  }
+
+  .completed-goal-card div:last-child {
+    grid-column: 2;
   }
 
   th,
