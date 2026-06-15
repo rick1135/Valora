@@ -64,8 +64,10 @@ public class SecurityConfigurations {
                                 "/auth.css",
                                 "/auth.js",
                                 "/dashboard.html",
+                                "/rentabilidade.html",
                                 "/styles.css",
-                                "/dashboard.js"
+                                "/dashboard.js",
+                                "/rentabilidade.js"
                         ).permitAll()
                         .requestMatchers("/auth/login", "/auth/register", "/auth/refresh").permitAll()
                         .requestMatchers(HttpMethod.POST, "/assets").hasRole("ADMIN")

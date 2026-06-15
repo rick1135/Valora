@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Valora | Rentabilidade</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar__inner">
+        <a class="brand" href="/" aria-label="Valora">Valora</a>
+        <span class="portfolio-label">Carteira</span>
+      </div>
+    </header>
+
+    <main class="shell dashboard">
+      <div class="workspace-nav">
+        <nav class="tabs" aria-label="Se&ccedil;&otilde;es da carteira">
+          <a class="tab" href="/dashboard.html">Dashboard</a>
+          <a class="tab" href="#">Ativos</a>
+          <a class="tab" href="#">Proventos</a>
+          <a class="tab tab--active" href="/rentabilidade.html" aria-current="page">Rentabilidade</a>
+          <a class="tab" href="#">Metas</a>
+          <a class="tab" href="#">Lan&ccedil;amentos</a>
+        </nav>
+
+        <div class="actions">
+          <button class="button button--ghost" type="button">Integra&ccedil;&atilde;o B3</button>
+          <button class="button button--primary" type="button">
+            <span class="button__icon" aria-hidden="true">+</span>
+            Adicionar ativo
+          </button>
+        </div>
+      </div>
+
+      <section class="summary" aria-labelledby="profitability-title">
+        <h1 id="profitability-title">Rentabilidade</h1>
+        <p>Compare sua carteira com CDI, IPCA, IBOV e IFIX sem precisar garimpar planilhas.</p>
+      </section>
+
+      <section class="profitability-overview" aria-label="Resumo de rentabilidade">
+        <div class="profitability-cards" id="profitability-cards"></div>
+
+        <article class="panel performance-panel" aria-labelledby="comparison-title">
+          <div class="performance-header">
+            <h2 id="comparison-title">Rentabilidade comparada com &iacute;ndices</h2>
+            <ul class="comparison-legend" id="comparison-legend" aria-label="Legenda do gr&aacute;fico"></ul>
+          </div>
+
+          <div class="line-comparison" id="line-comparison" aria-label="Gr&aacute;fico comparativo de rentabilidade acumulada"></div>
+        </article>
+      </section>
+
+      <section class="panel return-matrix-panel" aria-labelledby="return-matrix-title">
+        <h2 id="return-matrix-title">Matriz mensal de retorno</h2>
+
+        <div class="return-table-card">
+          <table class="return-table">
+            <thead>
+              <tr>
+                <th scope="col">Ano</th>
+                <th scope="col">Jan</th>
+                <th scope="col">Fev</th>
+                <th scope="col">Mar</th>
+                <th scope="col">Abr</th>
+                <th scope="col">Mai</th>
+                <th scope="col">Jun</th>
+                <th scope="col">Jul</th>
+                <th scope="col">Ago</th>
+                <th scope="col">Set</th>
+                <th scope="col">Out</th>
+                <th scope="col">Nov</th>
+                <th scope="col">Dez</th>
+                <th scope="col">Retorno anual</th>
+              </tr>
+            </thead>
+            <tbody id="return-matrix"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="rentabilidade.js"></script>
+  </body>
+</html>
