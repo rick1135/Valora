@@ -78,6 +78,14 @@ class AccessTokenSecurityTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/landing.css"))
                 .andExpect(status().isOk());
+        mockMvc.perform(get("/login.html"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/cadastro.html"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/auth.css"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/auth.js"))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/dashboard.html"))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/styles.css"))
@@ -316,7 +324,18 @@ class AccessTokenSecurityTest {
         void assets() {
         }
 
-        @GetMapping({"/", "/index.html", "/landing.css", "/dashboard.html", "/styles.css", "/dashboard.js"})
+        @GetMapping({
+                "/",
+                "/index.html",
+                "/landing.css",
+                "/login.html",
+                "/cadastro.html",
+                "/auth.css",
+                "/auth.js",
+                "/dashboard.html",
+                "/styles.css",
+                "/dashboard.js"
+        })
         void dashboardStaticFrontend() {
         }
 

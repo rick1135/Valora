@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Valora | Entrar</title>
+    <link rel="stylesheet" href="auth.css">
+  </head>
+  <body>
+    <div class="auth-shell">
+      <header class="auth-header">
+        <a class="logo" href="/" aria-label="Valora">
+          <span class="logo-mark" aria-hidden="true"></span>
+          <span>Valora</span>
+        </a>
+        <a class="button" href="/">Voltar ao site</a>
+      </header>
+
+      <main class="auth-layout">
+        <section class="side-card login-preview" aria-labelledby="login-preview-title">
+          <h2 id="login-preview-title">Bem-vindo de volta ao painel da sua carteira.</h2>
+          <p>Entre para acompanhar patrim&ocirc;nio, rentabilidade, aloca&ccedil;&atilde;o e lan&ccedil;amentos sem abrir cinco abas diferentes.</p>
+
+          <div class="preview-metrics">
+            <article class="preview-box">
+              <span>Patrim&ocirc;nio total</span>
+              <strong>R$ 84.230</strong>
+              <small>+4,78% em 12M</small>
+            </article>
+            <article class="preview-box">
+              <span>Alertas</span>
+              <strong>3 ativos</strong>
+              <small class="warning">fora do ideal</small>
+            </article>
+          </div>
+
+          <div class="line-chart" aria-hidden="true">
+            <svg viewBox="0 0 620 210">
+              <path d="M35 158 L130 132 L215 138 L300 98 L385 118 L470 72 L560 96" fill="none" stroke="#05cf96" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"></path>
+              <circle cx="35" cy="158" r="10" fill="#05cf96"></circle>
+              <circle cx="130" cy="132" r="10" fill="#05cf96"></circle>
+              <circle cx="215" cy="138" r="10" fill="#05cf96"></circle>
+              <circle cx="300" cy="98" r="10" fill="#05cf96"></circle>
+              <circle cx="385" cy="118" r="10" fill="#05cf96"></circle>
+              <circle cx="470" cy="72" r="10" fill="#05cf96"></circle>
+              <circle cx="560" cy="96" r="10" fill="#05cf96"></circle>
+            </svg>
+          </div>
+        </section>
+
+        <section class="auth-card auth-card--login" aria-labelledby="login-title">
+          <h1 id="login-title">Entrar no Valora</h1>
+          <p>Acesse sua conta para continuar.</p>
+
+          <form class="form-stack" data-auth-form="login">
+            <button class="oauth-button" type="button">Continuar com Google</button>
+
+            <div class="divider" aria-hidden="true"><span>ou</span></div>
+
+            <label class="field">
+              <span class="auth-label">Email</span>
+              <span class="input-wrap">
+                <span class="input-icon" aria-hidden="true">@</span>
+                <input type="email" name="email" autocomplete="email" placeholder="seuemail@exemplo.com" required>
+              </span>
+            </label>
+
+            <label class="field">
+              <span class="auth-label">Senha</span>
+              <span class="input-wrap">
+                <span class="input-icon" aria-hidden="true">&bull;</span>
+                <input type="password" name="password" autocomplete="current-password" placeholder="Digite sua senha" minlength="8" required>
+              </span>
+            </label>
+
+            <div class="form-row">
+              <a class="text-link" href="#">Esqueci minha senha</a>
+            </div>
+
+            <div class="submit-area">
+              <button class="button button--primary" type="submit">Entrar</button>
+            </div>
+
+            <p class="form-status" data-form-status role="status" aria-live="polite"></p>
+
+            <p class="switch-copy">
+              <span>Ainda n&atilde;o tem conta?</span>
+              <a class="text-link" href="/cadastro.html">Criar conta gratuita</a>
+            </p>
+          </form>
+        </section>
+      </main>
+    </div>
+    <script src="auth.js"></script>
+  </body>
+</html>

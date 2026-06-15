@@ -59,6 +59,10 @@ public class SecurityConfigurations {
                                 "/",
                                 "/index.html",
                                 "/landing.css",
+                                "/login.html",
+                                "/cadastro.html",
+                                "/auth.css",
+                                "/auth.js",
                                 "/dashboard.html",
                                 "/styles.css",
                                 "/dashboard.js"

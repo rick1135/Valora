@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Valora | Criar conta</title>
+    <link rel="stylesheet" href="auth.css">
+  </head>
+  <body>
+    <div class="auth-shell">
+      <header class="auth-header">
+        <a class="logo" href="/" aria-label="Valora">
+          <span class="logo-mark" aria-hidden="true"></span>
+          <span>Valora</span>
+        </a>
+        <a class="button" href="/">Voltar ao site</a>
+      </header>
+
+      <main class="auth-layout">
+        <section class="auth-card" aria-labelledby="register-title">
+          <h1 id="register-title">Crie sua conta</h1>
+          <p>Comece organizando seus ativos em poucos minutos.</p>
+
+          <form class="form-stack" data-auth-form="register">
+            <label class="field">
+              <span class="auth-label">Nome completo</span>
+              <span class="input-wrap">
+                <span class="input-icon" aria-hidden="true">+</span>
+                <input type="text" name="name" autocomplete="name" placeholder="Seu nome" required>
+              </span>
+            </label>
+
+            <label class="field">
+              <span class="auth-label">Email</span>
+              <span class="input-wrap">
+                <span class="input-icon" aria-hidden="true">@</span>
+                <input type="email" name="email" autocomplete="email" placeholder="seuemail@exemplo.com" required>
+              </span>
+            </label>
+
+            <label class="field">
+              <span class="auth-label">Senha</span>
+              <span class="input-wrap">
+                <span class="input-icon" aria-hidden="true">&bull;</span>
+                <input type="password" name="password" autocomplete="new-password" placeholder="M&iacute;nimo de 8 caracteres" minlength="8" required>
+              </span>
+            </label>
+
+            <label class="field">
+              <span class="auth-label">Confirmar senha</span>
+              <span class="input-wrap">
+                <span class="input-icon" aria-hidden="true">&bull;</span>
+                <input type="password" name="passwordConfirmation" autocomplete="new-password" placeholder="Repita sua senha" minlength="8" required>
+              </span>
+            </label>
+
+            <label class="field">
+              <span class="auth-label">Perfil de investidor</span>
+              <span class="input-wrap">
+                <input type="text" name="investorProfile" placeholder="Conservador, moderado ou arrojado">
+              </span>
+            </label>
+
+            <label class="checkbox-row">
+              <input type="checkbox" name="acceptTips">
+              <span>Aceito os termos e quero receber dicas sobre organiza&ccedil;&atilde;o da carteira.</span>
+            </label>
+
+            <button class="button button--primary" type="submit">Criar conta gratuita</button>
+            <p class="form-status" data-form-status role="status" aria-live="polite"></p>
+            <a class="register-link" href="/login.html">J&aacute; tenho conta</a>
+          </form>
+        </section>
+
+        <section class="side-card register-side" aria-labelledby="register-side-title">
+          <h2 id="register-side-title">Seu primeiro painel j&aacute; nasce organizado.</h2>
+          <p>Ao entrar, o Valora guia voc&ecirc; para cadastrar ativos, definir percentuais ideais e acompanhar sua carteira por classe.</p>
+
+          <div class="steps">
+            <article class="step">
+              <span class="step-number">1</span>
+              <div>
+                <h3>Cadastre a&ccedil;&otilde;es, FIIs e criptos</h3>
+                <p>Comece pelo que voc&ecirc; j&aacute; tem hoje.</p>
+              </div>
+            </article>
+            <article class="step">
+              <span class="step-number">2</span>
+              <div>
+                <h3>Informe pre&ccedil;o m&eacute;dio e quantidade</h3>
+                <p>O sistema calcula posi&ccedil;&atilde;o e varia&ccedil;&atilde;o.</p>
+              </div>
+            </article>
+            <article class="step">
+              <span class="step-number">3</span>
+              <div>
+                <h3>Defina a aloca&ccedil;&atilde;o ideal</h3>
+                <p>Veja excesso ou falta em cada categoria.</p>
+              </div>
+            </article>
+            <article class="step">
+              <span class="step-number">4</span>
+              <div>
+                <h3>Acompanhe evolu&ccedil;&atilde;o e rentabilidade</h3>
+                <p>Transforme dados em decis&otilde;es mais simples.</p>
+              </div>
+            </article>
+          </div>
+
+          <blockquote class="quote-box">
+            &ldquo;Finalmente uma vis&atilde;o limpa da carteira sem abrir planilha, corretora e bloco de notas.&rdquo;
+          </blockquote>
+        </section>
+      </main>
+    </div>
+    <script src="auth.js"></script>
+  </body>
+</html>
