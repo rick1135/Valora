@@ -6,6 +6,7 @@
     <title>Valora | Metas de Aloca&ccedil;&atilde;o</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="transaction-ui.css">
+    <link rel="stylesheet" href="portfolio-ui.css">
     <link rel="stylesheet" href="metas-page.css">
   </head>
   <body>
@@ -24,6 +25,7 @@
           <a class="tab" href="/proventos.html">Proventos</a>
           <a class="tab" href="/rentabilidade.html">Rentabilidade</a>
           <a class="tab tab--active" href="/metas.html" aria-current="page">Metas</a>
+          <a class="tab" href="/lancamentos.html">Lan&ccedil;amentos</a>
         </nav>
 
         <div class="actions">
@@ -46,9 +48,9 @@
       <div class="dashboard-banner dashboard-banner--error" id="metas-error" role="alert" hidden></div>
       <div class="dashboard-banner dashboard-banner--success" id="metas-status" role="status" aria-live="polite" hidden></div>
 
-      <section class="metric-grid" id="metas-summary-grid" aria-label="Resumo da estrat&eacute;gia"></section>
+      <section class="metric-grid portfolio-data" hidden id="metas-summary-grid" aria-label="Resumo da estrat&eacute;gia"></section>
 
-      <section class="metas-layout" aria-label="Configura&ccedil;&atilde;o e simula&ccedil;&atilde;o de metas">
+      <section class="metas-layout portfolio-data" hidden aria-label="Configura&ccedil;&atilde;o e simula&ccedil;&atilde;o de metas">
         <article class="panel metas-editor-panel" aria-labelledby="targets-editor-title">
           <div class="metas-panel-head">
             <div>
@@ -166,6 +168,7 @@
     </main>
 
     <script src="api.js"></script>
+    <script src="portfolio-ui.js"></script>
     <script src="transaction-ui.js"></script>
     <script src="metas.js"></script>
   </body>

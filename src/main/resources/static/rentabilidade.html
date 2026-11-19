@@ -6,6 +6,7 @@
     <title>Valora | Rentabilidade</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="transaction-ui.css">
+    <link rel="stylesheet" href="portfolio-ui.css">
     <link rel="stylesheet" href="rentabilidade-page.css">
   </head>
   <body>
@@ -24,6 +25,7 @@
           <a class="tab" href="/proventos.html">Proventos</a>
           <a class="tab tab--active" href="/rentabilidade.html" aria-current="page">Rentabilidade</a>
           <a class="tab" href="/metas.html">Metas</a>
+          <a class="tab" href="/lancamentos.html">Lan&ccedil;amentos</a>
         </nav>
 
         <div class="actions">
@@ -46,7 +48,7 @@
       <div class="dashboard-banner dashboard-banner--error" id="rentabilidade-error" role="alert" hidden></div>
       <div class="dashboard-banner dashboard-banner--warning" id="fallback-notice" role="status" hidden></div>
 
-      <section class="empty-state" id="rentabilidade-empty" hidden>
+      <section class="empty-state portfolio-data" id="rentabilidade-empty" hidden>
         <h2>Nenhum dado de rentabilidade ainda</h2>
         <p>Registre seu primeiro lan&ccedil;amento para acompanhar lucro absoluto, realizado, n&atilde;o realizado, proventos e &iacute;ndices de refer&ecirc;ncia.</p>
         <button class="button button--primary" id="empty-state-cta" type="button">
@@ -55,7 +57,7 @@
         </button>
       </section>
 
-      <div id="rentabilidade-content" hidden>
+      <div class="portfolio-data" id="rentabilidade-content" hidden>
         <section class="rentability-cards" id="rentability-cards" aria-label="Indicadores de rentabilidade"></section>
 
         <section class="rentability-panels" aria-label="Detalhamento e &iacute;ndices de refer&ecirc;ncia">
@@ -94,6 +96,7 @@
     </main>
 
     <script src="api.js"></script>
+    <script src="portfolio-ui.js"></script>
     <script src="transaction-ui.js"></script>
     <script src="rentabilidade.js"></script>
   </body>

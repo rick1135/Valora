@@ -74,31 +74,6 @@
     return response;
   }
 
-  async function resolvePortfolio() {
-    if (!window.ValoraAPI || typeof window.ValoraAPI.getPortfolio !== "function") {
-      throw new Error("Cliente ValoraAPI indispon\u00edvel.");
-    }
-    const portfolio = await window.ValoraAPI.getPortfolio();
-    const portfolioId = typeof portfolio === "string" ? portfolio : portfolio?.id;
-    if (!portfolioId) {
-      throw new Error("Nenhuma carteira ativa encontrada.");
-    }
-
-    const portfolioName =
-      typeof portfolio === "object" &&
-      typeof portfolio?.name === "string" &&
-      portfolio.name.trim()
-        ? portfolio.name.trim()
-        : "Carteira";
-
-    const portfolioLabel = document.querySelector("#portfolio-name");
-    if (portfolioLabel) {
-      portfolioLabel.textContent = portfolioName;
-    }
-
-    return { id: portfolioId, name: portfolioName };
-  }
-
   function setLoading(isLoading) {
     const loadingBanner = document.querySelector("#rentabilidade-loading");
     if (loadingBanner) {
@@ -364,20 +339,31 @@
     container.replaceChildren(...nodes);
   }
 
+  let loadId = 0;
+
   async function loadRentabilidade() {
+    const currentLoad = ++loadId;
     showError("");
     renderFallbackNotice(null);
     setLoading(true);
 
     const emptyState = document.querySelector("#rentabilidade-empty");
     const content = document.querySelector("#rentabilidade-content");
+    if (content) content.hidden = true;
+    if (emptyState) emptyState.hidden = true;
 
     try {
-      const portfolio = await resolvePortfolio();
+      const portfolio = await window.ValoraAPI.getPortfolio();
+      if (currentLoad !== loadId) return;
+      if (!portfolio) {
+        showError("Crie uma carteira para visualizar a rentabilidade.");
+        return;
+      }
       const summary =
         (await apiRequest(
           `/portfolios/${encodeURIComponent(portfolio.id)}/summary`
         )) || {};
+      if (currentLoad !== loadId) return;
 
       renderFallbackNotice(summary);
 
@@ -394,6 +380,7 @@
       renderBenchmarks(summary);
       renderBreakdown(summary);
     } catch (error) {
+      if (currentLoad !== loadId) return;
       if (content) content.hidden = true;
       if (emptyState) emptyState.hidden = true;
       const message =
@@ -404,7 +391,7 @@
         `N\u00e3o foi poss\u00edvel carregar a rentabilidade da carteira: ${message}`
       );
     } finally {
-      setLoading(false);
+      if (currentLoad === loadId) setLoading(false);
     }
   }
 

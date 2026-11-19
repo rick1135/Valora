@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Valora | Lan&ccedil;amentos</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="transaction-ui.css">
+    <link rel="stylesheet" href="portfolio-ui.css">
+    <link rel="stylesheet" href="lancamentos-page.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar__inner">
+        <a class="brand" href="/" aria-label="Valora">Valora</a>
+        <span class="portfolio-label" id="portfolio-name">Carteira</span>
+        <button class="button button--ghost topbar__logout" id="logout-btn" type="button">Sair</button>
+      </div>
+    </header>
+
+    <main class="shell dashboard">
+      <div class="workspace-nav">
+        <nav class="tabs" aria-label="Se&ccedil;&otilde;es da carteira">
+          <a class="tab" href="/dashboard.html">Dashboard</a>
+          <a class="tab" href="/proventos.html">Proventos</a>
+          <a class="tab" href="/rentabilidade.html">Rentabilidade</a>
+          <a class="tab" href="/metas.html">Metas</a>
+          <a class="tab tab--active" href="/lancamentos.html" aria-current="page">Lan&ccedil;amentos</a>
+        </nav>
+        <div class="actions">
+          <button class="button button--primary" data-new-transaction type="button">
+            <span class="button__icon" aria-hidden="true">+</span>
+            Novo lan&ccedil;amento
+          </button>
+        </div>
+      </div>
+
+      <section class="summary" aria-labelledby="history-title">
+        <h1 id="history-title">Extrato de lan&ccedil;amentos</h1>
+      </section>
+
+      <section class="panel history-panel" aria-label="Hist&oacute;rico de opera&ccedil;&otilde;es">
+        <form class="history-filters" id="history-filters">
+          <label for="history-ticker">
+            Ticker
+            <input class="portfolio-control" id="history-ticker" type="search" maxlength="20" placeholder="Ex. PETR4">
+          </label>
+          <label for="history-type">
+            Tipo
+            <select class="portfolio-control" id="history-type">
+              <option value="">Todos</option>
+              <option value="BUY">Compra</option>
+              <option value="SELL">Venda</option>
+            </select>
+          </label>
+          <button class="button button--ghost" type="submit">Filtrar</button>
+        </form>
+
+        <p class="dashboard-banner dashboard-banner--error" id="history-error" role="alert" hidden></p>
+        <p class="dashboard-banner dashboard-banner--loading" id="history-loading" role="status" hidden>Carregando lan&ccedil;amentos...</p>
+        <p class="panel__empty" id="history-empty" role="status" hidden></p>
+        <div class="history-table-wrap" id="history-table-wrap" hidden>
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th scope="col">Data</th>
+                <th scope="col">Ticker</th>
+                <th scope="col">Tipo</th>
+                <th scope="col">Quantidade</th>
+                <th scope="col">Pre&ccedil;o unit&aacute;rio</th>
+                <th scope="col">A&ccedil;&otilde;es</th>
+              </tr>
+            </thead>
+            <tbody id="history-rows"></tbody>
+          </table>
+        </div>
+
+        <nav class="history-pagination" aria-label="P&aacute;ginas do extrato" id="history-pagination" hidden>
+          <button class="button button--ghost" type="button" id="history-previous">Anterior</button>
+          <span id="history-page-info" role="status"></span>
+          <button class="button button--ghost" type="button" id="history-next">Pr&oacute;xima</button>
+        </nav>
+      </section>
+    </main>
+
+    <script src="api.js"></script>
+    <script src="portfolio-ui.js"></script>
+    <script src="transaction-ui.js"></script>
+    <script src="lancamentos.js"></script>
+  </body>
+</html>

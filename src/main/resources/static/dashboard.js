@@ -71,28 +71,6 @@
     return response;
   }
 
-  async function resolvePortfolio() {
-    if (!window.ValoraAPI || typeof window.ValoraAPI.getPortfolio !== "function") {
-      throw new Error("Cliente ValoraAPI indispon\u00edvel.");
-    }
-    const portfolio = await window.ValoraAPI.getPortfolio();
-    const portfolioId = typeof portfolio === "string" ? portfolio : portfolio?.id;
-    if (!portfolioId) {
-      throw new Error("Nenhuma carteira ativa encontrada.");
-    }
-    const portfolioName =
-      typeof portfolio === "object" && typeof portfolio?.name === "string" && portfolio.name.trim()
-        ? portfolio.name.trim()
-        : "Carteira";
-
-    const portfolioLabel = document.querySelector("#portfolio-name");
-    if (portfolioLabel) {
-      portfolioLabel.textContent = portfolioName;
-    }
-
-    return { id: portfolioId, name: portfolioName };
-  }
-
   function setLoading(isLoading) {
     const loadingBanner = document.querySelector("#dashboard-loading");
     if (loadingBanner) {
@@ -552,16 +530,28 @@
     tbody.replaceChildren(...rows);
   }
 
+  let loadId = 0;
+
   async function loadDashboard() {
+    const currentLoad = ++loadId;
+    const sections = document.querySelectorAll(".portfolio-data");
+    sections.forEach((section) => { section.hidden = true; });
+    renderFallbackNotice(null);
     showError("");
     setLoading(true);
     try {
-      const portfolio = await resolvePortfolio();
+      const portfolio = await window.ValoraAPI.getPortfolio();
+      if (currentLoad !== loadId) return;
+      if (!portfolio) {
+        showError("Crie uma carteira para visualizar o resumo.");
+        return;
+      }
       const portfolioId = portfolio.id;
       const [summary, positions] = await Promise.all([
         apiRequest(`/portfolios/${encodeURIComponent(portfolioId)}/summary`),
         apiRequest(`/portfolios/${encodeURIComponent(portfolioId)}/positions`),
       ]);
+      if (currentLoad !== loadId) return;
 
       const safeSummary = summary || {};
       const safePositions = Array.isArray(positions) ? positions : [];
@@ -571,11 +561,13 @@
       renderOverviewBreakdown(safeSummary);
       renderAllocation(safeSummary);
       renderAssetsTable(safePositions, safeSummary);
+      sections.forEach((section) => { section.hidden = false; });
     } catch (error) {
+      if (currentLoad !== loadId) return;
       const message = error instanceof Error ? error.message : "Erro ao carregar o dashboard.";
       showError(`N\u00e3o foi poss\u00edvel carregar os dados da carteira: ${message}`);
     } finally {
-      setLoading(false);
+      if (currentLoad === loadId) setLoading(false);
     }
   }
 

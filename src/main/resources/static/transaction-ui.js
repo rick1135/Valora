@@ -22,7 +22,25 @@
     searchSeq: 0,
     isSubmitting: false,
     lastTrigger: null,
+    editing: null,
+    originalDateInput: "",
+    idempotencyKey: null,
   };
+
+  function renewIdempotencyKey() {
+    if (state.editing) return;
+    if (window.crypto.randomUUID) {
+      state.idempotencyKey = window.crypto.randomUUID();
+      return;
+    }
+
+    const bytes = window.crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    state.idempotencyKey = [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16),
+      hex.slice(16, 20), hex.slice(20)].join("-");
+  }
 
   function createEl(tag, className, text) {
     const el = document.createElement(tag);
@@ -35,13 +53,14 @@
     return el;
   }
 
-  function formatLocalDateTimeInput(date) {
+  function formatLocalDateTimeInput(date, includeSeconds = false) {
     const pad = (value) => String(value).padStart(2, "0");
+    const seconds = includeSeconds ? `:${pad(date.getSeconds())}` : "";
     return [
       date.getFullYear(),
       pad(date.getMonth() + 1),
       pad(date.getDate()),
-    ].join("-") + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    ].join("-") + `T${pad(date.getHours())}:${pad(date.getMinutes())}${seconds}`;
   }
 
   function extractErrorMessage(error) {
@@ -128,15 +147,18 @@
       return;
     }
     const category = CATEGORY_LABELS[state.selectedAsset.category] || state.selectedAsset.category || "";
-    const label = category
-      ? `${state.selectedAsset.ticker} \u2014 ${state.selectedAsset.name} (${category})`
-      : `${state.selectedAsset.ticker} \u2014 ${state.selectedAsset.name}`;
+    const { ticker, name } = state.selectedAsset;
+    let label = name ? `${ticker} \u2014 ${name}` : ticker;
+    if (category) label += ` (${category})`;
     selectedAssetText.textContent = label;
     selectedAssetBox.hidden = false;
     assetInput.value = state.selectedAsset.ticker;
   }
 
   function selectAsset(asset) {
+    renewIdempotencyKey();
+    window.clearTimeout(state.searchTimer);
+    state.searchSeq += 1;
     state.selectedAsset = asset;
     updateSelectedAssetView();
     hideSuggestions();
@@ -148,6 +170,9 @@
     state.selectedAsset = null;
     updateSelectedAssetView();
     if (clearInput) {
+      renewIdempotencyKey();
+      window.clearTimeout(state.searchTimer);
+      state.searchSeq += 1;
       state.elements.assetInput.value = "";
       hideSuggestions();
       state.elements.assetInput.focus();
@@ -248,8 +273,8 @@
     }
 
     window.clearTimeout(state.searchTimer);
+    state.searchSeq += 1;
     if (!query) {
-      state.searchSeq += 1;
       hideSuggestions();
       return;
     }
@@ -321,7 +346,9 @@
       return;
     }
 
-    const parsedDate = rawDate ? new Date(rawDate) : null;
+    const editing = state.editing;
+    const originalDate = editing && rawDate === state.originalDateInput && editing.transactionDate;
+    const parsedDate = rawDate ? new Date(originalDate || rawDate) : null;
     if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
       setStatus("Informe uma data e hora v\u00e1lida para a opera\u00e7\u00e3o.");
       dateInput.focus();
@@ -334,39 +361,38 @@
       return;
     }
 
+    const assetId = state.selectedAsset.id;
+    const idempotencyKey = state.idempotencyKey;
     setStatus("");
     setSubmitting(true);
 
     try {
       const api = getApi();
-      const portfolioId = await resolvePortfolioId();
-      const transactionDate = parsedDate.toISOString();
-
-      const saved = await api.request("/transactions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      const portfolioId = editing?.portfolioId || await resolvePortfolioId();
+      const path = editing ? `/transactions/${encodeURIComponent(editing.transactionId)}` : "/transactions";
+      const saved = await api.request(path, {
+        method: editing ? "PUT" : "POST",
+        headers: editing ? undefined : { "Idempotency-Key": idempotencyKey },
+        body: {
           portfolioId,
-          assetId: state.selectedAsset.id,
+          assetId,
           type,
           quantity,
           unitPrice,
-          transactionDate,
-        }),
+          transactionDate: originalDate || parsedDate.toISOString(),
+        },
       });
 
+      setSubmitting(false);
       closeModal();
-      document.dispatchEvent(
-        new CustomEvent("valora:transaction-saved", {
+      const events = ["valora:transaction-saved", "valora:transaction-created"];
+      if (editing) events.push("valora:transaction-updated");
+      events.forEach((name) => document.dispatchEvent(
+        new CustomEvent(name, {
           bubbles: true,
-          detail: {
-            transaction: saved,
-            portfolioId,
-          },
+          detail: { transaction: saved, portfolioId },
         })
-      );
+      ));
     } catch (error) {
       setStatus(extractErrorMessage(error), "error");
     } finally {
@@ -545,6 +571,7 @@
 
     quantityInput.addEventListener("input", updateEstimatedTotal);
     unitPriceInput.addEventListener("input", updateEstimatedTotal);
+    form.addEventListener("input", renewIdempotencyKey);
     form.addEventListener("submit", handleSubmit);
 
     document.addEventListener("keydown", (event) => {
@@ -557,6 +584,8 @@
       modal,
       dialog,
       form,
+      title,
+      subtitle,
       assetInput,
       suggestionsList,
       selectedAssetBox,
@@ -580,28 +609,47 @@
     updateSelectedAssetView();
     hideSuggestions();
     setStatus("");
-    const nowLocal = formatLocalDateTimeInput(new Date());
+    const nowLocal = formatLocalDateTimeInput(new Date(), Boolean(state.editing));
+    dateInput.step = state.editing ? "1" : "60";
     dateInput.max = nowLocal;
     dateInput.value = nowLocal;
     updateEstimatedTotal();
   }
 
-  function openModal(trigger) {
+  function openModal(trigger, transaction = null) {
+    if (state.isSubmitting) return;
     const elements = ensureModal();
     state.lastTrigger = trigger instanceof HTMLElement ? trigger : document.activeElement;
+    state.editing = transaction;
     resetForm();
+    renewIdempotencyKey();
+    elements.title.textContent = transaction ? "Editar lan\u00e7amento" : "Novo lan\u00e7amento";
+    elements.subtitle.hidden = Boolean(transaction);
+    if (transaction) {
+      state.selectedAsset = { id: transaction.assetId, ticker: transaction.ticker };
+      updateSelectedAssetView();
+      elements.form.elements.type.value = transaction.type;
+      elements.quantityInput.value = transaction.quantity;
+      elements.unitPriceInput.value = transaction.unitPrice;
+      const date = new Date(transaction.transactionDate);
+      elements.dateInput.value = formatLocalDateTimeInput(date, true);
+      state.originalDateInput = elements.dateInput.value;
+      updateEstimatedTotal();
+    }
     elements.modal.hidden = false;
-    elements.assetInput.focus();
+    (transaction ? elements.quantityInput : elements.assetInput).focus();
   }
 
   function closeModal() {
-    if (!state.elements || state.elements.modal.hidden) {
+    if (state.isSubmitting || !state.elements || state.elements.modal.hidden) {
       return;
     }
     window.clearTimeout(state.searchTimer);
     state.searchSeq += 1;
     hideSuggestions();
     state.elements.modal.hidden = true;
+    state.editing = null;
+    state.idempotencyKey = null;
     if (state.lastTrigger instanceof HTMLElement && state.lastTrigger.isConnected) {
       state.lastTrigger.focus();
     }
@@ -623,6 +671,7 @@
 
   window.ValoraTransactionUI = {
     open: openModal,
+    openEdit: (transaction) => openModal(document.activeElement, transaction),
     close: closeModal,
   };
 })();

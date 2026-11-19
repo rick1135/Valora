@@ -30,7 +30,7 @@ O fluxo principal já está disponível no navegador: cadastro, login, carteira,
     * **Cálculo de rentabilidade** da carteira com base no custo total vs. cotação atual.
 * **Cotações e cache:**
     * Integração com a BRAPI via cliente HTTP (`RestClient`).
-    * Cache de cotações com Redis e `@Cacheable` (TTL configurado).
+    * Cache de cotações com Redis com `RedisTemplate`, consulta em lote via `multiGet` e TTL de 10 minutos.
 * **Arquitetura:**
     * **Tratamento de concorrência (race conditions):** Uso do `@Version` para impedir que duas ordens simultâneas corrompam a quantidade ou o preço médio.
     * **Tratamento Global de Exceções:** Respostas de erro padronizadas (RFC 7807) utilizando `@RestControllerAdvice`.
@@ -174,8 +174,11 @@ Para rodar o projeto localmente, você precisará ter instalado:
     * `GET /portfolios/{portfolioId}/targets` — Ler metas de alocação salvas
     * `GET /portfolios/{portfolioId}/rebalance?contributionAmount={valor}` — Simular sugestões de aporte
 * **Transações (autenticado):**
-    * `POST /transactions` — Registrar compra (`BUY`) ou venda (`SELL`)
+    * `POST /transactions` — Registrar compra (`BUY`) ou venda (`SELL`); aceita o header opcional `Idempotency-Key` para evitar duplicidade em reenvios.
     * `GET /transactions?portfolioId={id}` — Histórico paginado com filtros opcionais (`ticker`, `type`, `startDate`, `endDate`)
+    * `PUT /transactions/{transactionId}` — Atualizar uma transação
+    * `DELETE /transactions/{transactionId}` — Remover uma transação
+    * A tela de extrato está disponível em `/lancamentos.html`.
 * **Proventos:**
     * `GET /provents/me?portfolioId={id}` — Listar proventos provisionados do usuário (autenticado, paginado)
     * `POST /provents` — Cadastrar evento de provento (`DIVIDEND`/`JCP`) e provisionar por data COM (requer perfil `ADMIN`)

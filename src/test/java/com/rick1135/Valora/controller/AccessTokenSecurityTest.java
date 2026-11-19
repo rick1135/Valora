@@ -95,6 +95,14 @@ class AccessTokenSecurityTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/metas.html"))
                 .andExpect(status().isOk());
+        mockMvc.perform(get("/metas-page.css")).andExpect(status().isOk());
+        mockMvc.perform(get("/proventos-page.css")).andExpect(status().isOk());
+        mockMvc.perform(get("/rentabilidade-page.css")).andExpect(status().isOk());
+        mockMvc.perform(get("/lancamentos.html")).andExpect(status().isOk());
+        mockMvc.perform(get("/lancamentos.js")).andExpect(status().isOk());
+        mockMvc.perform(get("/lancamentos-page.css")).andExpect(status().isOk());
+        mockMvc.perform(get("/portfolio-ui.js")).andExpect(status().isOk());
+        mockMvc.perform(get("/portfolio-ui.css")).andExpect(status().isOk());
         mockMvc.perform(get("/styles.css"))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/dashboard.js"))
@@ -365,6 +373,14 @@ class AccessTokenSecurityTest {
                 "/rentabilidade.html",
                 "/proventos.html",
                 "/metas.html",
+                "/metas-page.css",
+                "/proventos-page.css",
+                "/rentabilidade-page.css",
+                "/lancamentos.html",
+                "/lancamentos.js",
+                "/lancamentos-page.css",
+                "/portfolio-ui.js",
+                "/portfolio-ui.css",
                 "/styles.css",
                 "/dashboard.js",
                 "/rentabilidade.js",

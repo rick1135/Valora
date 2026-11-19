@@ -14,9 +14,15 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
+    Optional<Transaction> findByPortfolioAndIdempotencyKey(Portfolio portfolio, String idempotencyKey);
+
+    @Query(value = "select id from users where id = :userId for no key update", nativeQuery = true)
+    UUID lockOwnerForTransactionChanges(@Param("userId") UUID userId);
+
     @Query("select distinct t.asset from Transaction t")
     List<com.rick1135.Valora.entity.Asset> findDistinctAssetsWithTransactions();
 

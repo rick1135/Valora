@@ -6,6 +6,7 @@
     <title>Valora | Proventos</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="transaction-ui.css">
+    <link rel="stylesheet" href="portfolio-ui.css">
     <link rel="stylesheet" href="proventos-page.css">
   </head>
   <body>
@@ -24,6 +25,7 @@
           <a class="tab tab--active" href="/proventos.html" aria-current="page">Proventos</a>
           <a class="tab" href="/rentabilidade.html">Rentabilidade</a>
           <a class="tab" href="/metas.html">Metas</a>
+          <a class="tab" href="/lancamentos.html">Lan&ccedil;amentos</a>
         </nav>
 
         <div class="actions">
@@ -45,9 +47,9 @@
       </div>
       <div class="dashboard-banner dashboard-banner--error" id="provents-error" role="alert" hidden></div>
 
-      <section class="provents-kpis" id="provents-kpis" aria-label="Indicadores de proventos"></section>
+      <section class="provents-kpis portfolio-data" id="provents-kpis" aria-label="Indicadores de proventos"></section>
 
-      <section class="provents-breakdown-grid" id="provents-breakdown" aria-label="Agrupamentos de proventos" hidden>
+      <section class="provents-breakdown-grid portfolio-data" id="provents-breakdown" aria-label="Agrupamentos de proventos" hidden>
         <article class="panel provents-section-panel" aria-labelledby="provents-by-asset-title">
           <div class="provents-section-panel__header">
             <h2 id="provents-by-asset-title">Proventos por ativo</h2>
@@ -67,7 +69,7 @@
         </article>
       </section>
 
-      <section class="panel provents-table-panel" id="monthly-history-panel" aria-labelledby="monthly-history-title" hidden>
+      <section class="panel provents-table-panel portfolio-data" id="monthly-history-panel" aria-labelledby="monthly-history-title" hidden>
         <div class="provents-table-header">
           <div>
             <h2 id="monthly-history-title">Hist&oacute;rico mensal</h2>
@@ -115,7 +117,7 @@
         </div>
       </section>
 
-      <section class="panel provents-table-panel" id="my-provents-panel" aria-labelledby="my-provents-title" hidden>
+      <section class="panel provents-table-panel portfolio-data" id="my-provents-panel" aria-labelledby="my-provents-title" hidden>
         <div class="provents-table-header">
           <h2 id="my-provents-title">Meus proventos</h2>
           <p class="provents-section-panel__subtitle" id="provents-count-label"></p>
@@ -150,7 +152,7 @@
         </div>
       </section>
 
-      <div class="empty-state" id="provents-empty" hidden>
+      <div class="empty-state portfolio-data" id="provents-empty" hidden>
         <h3>Nenhum provento encontrado</h3>
         <p>Ainda n&atilde;o h&aacute; dividendos ou JSCP provisionados para os ativos desta carteira.</p>
         <button class="button button--primary" data-new-transaction type="button">
@@ -161,6 +163,7 @@
     </main>
 
     <script src="api.js"></script>
+    <script src="portfolio-ui.js"></script>
     <script src="transaction-ui.js"></script>
     <script src="proventos.js"></script>
   </body>

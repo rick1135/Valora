@@ -29,17 +29,17 @@
 
   const state = {
     portfolioId: null,
-    portfolioName: "Carteira",
     summary: null,
     savedTargets: [],
     draftTargets: [],
     rebalanceOrders: [],
     lastContribution: 1000,
     isSaving: false,
-    isSimulating: false,
     searchTimer: null,
     searchSeq: 0,
   };
+  let loadId = 0;
+  let simulationId = 0;
 
   function toNumber(value) {
     if (value === null || value === undefined || value === "") {
@@ -92,30 +92,6 @@
       throw new Error("Cliente ValoraAPI indispon\u00edvel.");
     }
     return window.ValoraAPI.request(path, options);
-  }
-
-  async function resolvePortfolio() {
-    if (!window.ValoraAPI || typeof window.ValoraAPI.getPortfolio !== "function") {
-      throw new Error("Cliente ValoraAPI indispon\u00edvel.");
-    }
-    const portfolio = await window.ValoraAPI.getPortfolio();
-    const portfolioId = typeof portfolio === "string" ? portfolio : portfolio?.id;
-    if (!portfolioId) {
-      throw new Error("Nenhuma carteira ativa encontrada.");
-    }
-    const portfolioName =
-      typeof portfolio === "object" && typeof portfolio?.name === "string" && portfolio.name.trim()
-        ? portfolio.name.trim()
-        : "Carteira";
-
-    state.portfolioId = portfolioId;
-    state.portfolioName = portfolioName;
-
-    const label = document.querySelector("#portfolio-name");
-    if (label) {
-      label.textContent = portfolioName;
-    }
-    return { id: portfolioId, name: portfolioName };
   }
 
   function setPageLoading(isLoading) {
@@ -523,6 +499,9 @@
 
   async function runRebalanceSimulation(contributionAmount) {
     if (!state.portfolioId) return;
+    const currentSimulation = ++simulationId;
+    const simulateBtn = document.querySelector("#simulate-btn");
+    if (simulateBtn) simulateBtn.disabled = false;
 
     const amount = parseContributionAmount(contributionAmount);
     if (amount === null) {
@@ -535,39 +514,37 @@
     }
 
     state.lastContribution = amount;
-    state.isSimulating = true;
-    const simulateBtn = document.querySelector("#simulate-btn");
-    if (simulateBtn) simulateBtn.disabled = true;
 
     if (state.savedTargets.length === 0) {
       state.rebalanceOrders = [];
       setRebalanceStatus("");
       renderRebalanceResults();
-      state.isSimulating = false;
-      if (simulateBtn) simulateBtn.disabled = false;
       return;
     }
 
+    if (simulateBtn) simulateBtn.disabled = true;
     setRebalanceStatus("Calculando sugest\u00f5es de aporte...", "info");
     try {
       const orders = await apiRequest(
         `/portfolios/${encodeURIComponent(state.portfolioId)}/rebalance?contributionAmount=${encodeURIComponent(amount.toFixed(2))}`
       );
+      if (currentSimulation !== simulationId) return;
       state.rebalanceOrders = Array.isArray(orders) ? orders : [];
       setRebalanceStatus("");
       renderRebalanceResults();
     } catch (error) {
+      if (currentSimulation !== simulationId) return;
       const message = error instanceof Error ? error.message : "Erro ao simular rebalanceamento.";
       setRebalanceStatus(message, "error");
     } finally {
-      state.isSimulating = false;
-      if (simulateBtn) simulateBtn.disabled = false;
+      if (currentSimulation === simulationId && simulateBtn) simulateBtn.disabled = false;
     }
   }
 
   async function handleSaveTargets(event) {
     event.preventDefault();
     if (!state.portfolioId || state.isSaving) return;
+    const portfolioId = state.portfolioId;
 
     setPageError("");
     setPageStatus("");
@@ -582,13 +559,15 @@
     updateFormValidationUI();
 
     try {
-      await apiRequest(`/portfolios/${encodeURIComponent(state.portfolioId)}/targets`, {
+      await apiRequest(`/portfolios/${encodeURIComponent(portfolioId)}/targets`, {
         method: "PUT",
         body: payload,
       });
+      if (portfolioId !== state.portfolioId) return;
       setPageStatus("Metas de aloca\u00e7\u00e3o salvas com sucesso.");
       await loadMetasPage({ preserveStatus: true });
     } catch (error) {
+      if (portfolioId !== state.portfolioId) return;
       const message = error instanceof Error ? error.message : "Erro ao salvar metas.";
       setPageError(`N\u00e3o foi poss\u00edvel salvar as metas: ${message}`);
     } finally {
@@ -598,6 +577,11 @@
   }
 
   async function loadMetasPage(options = {}) {
+    const currentLoad = ++loadId;
+    simulationId += 1;
+    state.portfolioId = null;
+    const sections = document.querySelectorAll(".portfolio-data");
+    sections.forEach((section) => { section.hidden = true; });
     if (!options.preserveStatus) {
       setPageStatus("");
     }
@@ -605,15 +589,23 @@
     setPageLoading(true);
 
     try {
-      const portfolio = await resolvePortfolio();
+      const portfolio = await window.ValoraAPI.getPortfolio();
+      if (currentLoad !== loadId) return;
+      if (!portfolio) {
+        setPageError("Crie uma carteira para configurar suas metas.");
+        return;
+      }
       const portfolioId = portfolio.id;
 
       const [summary, targets] = await Promise.all([
         apiRequest(`/portfolios/${encodeURIComponent(portfolioId)}/summary`),
         apiRequest(`/portfolios/${encodeURIComponent(portfolioId)}/targets`),
       ]);
+      if (currentLoad !== loadId) return;
 
+      state.portfolioId = portfolioId;
       state.summary = summary || {};
+      state.rebalanceOrders = [];
       state.savedTargets = Array.isArray(targets) ? targets : [];
       state.draftTargets = state.savedTargets.map((target) => ({
         id: target.id || null,
@@ -625,15 +617,18 @@
       }));
 
       renderDraftTargets();
+      renderRebalanceResults();
+      sections.forEach((section) => { section.hidden = false; });
 
       const contributionInput = document.querySelector("#contribution-input");
       const rawContribution = contributionInput ? contributionInput.value : state.lastContribution;
       await runRebalanceSimulation(rawContribution);
     } catch (error) {
+      if (currentLoad !== loadId) return;
       const message = error instanceof Error ? error.message : "Erro ao carregar metas.";
       setPageError(`N\u00e3o foi poss\u00edvel carregar os dados de metas: ${message}`);
     } finally {
-      setPageLoading(false);
+      if (currentLoad === loadId) setPageLoading(false);
     }
   }
 

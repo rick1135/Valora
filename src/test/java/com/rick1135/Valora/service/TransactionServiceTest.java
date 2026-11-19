@@ -11,6 +11,7 @@ import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.exception.InsufficientPositionException;
 import com.rick1135.Valora.exception.PortfolioNotFoundException;
+import com.rick1135.Valora.exception.TransactionNotFoundException;
 import com.rick1135.Valora.mapper.TransactionMapper;
 import com.rick1135.Valora.repository.AssetRepository;
 import com.rick1135.Valora.repository.PositionRepository;
@@ -18,6 +19,10 @@ import com.rick1135.Valora.repository.TransactionRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +32,7 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -40,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -64,6 +71,9 @@ class TransactionServiceTest {
 
     @Mock
     private ProventService proventService;
+
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     @Spy
     private MarketCalendar marketCalendar = new MarketCalendar(Clock.system(ZoneId.of("America/Sao_Paulo")));
@@ -726,6 +736,256 @@ class TransactionServiceTest {
         assertThat(savedPosition.getQuantity()).isEqualByComparingTo(replayedAfterSave.quantity());
         assertThat(savedPosition.getAveragePrice()).isEqualByComparingTo(replayedAfterSave.averagePrice());
         assertThat(savedPosition.getPurchaseDate()).isEqualTo(replayedAfterSave.purchaseDate());
+    }
+
+    @Test
+    void processTransactionShouldTrimKeyBeforeSaving() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        Transaction buy = transaction(portfolio, asset, TransactionType.BUY, "3", "2026-01-10T15:00:00Z");
+        TransactionDTO dto = dtoFor(buy);
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(transactionMapper.toEntity(dto)).thenReturn(buy);
+        when(transactionRepository.saveAndFlush(buy)).thenReturn(buy);
+
+        assertThat(transactionService.processTransaction(user, dto, "  operation-1  ").replayed()).isFalse();
+
+        verify(transactionRepository).findByPortfolioAndIdempotencyKey(portfolio, "operation-1");
+        assertThat(buy.getIdempotencyKey()).isEqualTo("operation-1");
+    }
+
+    @Test
+    void processTransactionShouldTreatBlankKeyAsAbsentAndRejectOversizedKey() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        Transaction buy = transaction(portfolio, asset, TransactionType.BUY, "3", "2026-01-10T15:00:00Z");
+        TransactionDTO dto = dtoFor(buy);
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(transactionMapper.toEntity(dto)).thenReturn(buy);
+        when(transactionRepository.save(buy)).thenReturn(buy);
+
+        assertThatThrownBy(() -> transactionService.processTransaction(user, dto, "k".repeat(129)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(transactionService.processTransaction(user, dto, "  ").replayed()).isFalse();
+        assertThat(buy.getIdempotencyKey()).isNull();
+        verify(transactionRepository, never()).findByPortfolioAndIdempotencyKey(any(), any());
+    }
+
+    @Test
+    void processTransactionShouldReplayEqualPayloadWithoutChangingPositionOrProvents() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        Transaction buy = transaction(portfolio, asset, TransactionType.BUY, "3.00000000", "2026-01-10T15:00:00Z");
+        TransactionDTO dto = new TransactionDTO(portfolio.getId(), asset.getId(), buy.getType(),
+                new BigDecimal("3"), new BigDecimal("10.0"), buy.getTransactionDate());
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(transactionRepository.findByPortfolioAndIdempotencyKey(portfolio, "key")).thenReturn(Optional.of(buy));
+
+        assertThat(transactionService.processTransaction(user, dto, "key").replayed()).isTrue();
+
+        verify(transactionMapper).toResponse(buy, asset, null);
+        verify(transactionRepository, never()).saveAndFlush(any());
+        verify(positionRepository, never()).save(any());
+        verifyNoInteractions(assetRepository, proventService);
+    }
+
+    @Test
+    void processTransactionShouldRejectAnyChangedPayloadFieldWhenReusingKey() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        Transaction buy = transaction(portfolio, asset, TransactionType.BUY, "3", "2026-01-10T15:00:00Z");
+        TransactionDTO dto = dtoFor(buy);
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(transactionRepository.findByPortfolioAndIdempotencyKey(portfolio, "key")).thenReturn(Optional.of(buy));
+
+        List<TransactionDTO> conflicts = List.of(
+                new TransactionDTO(dto.portfolioId(), UUID.randomUUID(), dto.type(), dto.quantity(), dto.unitPrice(), dto.transactionDate()),
+                new TransactionDTO(dto.portfolioId(), dto.assetId(), TransactionType.SELL, dto.quantity(), dto.unitPrice(), dto.transactionDate()),
+                new TransactionDTO(dto.portfolioId(), dto.assetId(), dto.type(), BigDecimal.ONE, dto.unitPrice(), dto.transactionDate()),
+                new TransactionDTO(dto.portfolioId(), dto.assetId(), dto.type(), dto.quantity(), BigDecimal.ONE, dto.transactionDate()),
+                new TransactionDTO(dto.portfolioId(), dto.assetId(), dto.type(), dto.quantity(), dto.unitPrice(), dto.transactionDate().plusSeconds(1))
+        );
+        for (TransactionDTO conflict : conflicts) {
+            assertThatThrownBy(() -> transactionService.processTransaction(user, conflict, "key"))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        verifyNoInteractions(assetRepository, positionRepository, proventService);
+    }
+
+    @Test
+    void processTransactionShouldRetryLookupAfterRollingBackUniqueKeyViolation() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        Transaction buy = transaction(portfolio, asset, TransactionType.BUY, "3", "2026-01-10T15:00:00Z");
+        TransactionDTO dto = dtoFor(buy);
+        SimpleTransactionStatus attempt = new SimpleTransactionStatus();
+        SimpleTransactionStatus retry = new SimpleTransactionStatus();
+        when(transactionManager.getTransaction(any())).thenReturn(attempt, retry);
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(transactionRepository.findByPortfolioAndIdempotencyKey(portfolio, "key"))
+                .thenReturn(Optional.empty(), Optional.of(buy));
+        when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(transactionMapper.toEntity(dto)).thenReturn(buy);
+        when(transactionRepository.saveAndFlush(buy)).thenThrow(new DataIntegrityViolationException(
+                "Duplicate key",
+                new org.hibernate.exception.ConstraintViolationException("Duplicate key",
+                        new SQLException("Duplicate key", "23505"), "ux_transactions_portfolio_idempotency_key")
+        ));
+
+        assertThat(transactionService.processTransaction(user, dto, "key").replayed()).isTrue();
+
+        var order = inOrder(transactionManager, transactionRepository);
+        order.verify(transactionRepository).saveAndFlush(buy);
+        order.verify(transactionManager).rollback(attempt);
+        order.verify(transactionManager).getTransaction(org.mockito.ArgumentMatchers.argThat(
+                definition -> definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRES_NEW
+        ));
+        order.verify(transactionRepository).findByPortfolioAndIdempotencyKey(portfolio, "key");
+        order.verify(transactionManager).commit(retry);
+        verifyNoInteractions(proventService);
+    }
+
+    @Test
+    void updateTransactionShouldRebuildTimelineAndReconcileFromEarlierDate() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        Transaction buy = transaction(portfolio, asset, TransactionType.BUY, "10", "2026-01-10T15:00:00Z");
+        Transaction sell = transaction(portfolio, asset, TransactionType.SELL, "3", "2026-02-10T15:00:00Z");
+        TransactionDTO dto = new TransactionDTO(portfolio.getId(), asset.getId(), TransactionType.BUY,
+                new BigDecimal("8"), new BigDecimal("15"), Instant.parse("2026-01-15T15:00:00Z"));
+        when(transactionRepository.findById(buy.getId())).thenReturn(Optional.of(buy));
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(transactionRepository.findByPortfolioAndAssetOrderByTransactionDateAscIdAsc(portfolio, asset))
+                .thenReturn(List.of(buy, sell));
+
+        transactionService.updateTransaction(user, buy.getId(), dto);
+
+        assertThat(dtoFor(buy)).isEqualTo(dto);
+        ArgumentCaptor<Position> position = ArgumentCaptor.forClass(Position.class);
+        verify(positionRepository).save(position.capture());
+        assertThat(position.getValue().getQuantity()).isEqualByComparingTo("5");
+        assertThat(position.getValue().getAveragePrice()).isEqualByComparingTo("15");
+        assertThat(position.getValue().getPurchaseDate()).isEqualTo(LocalDate.of(2026, 1, 15));
+        verify(proventService).reconcileProvisionsForPortfolioAndAsset(portfolio, asset, LocalDate.of(2026, 1, 10));
+    }
+
+    @Test
+    void updateAndDeleteShouldHideTransactionsOwnedByAnotherUserOrMissing() {
+        User owner = new User();
+        owner.setId(UUID.randomUUID());
+        User other = new User();
+        other.setId(UUID.randomUUID());
+        UUID missingId = UUID.randomUUID();
+        Transaction buy = transaction(portfolio(owner), new Asset(), TransactionType.BUY, "10", "2026-01-10T15:00:00Z");
+        when(transactionRepository.findById(buy.getId())).thenReturn(Optional.of(buy));
+
+        assertThatThrownBy(() -> transactionService.updateTransaction(other, buy.getId(), null))
+                .isInstanceOf(TransactionNotFoundException.class);
+        assertThatThrownBy(() -> transactionService.deleteTransaction(other, buy.getId()))
+                .isInstanceOf(TransactionNotFoundException.class);
+        assertThatThrownBy(() -> transactionService.updateTransaction(owner, missingId, null))
+                .isInstanceOf(TransactionNotFoundException.class);
+        assertThatThrownBy(() -> transactionService.deleteTransaction(owner, missingId))
+                .isInstanceOf(TransactionNotFoundException.class);
+        verifyNoInteractions(portfolioService, assetRepository, positionRepository, proventService);
+    }
+
+    @Test
+    void updateAndDeleteShouldReconcileBothSidesOfMoveAndResetEmptyPosition() {
+        User user = new User();
+        Portfolio source = portfolio(user);
+        Portfolio destination = portfolio(user);
+        Asset sourceAsset = new Asset();
+        sourceAsset.setId(UUID.randomUUID());
+        Asset destinationAsset = new Asset();
+        destinationAsset.setId(UUID.randomUUID());
+        Transaction buy = transaction(source, sourceAsset, TransactionType.BUY, "10", "2026-01-10T15:00:00Z");
+        TransactionDTO dto = new TransactionDTO(destination.getId(), destinationAsset.getId(), TransactionType.BUY,
+                BigDecimal.ONE, BigDecimal.TEN, Instant.parse("2026-01-15T15:00:00Z"));
+        when(transactionRepository.findById(buy.getId())).thenReturn(Optional.of(buy));
+        when(portfolioService.resolveOwnedPortfolio(user, destination.getId())).thenReturn(destination);
+        when(assetRepository.findById(destinationAsset.getId())).thenReturn(Optional.of(destinationAsset));
+        when(transactionRepository.findByPortfolioAndAssetOrderByTransactionDateAscIdAsc(source, sourceAsset))
+                .thenReturn(List.of(buy));
+        when(transactionRepository.findByPortfolioAndAssetOrderByTransactionDateAscIdAsc(destination, destinationAsset))
+                .thenReturn(List.of(), List.of(buy));
+
+        transactionService.updateTransaction(user, buy.getId(), dto);
+        transactionService.deleteTransaction(user, buy.getId());
+
+        ArgumentCaptor<Position> positions = ArgumentCaptor.forClass(Position.class);
+        verify(positionRepository, org.mockito.Mockito.times(3)).save(positions.capture());
+        assertThat(positions.getAllValues()).satisfiesExactly(
+                moved -> {
+                    assertThat(moved.getPortfolio()).isEqualTo(destination);
+                    assertThat(moved.getQuantity()).isEqualByComparingTo(BigDecimal.ONE);
+                },
+                reset -> {
+                    assertThat(reset.getPortfolio()).isEqualTo(source);
+                    assertThat(reset.getQuantity()).isZero();
+                    assertThat(reset.getAveragePrice()).isZero();
+                    assertThat(reset.getPurchaseDate()).isNull();
+                },
+                deleted -> {
+                    assertThat(deleted.getPortfolio()).isEqualTo(destination);
+                    assertThat(deleted.getQuantity()).isZero();
+                    assertThat(deleted.getAveragePrice()).isZero();
+                    assertThat(deleted.getPurchaseDate()).isNull();
+                }
+        );
+        verify(transactionRepository).delete(buy);
+        verify(proventService).reconcileProvisionsForPortfolioAndAsset(source, sourceAsset, LocalDate.of(2026, 1, 10));
+        verify(proventService).reconcileProvisionsForPortfolioAndAsset(destination, destinationAsset, LocalDate.of(2026, 1, 10));
+        verify(proventService).reconcileProvisionsForPortfolioAndAsset(destination, destinationAsset, LocalDate.of(2026, 1, 15));
+    }
+
+    @Test
+    void deleteTransactionShouldRejectDeletionThatMakesLaterSaleInvalid() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+        Asset asset = new Asset();
+        Transaction buy = transaction(portfolio, asset, TransactionType.BUY, "10", "2026-01-10T15:00:00Z");
+        Transaction sell = transaction(portfolio, asset, TransactionType.SELL, "3", "2026-02-10T15:00:00Z");
+        when(transactionRepository.findById(buy.getId())).thenReturn(Optional.of(buy));
+        when(transactionRepository.findByPortfolioAndAssetOrderByTransactionDateAscIdAsc(portfolio, asset))
+                .thenReturn(List.of(buy, sell));
+
+        assertThatThrownBy(() -> transactionService.deleteTransaction(user, buy.getId()))
+                .isInstanceOf(InsufficientPositionException.class);
+        verify(transactionRepository, never()).delete(any());
+        verifyNoInteractions(positionRepository, proventService);
+    }
+
+    private Transaction transaction(Portfolio portfolio, Asset asset, TransactionType type, String quantity, String date) {
+        Transaction transaction = new Transaction();
+        transaction.setId(UUID.randomUUID());
+        transaction.setPortfolio(portfolio);
+        transaction.setAsset(asset);
+        transaction.setType(type);
+        transaction.setQuantity(new BigDecimal(quantity));
+        transaction.setUnitPrice(BigDecimal.TEN);
+        transaction.setTransactionDate(Instant.parse(date));
+        return transaction;
+    }
+
+    private TransactionDTO dtoFor(Transaction transaction) {
+        return new TransactionDTO(transaction.getPortfolio().getId(), transaction.getAsset().getId(),
+                transaction.getType(), transaction.getQuantity(), transaction.getUnitPrice(), transaction.getTransactionDate());
     }
 
     private Portfolio portfolio(User user) {

@@ -128,28 +128,6 @@
     return response;
   }
 
-  async function resolvePortfolio() {
-    if (!window.ValoraAPI || typeof window.ValoraAPI.getPortfolio !== "function") {
-      throw new Error("Cliente ValoraAPI indispon\u00edvel.");
-    }
-    const portfolio = await window.ValoraAPI.getPortfolio();
-    const portfolioId = typeof portfolio === "string" ? portfolio : portfolio?.id;
-    if (!portfolioId) {
-      throw new Error("Nenhuma carteira ativa encontrada.");
-    }
-    const portfolioName =
-      typeof portfolio === "object" && typeof portfolio?.name === "string" && portfolio.name.trim()
-        ? portfolio.name.trim()
-        : "Carteira";
-
-    const portfolioLabel = document.querySelector("#portfolio-name");
-    if (portfolioLabel) {
-      portfolioLabel.textContent = portfolioName;
-    }
-
-    return { id: portfolioId, name: portfolioName };
-  }
-
   async function fetchAllProvents(portfolioId) {
     const basePath = `/provents/me?portfolioId=${encodeURIComponent(portfolioId)}`;
     const firstPage = await apiRequest(`${basePath}&page=0&size=${API_PAGE_SIZE}`);
@@ -621,14 +599,24 @@
     }
   }
 
+  let loadId = 0;
+
   async function loadProvents() {
+    const currentLoad = ++loadId;
     showError("");
     setLoading(true);
+    setContentVisibility({ hasProvisions: false, isError: true });
     try {
-      const portfolio = await resolvePortfolio();
+      const portfolio = await window.ValoraAPI.getPortfolio();
+      if (currentLoad !== loadId) return;
+      if (!portfolio) {
+        showError("Crie uma carteira para visualizar os proventos.");
+        return;
+      }
       const portfolioId = portfolio.id;
 
       const proventsData = await fetchAllProvents(portfolioId);
+      if (currentLoad !== loadId) return;
 
       state.provisions = proventsData.items;
       state.currentPage = 0;
@@ -646,11 +634,12 @@
         renderProventsTablePage();
       }
     } catch (error) {
+      if (currentLoad !== loadId) return;
       const message = error instanceof Error ? error.message : "Erro ao carregar proventos.";
       showError(`N\u00e3o foi poss\u00edvel carregar os proventos da carteira: ${message}`);
       setContentVisibility({ hasProvisions: false, isError: true });
     } finally {
-      setLoading(false);
+      if (currentLoad === loadId) setLoading(false);
     }
   }
 

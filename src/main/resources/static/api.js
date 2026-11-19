@@ -194,6 +194,47 @@
     return principal || portfolios[0];
   }
 
+  function listPortfolios() {
+    return request("/portfolios");
+  }
+
+  function saveActivePortfolio(portfolio) {
+    if (portfolio?.id) {
+      global.localStorage.setItem(ACTIVE_PORTFOLIO_ID_KEY, portfolio.id);
+    } else {
+      global.localStorage.removeItem(ACTIVE_PORTFOLIO_ID_KEY);
+    }
+  }
+
+  function setActivePortfolio(portfolio) {
+    saveActivePortfolio(portfolio);
+    portfolioPromise = null;
+    global.dispatchEvent(new CustomEvent("valora:portfolio-changed", {
+      detail: { portfolio },
+    }));
+  }
+
+  async function createPortfolio(payload) {
+    const portfolio = await request("/portfolios", { method: "POST", body: payload });
+    setActivePortfolio(portfolio);
+    return portfolio;
+  }
+
+  async function updatePortfolio(id, payload) {
+    const portfolio = await request(`/portfolios/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: payload,
+    });
+    setActivePortfolio(portfolio);
+    return portfolio;
+  }
+
+  async function deletePortfolio(id) {
+    const portfolios = await listPortfolios();
+    await request(`/portfolios/${encodeURIComponent(id)}`, { method: "DELETE" });
+    setActivePortfolio(selectPortfolio(portfolios.filter((portfolio) => portfolio.id !== id)));
+  }
+
   async function getPortfolio(options = {}) {
     if (options.forceRefresh) {
       portfolioPromise = null;
@@ -203,31 +244,22 @@
       return portfolioPromise;
     }
 
-    portfolioPromise = (async () => {
-      const portfolios = await request("/portfolios", { method: "GET" });
-      let portfolio = selectPortfolio(portfolios);
-
-      if (!portfolio) {
-        portfolio = await request("/portfolios", {
-          method: "POST",
-          body: {
-            name: DEFAULT_PORTFOLIO_NAME,
-            description: "Carteira principal",
-          },
-        });
-      }
-
-      if (portfolio?.id) {
-        global.localStorage.setItem(ACTIVE_PORTFOLIO_ID_KEY, portfolio.id);
+    const pending = listPortfolios().then((portfolios) => {
+      const portfolio = selectPortfolio(portfolios);
+      if (portfolioPromise === pending) {
+        saveActivePortfolio(portfolio);
       }
 
       return portfolio;
-    })();
+    });
+    portfolioPromise = pending;
 
     try {
-      return await portfolioPromise;
+      return await pending;
     } catch (error) {
-      portfolioPromise = null;
+      if (portfolioPromise === pending) {
+        portfolioPromise = null;
+      }
       throw error;
     }
   }
@@ -274,6 +306,11 @@
   global.ValoraAPI = {
     request,
     getPortfolio,
+    listPortfolios,
+    setActivePortfolio,
+    createPortfolio,
+    updatePortfolio,
+    deletePortfolio,
     logout,
     getAccessToken,
     getRefreshToken,

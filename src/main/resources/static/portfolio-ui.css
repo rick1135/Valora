@@ -1,0 +1,111 @@
+.portfolio-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workspace-nav .tabs {
+  flex-wrap: wrap;
+  gap: 0 clamp(12px, 2vw, 36px);
+}
+
+.portfolio-control {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+}
+
+.portfolio-select {
+  width: clamp(9rem, 18vw, 16rem);
+  text-overflow: ellipsis;
+}
+
+.portfolio-toolbar .button,
+.portfolio-actions .button {
+  flex: none;
+  width: auto;
+  min-height: 40px;
+  min-width: 0;
+  padding-inline: 12px;
+}
+
+.portfolio-dialog {
+  width: min(100% - 28px, 34rem);
+  max-height: calc(100% - 28px);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  padding: clamp(18px, 4vw, 28px);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.portfolio-dialog::backdrop {
+  background: rgb(7 13 21 / 78%);
+}
+
+.portfolio-dialog h2 {
+  margin: 0 0 20px;
+}
+
+.portfolio-form,
+.portfolio-field {
+  display: grid;
+  gap: 12px;
+}
+
+.portfolio-field {
+  gap: 6px;
+  color: var(--text-soft);
+}
+
+.portfolio-field textarea {
+  resize: vertical;
+}
+
+.portfolio-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.portfolio-actions [hidden],
+.portfolio-data[hidden],
+.portfolio-error:empty {
+  display: none;
+}
+
+.portfolio-error,
+.portfolio-delete {
+  color: var(--pink);
+}
+
+.portfolio-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+@media (max-width: 680px) {
+  .topbar__inner {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding-block: 12px;
+  }
+
+  .portfolio-toolbar {
+    order: 1;
+    flex-basis: 100%;
+  }
+
+  .portfolio-select {
+    flex: 1;
+    min-width: 0;
+  }
+}

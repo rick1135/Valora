@@ -12,11 +12,16 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,9 +36,31 @@ public class TransactionController {
     private final TransactionService transactionService;
 
     @PostMapping
-    public ResponseEntity<TransactionResponseDTO> registerTransaction(@AuthenticationPrincipal User user, @Valid @RequestBody TransactionDTO dto) {
-        TransactionResponseDTO response = transactionService.processTransaction(user, dto);
-        return ResponseEntity.status(201).body(response);
+    public ResponseEntity<TransactionResponseDTO> registerTransaction(
+            @AuthenticationPrincipal User user,
+            @Valid @RequestBody TransactionDTO dto,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
+        TransactionService.TransactionResult result = transactionService.processTransaction(user, dto, idempotencyKey);
+        return ResponseEntity.status(result.replayed() ? HttpStatus.OK : HttpStatus.CREATED).body(result.response());
+    }
+
+    @PutMapping("/{transactionId}")
+    public ResponseEntity<TransactionResponseDTO> updateTransaction(
+            @AuthenticationPrincipal User user,
+            @PathVariable UUID transactionId,
+            @Valid @RequestBody TransactionDTO dto
+    ) {
+        return ResponseEntity.ok(transactionService.updateTransaction(user, transactionId, dto));
+    }
+
+    @DeleteMapping("/{transactionId}")
+    public ResponseEntity<Void> deleteTransaction(
+            @AuthenticationPrincipal User user,
+            @PathVariable UUID transactionId
+    ) {
+        transactionService.deleteTransaction(user, transactionId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping

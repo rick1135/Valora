@@ -49,4 +49,10 @@ public class Transaction {
     private BigDecimal unitPrice;
 
     private Instant transactionDate;
+
+    @Column(name = "idempotency_key", length = 128)
+    private String idempotencyKey;
+
+    @Column(name = "idempotency_payload", columnDefinition = "text")
+    private String idempotencyPayload;
 }

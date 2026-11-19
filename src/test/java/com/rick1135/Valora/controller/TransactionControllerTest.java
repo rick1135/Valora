@@ -4,7 +4,10 @@ import com.rick1135.Valora.dto.response.TransactionResponseDTO;
 import com.rick1135.Valora.entity.TransactionType;
 import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.exception.GlobalExceptionHandler;
+import com.rick1135.Valora.exception.InsufficientPositionException;
+import com.rick1135.Valora.exception.TransactionNotFoundException;
 import com.rick1135.Valora.service.TransactionService;
+import com.rick1135.Valora.service.TransactionService.TransactionResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,13 +29,26 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 class TransactionControllerTest {
+
+    private static final String VALID_PAYLOAD = """
+            {
+              "portfolioId": "22222222-2222-2222-2222-222222222222",
+              "assetId": "11111111-1111-1111-1111-111111111111",
+              "type": "BUY",
+              "quantity": 1,
+              "unitPrice": 10,
+              "transactionDate": "2026-03-19T18:00:00Z"
+            }
+            """;
 
     private MockMvc mockMvc;
 
@@ -67,7 +83,7 @@ class TransactionControllerTest {
                 new BigDecimal("1.00000000"),
                 new BigDecimal("10.00000000")
         );
-        when(transactionService.processTransaction(any(), any())).thenReturn(response);
+        when(transactionService.processTransaction(any(), any(), eq(null))).thenReturn(new TransactionResult(response, false));
 
         mockMvc.perform(post("/transactions")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -88,7 +104,7 @@ class TransactionControllerTest {
 
     @Test
     void registerTransactionShouldReturnNotFoundWhenAssetDoesNotExist() throws Exception {
-        when(transactionService.processTransaction(any(), any()))
+        when(transactionService.processTransaction(any(), any(), eq(null)))
                 .thenThrow(new AssetNotFoundException("Ativo nao encontrado"));
 
         mockMvc.perform(post("/transactions")
@@ -123,6 +139,84 @@ class TransactionControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").exists());
+    }
+
+    @Test
+    void registerTransactionShouldReturnOkForReplayAndBadRequestForKeyConflict() throws Exception {
+        UUID transactionId = UUID.randomUUID();
+        when(transactionService.processTransaction(any(), any(), eq("request-1")))
+                .thenReturn(new TransactionResult(responseFor(transactionId), true))
+                .thenThrow(new IllegalArgumentException("Idempotency-Key ja utilizada com dados diferentes."));
+
+        mockMvc.perform(post("/transactions")
+                        .header("Idempotency-Key", "request-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_PAYLOAD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.transactionId").value(transactionId.toString()));
+
+        mockMvc.perform(post("/transactions")
+                        .header("Idempotency-Key", "request-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_PAYLOAD.replace("\"quantity\": 1", "\"quantity\": 2")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Idempotency-Key ja utilizada com dados diferentes."));
+    }
+
+    @Test
+    void updateTransactionShouldReturnUpdatedTransactionAndValidatePayload() throws Exception {
+        UUID transactionId = UUID.randomUUID();
+        when(transactionService.updateTransaction(any(), eq(transactionId), any()))
+                .thenReturn(responseFor(transactionId));
+
+        mockMvc.perform(put("/transactions/{transactionId}", transactionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_PAYLOAD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.transactionId").value(transactionId.toString()));
+
+        mockMvc.perform(put("/transactions/{transactionId}", transactionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void deleteTransactionShouldReturnNoContentOrBadRequestWhenSaleWouldBecomeInvalid() throws Exception {
+        UUID transactionId = UUID.randomUUID();
+        UUID invalidDeletion = UUID.randomUUID();
+
+        mockMvc.perform(delete("/transactions/{transactionId}", transactionId))
+                .andExpect(status().isNoContent());
+        org.mockito.Mockito.verify(transactionService).deleteTransaction(any(), eq(transactionId));
+
+        org.mockito.Mockito.doThrow(new InsufficientPositionException("Quantidade insuficiente para venda"))
+                .when(transactionService).deleteTransaction(any(), eq(invalidDeletion));
+
+        mockMvc.perform(delete("/transactions/{transactionId}", invalidDeletion))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void updateAndDeleteShouldReturnNotFoundForUnavailableTransaction() throws Exception {
+        UUID transactionId = UUID.randomUUID();
+        TransactionNotFoundException notFound = new TransactionNotFoundException("Transacao nao encontrada.");
+        when(transactionService.updateTransaction(any(), eq(transactionId), any())).thenThrow(notFound);
+        org.mockito.Mockito.doThrow(notFound).when(transactionService).deleteTransaction(any(), eq(transactionId));
+
+        mockMvc.perform(put("/transactions/{transactionId}", transactionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_PAYLOAD))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(delete("/transactions/{transactionId}", transactionId))
+                .andExpect(status().isNotFound());
+    }
+
+    private TransactionResponseDTO responseFor(UUID transactionId) {
+        return new TransactionResponseDTO(transactionId, UUID.randomUUID(), UUID.randomUUID(), "PETR4",
+                TransactionType.BUY, BigDecimal.ONE, BigDecimal.TEN, Instant.parse("2026-03-19T18:00:00Z"),
+                BigDecimal.ONE, BigDecimal.TEN);
     }
 
     @Test
