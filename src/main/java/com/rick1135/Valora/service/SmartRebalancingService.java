@@ -155,11 +155,8 @@ public class SmartRebalancingService {
             BigDecimal currentAmount = categoryPositions.stream()
                     .map(AssetPositionSummaryDTO::totalValue)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal quantity = categoryPositions.stream()
-                    .map(AssetPositionSummaryDTO::quantity)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal currentPrice = quantity.compareTo(BigDecimal.ZERO) > 0
-                    ? currentAmount.divide(quantity, 8, RoundingMode.HALF_UP)
+            BigDecimal currentPrice = categoryPositions.size() == 1
+                    ? defaultBigDecimal(categoryPositions.getFirst().currentPrice())
                     : BigDecimal.ZERO;
             boolean marketPriceReliable = categoryPositions.stream().allMatch(AssetPositionSummaryDTO::marketPriceReliable);
 

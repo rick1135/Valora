@@ -19,8 +19,16 @@ public class MarketCalendar {
         this.clock = clock;
     }
 
+    public Instant now() {
+        return Instant.now(clock);
+    }
+
     public LocalDate today() {
         return LocalDate.now(clock.withZone(MARKET_ZONE));
+    }
+
+    public LocalDate marketDate(Instant instant) {
+        return instant.atZone(MARKET_ZONE).toLocalDate();
     }
 
     public LocalDate financialDate(Instant instant) {

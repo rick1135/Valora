@@ -32,6 +32,7 @@ public class TransactionService {
     private final AssetRepository assetRepository;
     private final TransactionMapper transactionMapper;
     private final PortfolioService portfolioService;
+    private final MarketCalendar marketCalendar;
 
     @Transactional
     public TransactionResponseDTO processTransaction(User user, TransactionDTO dto) {
@@ -106,8 +107,12 @@ public class TransactionService {
         position.setAveragePrice(newAvgPrice);
 
         if (openingPosition || position.getPurchaseDate() == null) {
-            position.setPurchaseDate(dto.transactionDate().atZone(java.time.ZoneId.of("America/Sao_Paulo")).toLocalDate());
+            position.setPurchaseDate(effectiveMarketCalendar().marketDate(dto.transactionDate()));
         }
+    }
+
+    private MarketCalendar effectiveMarketCalendar() {
+        return marketCalendar != null ? marketCalendar : new MarketCalendar(java.time.Clock.systemDefaultZone());
     }
 
     private void handleSell(Position position, TransactionDTO dto) {

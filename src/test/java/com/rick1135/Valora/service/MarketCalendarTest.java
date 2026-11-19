@@ -31,4 +31,15 @@ class MarketCalendarTest {
     void todayShouldUseMarketZone() {
         assertThat(marketCalendar.today()).isEqualTo(LocalDate.of(2026, 3, 20));
     }
+
+    @Test
+    void marketDateShouldConvertUtcInstantToSaoPauloDate() {
+        assertThat(marketCalendar.marketDate(Instant.parse("2026-03-21T01:30:00Z")))
+                .isEqualTo(LocalDate.of(2026, 3, 20));
+    }
+
+    @Test
+    void nowShouldReturnClockInstant() {
+        assertThat(marketCalendar.now()).isEqualTo(Instant.parse("2026-03-20T12:00:00Z"));
+    }
 }

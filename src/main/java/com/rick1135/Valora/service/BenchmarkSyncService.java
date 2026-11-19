@@ -53,14 +53,15 @@ public class BenchmarkSyncService {
         for (Benchmark benchmark : bcbBenchmarks) {
             try {
                 int seriesCode = getSeriesCode(benchmark.getTicker());
+                LocalDate today = marketCalendar.today();
                 LocalDate lastStoredDate = benchmarkValueRepository.findLatestByBenchmark(benchmark)
                         .map(BenchmarkValue::getReferenceDate)
-                        .orElse(LocalDate.now().minusYears(1));
+                        .orElse(today.minusYears(1));
 
                 checkSyncDelay(benchmark, lastStoredDate);
 
                 LocalDate startDate = lastStoredDate.plusDays(1);
-                LocalDate endDate = LocalDate.now();
+                LocalDate endDate = today;
 
                 if (startDate.isAfter(endDate)) continue;
 
@@ -101,10 +102,11 @@ public class BenchmarkSyncService {
                     syncBrapiHistorical(benchmark);
                 } else {
                     checkSyncDelay(benchmark, lastStoredDate);
+                    LocalDate today = marketCalendar.today();
                     // Only sync if last stored date is before today
-                    if (lastStoredDate.isBefore(LocalDate.now())) {
+                    if (lastStoredDate.isBefore(today)) {
                         Optional<QuoteDTO> quote = quoteService.getCurrentQuote(benchmark.getTicker());
-                        quote.ifPresent(q -> saveValue(benchmark, LocalDate.now(), q.price()));
+                        quote.ifPresent(q -> saveValue(benchmark, today, q.price()));
                     }
                 }
             } catch (Exception e) {
@@ -114,7 +116,7 @@ public class BenchmarkSyncService {
     }
 
     private void checkSyncDelay(Benchmark benchmark, LocalDate lastStoredDate) {
-        if (lastStoredDate != null && lastStoredDate.isBefore(LocalDate.now().minusDays(5))) {
+        if (lastStoredDate != null && lastStoredDate.isBefore(marketCalendar.today().minusDays(5))) {
             log.warn("ALERTA: O benchmark {} esta sem atualizacoes desde {}. Verifique a estabilidade da API {}!",
                     benchmark.getTicker(), lastStoredDate, benchmark.getProvider());
         }
@@ -128,9 +130,7 @@ public class BenchmarkSyncService {
             BrapiResultDTO result = response.results().get(0);
             if (result.historicalDataPrice() != null) {
                 for (com.rick1135.Valora.dto.brapi.BrapiHistoricalDataDTO historical : result.historicalDataPrice()) {
-                    LocalDate date = java.time.Instant.ofEpochSecond(historical.date())
-                            .atZone(java.time.ZoneId.systemDefault())
-                            .toLocalDate();
+                    LocalDate date = marketCalendar.marketDate(java.time.Instant.ofEpochSecond(historical.date()));
                     saveValue(benchmark, date, historical.close());
                 }
             }
@@ -150,7 +150,7 @@ public class BenchmarkSyncService {
     private LocalDate getStartDateForSync(Benchmark benchmark) {
         return benchmarkValueRepository.findLatestByBenchmark(benchmark)
                 .map(bv -> bv.getReferenceDate().plusDays(1))
-                .orElse(LocalDate.now().minusYears(1)); // Default to 1 year back if empty
+                .orElse(marketCalendar.today().minusYears(1)); // Default to 1 year back if empty
     }
 
     private int getSeriesCode(String ticker) {

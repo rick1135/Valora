@@ -1,6 +1,7 @@
 package com.rick1135.Valora.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import com.rick1135.Valora.exception.GlobalExceptionHandler;
 import com.rick1135.Valora.exception.InvalidTokenException;
 import com.rick1135.Valora.repository.UserRepository;
@@ -104,6 +105,22 @@ class AccessTokenSecurityTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/metas.js"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void swaggerAndLogoutEndpointsShouldBePublic() throws Exception {
+        mockMvc.perform(get("/swagger-ui.html"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/swagger-ui/index.html"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/v3/api-docs/swagger-config"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"refresh-token\"}"))
+                .andExpect(status().isNoContent());
     }
 
     @Test
@@ -302,7 +319,7 @@ class AccessTokenSecurityTest {
 
         @Bean
         ObjectMapper objectMapper() {
-            return new ObjectMapper().findAndRegisterModules();
+            return JsonMapper.builder().findAndAddModules().build();
         }
 
         @Bean("handlerExceptionResolver")
@@ -364,6 +381,20 @@ class AccessTokenSecurityTest {
         @PostMapping("/assets")
         @ResponseStatus(CREATED)
         void createAsset() {
+        }
+
+        @GetMapping({
+                "/swagger-ui.html",
+                "/swagger-ui/index.html",
+                "/v3/api-docs",
+                "/v3/api-docs/swagger-config"
+        })
+        void swaggerDocs() {
+        }
+
+        @PostMapping("/auth/logout")
+        @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+        void logout() {
         }
     }
 }

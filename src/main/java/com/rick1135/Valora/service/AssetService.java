@@ -6,12 +6,14 @@ import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.exception.AssetAlreadyExistsException;
 import com.rick1135.Valora.mapper.AssetMapper;
 import com.rick1135.Valora.repository.AssetRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.Locale;
 
@@ -19,10 +21,17 @@ import java.util.Locale;
 public class AssetService {
     private final AssetRepository assetRepository;
     private final AssetMapper assetMapper;
+    private final MarketCalendar marketCalendar;
 
-    public AssetService(AssetRepository assetRepository, AssetMapper assetMapper) {
+    @Autowired
+    public AssetService(AssetRepository assetRepository, AssetMapper assetMapper, MarketCalendar marketCalendar) {
         this.assetRepository = assetRepository;
         this.assetMapper = assetMapper;
+        this.marketCalendar = marketCalendar != null ? marketCalendar : new MarketCalendar(Clock.systemDefaultZone());
+    }
+
+    public AssetService(AssetRepository assetRepository, AssetMapper assetMapper) {
+        this(assetRepository, assetMapper, new MarketCalendar(Clock.systemDefaultZone()));
     }
 
     public AssetResponseDTO createAsset(AssetRequestDTO request) {
@@ -30,7 +39,7 @@ public class AssetService {
             if (request.indexer() == null || request.annualRate() == null || request.issuer() == null || request.expirationDate() == null) {
                 throw new IllegalArgumentException("Indexador, taxa anual, emissor e data de vencimento sao obrigatorios para ativos de renda fixa.");
             }
-            if (request.expirationDate().isBefore(java.time.LocalDate.now())) {
+            if (request.expirationDate().isBefore(marketCalendar.today())) {
                 throw new IllegalArgumentException("A data de vencimento nao pode estar no passado.");
             }
             if (request.annualRate().compareTo(java.math.BigDecimal.ZERO) < 0) {

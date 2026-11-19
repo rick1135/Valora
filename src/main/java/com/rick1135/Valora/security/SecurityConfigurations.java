@@ -1,6 +1,6 @@
 package com.rick1135.Valora.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.rick1135.Valora.exception.GlobalExceptionHandler;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -71,9 +71,13 @@ public class SecurityConfigurations {
                                 "/dashboard.js",
                                 "/rentabilidade.js",
                                 "/proventos.js",
-                                "/metas.js"
+                                "/metas.js",
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs",
+                                "/v3/api-docs/**"
                         ).permitAll()
-                        .requestMatchers("/auth/login", "/auth/register", "/auth/refresh").permitAll()
+                        .requestMatchers("/auth/login", "/auth/register", "/auth/refresh", "/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.POST, "/assets").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/provents", "/provents/sync").hasRole("ADMIN")
                         .anyRequest().authenticated())

@@ -5,3 +5,7 @@ spring:
     import: optional:file:.env[.properties]
   profiles:
     default: dev
+  data:
+    redis:
+      repositories:
+        enabled: false

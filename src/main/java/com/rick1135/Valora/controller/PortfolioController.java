@@ -4,9 +4,11 @@ import com.rick1135.Valora.dto.request.PortfolioRequestDTO;
 import com.rick1135.Valora.dto.response.PortfolioResponseDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.dto.response.PositionResponseDTO;
+import com.rick1135.Valora.dto.response.SuggestedOrderDTO;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.service.PortfolioService;
 import com.rick1135.Valora.service.PositionService;
+import com.rick1135.Valora.service.SmartRebalancingService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,8 +20,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,6 +33,7 @@ import java.util.UUID;
 public class PortfolioController {
     private final PositionService positionService;
     private final PortfolioService portfolioService;
+    private final SmartRebalancingService smartRebalancingService;
 
     @PostMapping
     public ResponseEntity<PortfolioResponseDTO> createPortfolio(
@@ -83,5 +88,27 @@ public class PortfolioController {
             @PathVariable UUID portfolioId
     ) {
         return ResponseEntity.ok(portfolioService.getPortfolioSummary(user, portfolioId));
+    }
+
+    @PutMapping("/{portfolioId}/targets")
+    public ResponseEntity<Void> savePortfolioTargets(
+            @AuthenticationPrincipal User user,
+            @PathVariable UUID portfolioId,
+            @Valid @RequestBody List<SmartRebalancingService.PortfolioTargetInput> targets
+    ) {
+        smartRebalancingService.saveTargets(user, portfolioId, targets);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{portfolioId}/rebalance")
+    public ResponseEntity<List<SuggestedOrderDTO>> calculateRebalance(
+            @AuthenticationPrincipal User user,
+            @PathVariable UUID portfolioId,
+            @RequestParam(defaultValue = "0") BigDecimal contributionAmount
+    ) {
+        if (contributionAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("O valor do aporte nao pode ser negativo.");
+        }
+        return ResponseEntity.ok(smartRebalancingService.calculateSuggestedOrders(user, portfolioId, contributionAmount));
     }
 }

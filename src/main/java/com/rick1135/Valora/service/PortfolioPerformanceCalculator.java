@@ -131,11 +131,9 @@ public class PortfolioPerformanceCalculator {
         BigDecimal totalValue = lines.stream()
                 .map(PositionSummaryLine::patrimony)
                 .reduce(ZERO, BigDecimal::add);
-        BigDecimal totalQuantity = lines.stream()
-                .map(PositionSummaryLine::quantity)
-                .reduce(ZERO, BigDecimal::add);
-        BigDecimal currentPrice = totalQuantity.compareTo(ZERO) > 0
-                ? totalValue.divide(totalQuantity, FinancialConstants.EXTENDED_PRECISION_SCALE, RoundingMode.HALF_UP)
+        BigDecimal currentPrice = lines.size() == 1
+                ? defaultBigDecimal(lines.getFirst().currentPrice())
+                .setScale(FinancialConstants.EXTENDED_PRECISION_SCALE, RoundingMode.HALF_UP)
                 : ZERO;
         boolean marketPriceReliable = lines.stream().noneMatch(PositionSummaryLine::fallbackQuoteUsed);
 

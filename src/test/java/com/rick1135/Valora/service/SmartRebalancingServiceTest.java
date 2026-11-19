@@ -413,6 +413,43 @@ class SmartRebalancingServiceTest {
                 .hasMessageContaining("A soma das metas deve ser aproximadamente 100%");
     }
 
+    @Test
+    void shouldNotSumQuantitiesAcrossDifferentAssetsInCategoryTarget() {
+        User user = new User();
+        UUID portfolioId = UUID.randomUUID();
+        Portfolio portfolio = new Portfolio();
+        portfolio.setId(portfolioId);
+
+        UUID btcId = UUID.randomUUID();
+        UUID xrpId = UUID.randomUUID();
+        PortfolioSummaryDTO summary = new PortfolioSummaryDTO(
+                new BigDecimal("10000.00"),
+                new BigDecimal("9000.00"),
+                BigDecimal.ZERO,
+                null,
+                List.of(new AssetAllocationDTO("CRIPTO", new BigDecimal("10000.00"), new BigDecimal("100.00"), BigDecimal.ZERO, true)),
+                List.of(
+                        new AssetPositionSummaryDTO(btcId, "BTC", "CRIPTO", new BigDecimal("9000.00"), new BigDecimal("0.05"), new BigDecimal("180000.00"), true),
+                        new AssetPositionSummaryDTO(xrpId, "XRP", "CRIPTO", new BigDecimal("1000.00"), new BigDecimal("200.00"), new BigDecimal("5.00"), true)
+                ),
+                false,
+                List.of()
+        );
+
+        PortfolioTarget cryptoTarget = new PortfolioTarget(UUID.randomUUID(), portfolio, AssetCategory.CRIPTO, new BigDecimal("100.00"));
+
+        when(portfolioService.resolveOwnedPortfolio(user, portfolioId)).thenReturn(portfolio);
+        when(portfolioService.getPortfolioSummary(user, portfolioId)).thenReturn(summary);
+        when(targetRepository.findByPortfolio(portfolio)).thenReturn(List.of(cryptoTarget));
+
+        List<SuggestedOrderDTO> suggestions = rebalancingService.calculateSuggestedOrders(user, portfolioId, new BigDecimal("1000.00"));
+
+        SuggestedOrderDTO cryptoOrder = suggestions.getFirst();
+        assertThat(cryptoOrder.currentAmount()).isEqualByComparingTo("10000.00");
+        assertThat(cryptoOrder.suggestedInvestment()).isEqualByComparingTo("1000.00");
+        assertThat(cryptoOrder.currentPrice()).isEqualByComparingTo("0");
+    }
+
     private Asset asset(UUID id, String ticker, AssetCategory category) {
         Asset asset = new Asset();
         asset.setId(id);

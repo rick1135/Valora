@@ -113,10 +113,11 @@ class PortfolioPerformanceCalculatorTest {
         assertThat(summary.allocations().getFirst().category()).isEqualTo("ACOES");
         assertThat(summary.allocations().getFirst().totalValue()).isEqualByComparingTo("320.0000000000");
         assertThat(summary.allocations().getFirst().percentage()).isEqualByComparingTo("76.1905");
-        assertThat(summary.allocations().getFirst().currentPrice()).isEqualByComparingTo("45.71428571");
+        assertThat(summary.allocations().getFirst().currentPrice()).isEqualByComparingTo("0");
         assertThat(summary.allocations().getFirst().marketPriceReliable()).isTrue();
         assertThat(summary.allocations().get(1).category()).isEqualTo("ETF");
         assertThat(summary.allocations().get(1).totalValue()).isEqualByComparingTo("100.0000000000");
+        assertThat(summary.allocations().get(1).currentPrice()).isEqualByComparingTo("100.00000000");
     }
 
     @Test

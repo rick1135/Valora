@@ -3,13 +3,17 @@ package com.rick1135.Valora.controller;
 import com.rick1135.Valora.dto.response.AssetAllocationDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.dto.response.PositionResponseDTO;
+import com.rick1135.Valora.dto.response.SuggestedOrderDTO;
+import com.rick1135.Valora.exception.GlobalExceptionHandler;
 import com.rick1135.Valora.service.PortfolioService;
 import com.rick1135.Valora.service.PositionService;
+import com.rick1135.Valora.service.SmartRebalancingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -19,8 +23,10 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -35,10 +41,15 @@ class PortfolioControllerTest {
     @Mock
     private PortfolioService portfolioService;
 
+    @Mock
+    private SmartRebalancingService smartRebalancingService;
+
     @BeforeEach
     void setUp() {
-        PortfolioController controller = new PortfolioController(positionService, portfolioService);
-        mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+        PortfolioController controller = new PortfolioController(positionService, portfolioService, smartRebalancingService);
+        mockMvc = MockMvcBuilders.standaloneSetup(controller)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
     }
 
     @Test
@@ -96,5 +107,62 @@ class PortfolioControllerTest {
                 .andExpect(jsonPath("$.fallbackTickers[0]").value("ETF11"))
                 .andExpect(jsonPath("$.allocations[0].category").value("ACOES"))
                 .andExpect(jsonPath("$.allocations[0].percentage").value(71.4286));
+    }
+
+    @Test
+    void savePortfolioTargetsShouldReturnNoContent() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
+
+        mockMvc.perform(put("/portfolios/{portfolioId}/targets", portfolioId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                [
+                                  {"assetCategory": "ACOES", "targetPercentage": 50.00},
+                                  {"assetCategory": "FII", "targetPercentage": 50.00}
+                                ]
+                                """))
+                .andExpect(status().isNoContent());
+
+        verify(smartRebalancingService).saveTargets(any(), eq(portfolioId), eq(List.of(
+                SmartRebalancingService.PortfolioTargetInput.forCategory("ACOES", new BigDecimal("50.00")),
+                SmartRebalancingService.PortfolioTargetInput.forCategory("FII", new BigDecimal("50.00"))
+        )));
+    }
+
+    @Test
+    void calculateRebalanceShouldReturnSuggestedOrders() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
+        SuggestedOrderDTO order = new SuggestedOrderDTO(
+                "FII",
+                null,
+                null,
+                new BigDecimal("3000.00"),
+                new BigDecimal("5000.00"),
+                new BigDecimal("2000.00"),
+                new BigDecimal("1000.00"),
+                BigDecimal.ZERO,
+                null,
+                null,
+                null,
+                true
+        );
+        when(smartRebalancingService.calculateSuggestedOrders(any(), eq(portfolioId), eq(new BigDecimal("1000.00"))))
+                .thenReturn(List.of(order));
+
+        mockMvc.perform(get("/portfolios/{portfolioId}/rebalance", portfolioId)
+                        .param("contributionAmount", "1000.00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].category").value("FII"))
+                .andExpect(jsonPath("$[0].suggestedInvestment").value(1000.0));
+    }
+
+    @Test
+    void calculateRebalanceShouldRejectNegativeContribution() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
+
+        mockMvc.perform(get("/portfolios/{portfolioId}/rebalance", portfolioId)
+                        .param("contributionAmount", "-10.00"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("O valor do aporte nao pode ser negativo."));
     }
 }

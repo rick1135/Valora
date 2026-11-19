@@ -2,15 +2,28 @@ package com.rick1135.Valora.service;
 
 import ch.obermuhlner.math.big.BigDecimalMath;
 import com.rick1135.Valora.common.FinancialConstants;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 
 @Component
 public class FixedIncomeYieldCalculator {
+
+    private final MarketCalendar marketCalendar;
+
+    @Autowired
+    public FixedIncomeYieldCalculator(MarketCalendar marketCalendar) {
+        this.marketCalendar = marketCalendar != null ? marketCalendar : new MarketCalendar(Clock.systemDefaultZone());
+    }
+
+    public FixedIncomeYieldCalculator() {
+        this(new MarketCalendar(Clock.systemDefaultZone()));
+    }
 
     public BigDecimal calculateCurrentValue(BigDecimal averagePrice, BigDecimal quantity, LocalDate purchaseDate, BigDecimal annualRate) {
         if (averagePrice == null || quantity == null || purchaseDate == null) {
@@ -23,7 +36,7 @@ public class FixedIncomeYieldCalculator {
             return principal.setScale(FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
         }
 
-        long days = ChronoUnit.DAYS.between(purchaseDate, LocalDate.now());
+        long days = ChronoUnit.DAYS.between(purchaseDate, marketCalendar.today());
         if (days <= 0) {
             return principal.setScale(FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
         }

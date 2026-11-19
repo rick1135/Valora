@@ -36,6 +36,7 @@ public class PortfolioService {
     private final BenchmarkRepository benchmarkRepository;
     private final BenchmarkValueRepository benchmarkValueRepository;
     private final BenchmarkPerformanceCalculator benchmarkPerformanceCalculator;
+    private final MarketCalendar marketCalendar;
 
     @Transactional
     public PortfolioResponseDTO createPortfolio(User user, PortfolioRequestDTO dto) {
@@ -117,10 +118,11 @@ public class PortfolioService {
     }
 
     private List<PortfolioSummaryDTO.BenchmarkComparisonDTO> calculateBenchmarkComparisons(Portfolio portfolio) {
+        MarketCalendar calendar = effectiveMarketCalendar();
         java.time.Instant firstTransactionInstant = transactionRepository.findFirstTransactionDateByPortfolio(portfolio)
-                .orElse(java.time.Instant.now());
-        java.time.LocalDate startDate = firstTransactionInstant.atZone(java.time.ZoneId.systemDefault()).toLocalDate();
-        java.time.LocalDate endDate = java.time.LocalDate.now();
+                .orElseGet(calendar::now);
+        java.time.LocalDate startDate = calendar.marketDate(firstTransactionInstant);
+        java.time.LocalDate endDate = calendar.today();
 
         return benchmarkRepository.findAll().stream()
                 .map(benchmark -> {
@@ -129,6 +131,10 @@ public class PortfolioService {
                     return new PortfolioSummaryDTO.BenchmarkComparisonDTO(benchmark.getName(), yield);
                 })
                 .toList();
+    }
+
+    private MarketCalendar effectiveMarketCalendar() {
+        return marketCalendar != null ? marketCalendar : new MarketCalendar(java.time.Clock.systemDefaultZone());
     }
 
     @Transactional(readOnly = true)
