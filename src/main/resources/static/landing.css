@@ -187,6 +187,12 @@ a {
   padding: 64px 0 94px;
 }
 
+.preview-disclaimer {
+  margin: 0 0 12px;
+  color: var(--text-soft);
+  font-size: 0.875rem;
+}
+
 .preview-window {
   position: relative;
   z-index: 1;

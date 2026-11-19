@@ -3,14 +3,17 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Valora | Metas</title>
+    <title>Valora | Metas de Aloca&ccedil;&atilde;o</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="transaction-ui.css">
+    <link rel="stylesheet" href="metas-page.css">
   </head>
   <body>
     <header class="topbar">
       <div class="shell topbar__inner">
         <a class="brand" href="/" aria-label="Valora">Valora</a>
-        <span class="portfolio-label">Carteira</span>
+        <span class="portfolio-label" id="portfolio-name">Carteira</span>
+        <button class="button button--ghost topbar__logout" id="logout-btn" type="button">Sair</button>
       </div>
     </header>
 
@@ -18,97 +21,152 @@
       <div class="workspace-nav">
         <nav class="tabs" aria-label="Se&ccedil;&otilde;es da carteira">
           <a class="tab" href="/dashboard.html">Dashboard</a>
-          <a class="tab" href="#">Ativos</a>
           <a class="tab" href="/proventos.html">Proventos</a>
           <a class="tab" href="/rentabilidade.html">Rentabilidade</a>
           <a class="tab tab--active" href="/metas.html" aria-current="page">Metas</a>
-          <a class="tab" href="#">Lan&ccedil;amentos</a>
         </nav>
 
         <div class="actions">
-          <button class="button button--ghost" type="button">Integra&ccedil;&atilde;o B3</button>
-          <button class="button button--primary" type="button">
+          <button class="button button--ghost" type="button" disabled aria-disabled="true" title="Em breve (v2)">Integra&ccedil;&atilde;o B3</button>
+          <button class="button button--primary" id="new-transaction-btn" data-new-transaction type="button">
             <span class="button__icon" aria-hidden="true">+</span>
             Novo lan&ccedil;amento
           </button>
         </div>
       </div>
 
-      <section class="goals-hero">
-        <div class="summary" aria-labelledby="goals-title">
-          <h1 id="goals-title">Metas</h1>
-          <p>Defina objetivos, acompanhe o progresso e veja o que j&aacute; foi conquistado. Uma sala de controle para o seu futuro eu.</p>
-        </div>
-
-        <button class="goals-create-button" type="button">
-          <span aria-hidden="true">+</span>
-          Criar nova meta
-        </button>
+      <section class="summary" aria-labelledby="goals-title">
+        <h1 id="goals-title">Metas de Aloca&ccedil;&atilde;o</h1>
+        <p>Defina sua estrat&eacute;gia percentual por classe de ativo ou ticker e simule novos aportes para rebalancear a carteira.</p>
       </section>
 
-      <section class="goals-summary-grid" id="goals-summary-grid" aria-label="Resumo das metas"></section>
+      <div class="dashboard-banner dashboard-banner--loading" id="metas-loading" role="status" aria-live="polite">
+        Carregando metas de aloca&ccedil;&atilde;o...
+      </div>
+      <div class="dashboard-banner dashboard-banner--error" id="metas-error" role="alert" hidden></div>
+      <div class="dashboard-banner dashboard-banner--success" id="metas-status" role="status" aria-live="polite" hidden></div>
 
-      <section class="goals-main-grid" aria-label="Metas em andamento">
-        <article class="panel goals-form-panel" aria-labelledby="create-goal-title">
-          <h2 id="create-goal-title">Criar meta</h2>
-          <p>Cadastre o destino, valor alvo e prazo.</p>
+      <section class="metric-grid" id="metas-summary-grid" aria-label="Resumo da estrat&eacute;gia"></section>
 
-          <form class="goal-form">
-            <label>
-              <span>Nome da meta</span>
-              <input type="text" value="Reserva de emerg&ecirc;ncia" aria-label="Nome da meta">
-            </label>
+      <section class="metas-layout" aria-label="Configura&ccedil;&atilde;o e simula&ccedil;&atilde;o de metas">
+        <article class="panel metas-editor-panel" aria-labelledby="targets-editor-title">
+          <div class="metas-panel-head">
+            <div>
+              <h2 id="targets-editor-title">Aloca&ccedil;&atilde;o alvo (%)</h2>
+              <p class="panel__subtitle">Combine categorias e ativos espec&iacute;ficos. A soma deve ficar entre 99,90% e 100,10%.</p>
+            </div>
+            <span class="metas-sum-pill" id="targets-total-pill" data-state="empty">Soma: 0,00%</span>
+          </div>
 
-            <div class="goal-form__row">
-              <label>
-                <span>Valor alvo</span>
-                <input type="text" value="R$ 12.000,00" aria-label="Valor alvo">
-              </label>
-
-              <label>
-                <span>Prazo</span>
-                <input type="text" value="12/2026" aria-label="Prazo">
-              </label>
+          <div class="metas-add-controls" aria-label="Adicionar nova meta">
+            <div class="metas-add-group">
+              <label class="metas-field-label" for="category-select">Adicionar categoria</label>
+              <div class="metas-inline-control">
+                <select id="category-select" class="metas-input">
+                  <option value="ACOES">A&ccedil;&otilde;es</option>
+                  <option value="FII">FIIs</option>
+                  <option value="ETF">ETFs</option>
+                  <option value="CRIPTO">Criptos</option>
+                  <option value="RENDA_FIXA">Renda Fixa</option>
+                </select>
+                <button class="button button--ghost" id="add-category-btn" type="button">+ Categoria</button>
+              </div>
             </div>
 
-            <label>
-              <span>Categoria</span>
-              <input type="text" value="Seguran&ccedil;a financeira" aria-label="Categoria">
-            </label>
-
-            <button type="button">Salvar meta</button>
-          </form>
-        </article>
-
-        <article class="panel goals-active-panel" aria-labelledby="active-goals-title">
-          <div class="goals-section-header">
-            <h2 id="active-goals-title">Metas em andamento</h2>
-            <div class="goals-filter-row" aria-label="Filtros das metas">
-              <button class="goals-filter goals-filter--active" type="button">Todas</button>
-              <button class="goals-filter" type="button">Este ano</button>
-              <button class="goals-filter" type="button">Prioridade</button>
+            <div class="metas-add-group metas-asset-search">
+              <label class="metas-field-label" for="asset-search-input">Adicionar ativo (ticker)</label>
+              <div class="metas-search-wrap">
+                <input
+                  id="asset-search-input"
+                  class="metas-input"
+                  type="search"
+                  placeholder="Ex: WEGE3, PETR4, HGLG11..."
+                  autocomplete="off"
+                  aria-autocomplete="list"
+                  aria-controls="asset-search-suggestions"
+                >
+                <ul class="metas-suggestions" id="asset-search-suggestions" role="listbox" hidden></ul>
+              </div>
             </div>
           </div>
 
-          <div class="goals-card-grid" id="goals-card-grid"></div>
-        </article>
-      </section>
+          <form id="targets-form" novalidate>
+            <div class="metas-form-empty" id="targets-form-empty" hidden>
+              <p>Nenhuma meta adicionada ainda. Adicione categorias ou ativos acima para montar sua aloca&ccedil;&atilde;o.</p>
+              <button class="button button--ghost" id="load-preset-btn" type="button">Usar modelo 50/30/20</button>
+            </div>
 
-      <section class="goals-bottom-grid" aria-label="Evolu&ccedil;&atilde;o e hist&oacute;rico das metas">
-        <article class="panel goals-evolution-panel" aria-labelledby="goals-evolution-title">
-          <h2 id="goals-evolution-title">Evolu&ccedil;&atilde;o das metas</h2>
-          <p>Progresso acumulado por m&ecirc;s</p>
-          <div class="goals-evolution-chart" id="goals-evolution-chart" aria-label="Evolu&ccedil;&atilde;o acumulada mensal das metas"></div>
+            <ul class="metas-target-list" id="targets-form-list" aria-label="Metas configuradas"></ul>
+
+            <div class="metas-form-footer">
+              <p class="metas-validation-hint" id="targets-validation-hint">Soma necess&aacute;ria: ~100%</p>
+              <button class="button button--primary" id="save-targets-btn" type="submit">Salvar metas</button>
+            </div>
+          </form>
         </article>
 
-        <article class="panel goals-completed-panel" aria-labelledby="goals-completed-title">
-          <h2 id="goals-completed-title">Metas conclu&iacute;das</h2>
-          <p>Hist&oacute;rico de objetivos finalizados</p>
-          <div class="goals-completed-list" id="goals-completed-list"></div>
+        <article class="panel metas-rebalance-panel" aria-labelledby="rebalance-title">
+          <div class="metas-panel-head">
+            <div>
+              <h2 id="rebalance-title">Simulador de aporte</h2>
+              <p class="panel__subtitle">Veja onde investir seu pr&oacute;ximo aporte para aproximar a carteira das metas salvas.</p>
+            </div>
+          </div>
+
+          <form class="metas-sim-form" id="rebalance-form" novalidate>
+            <div class="metas-sim-input-group">
+              <label class="metas-field-label" for="contribution-input">Valor do aporte (R$)</label>
+              <div class="metas-inline-control">
+                <input
+                  id="contribution-input"
+                  class="metas-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value="1000.00"
+                  required
+                >
+                <button class="button button--primary" id="simulate-btn" type="submit">Simular aporte</button>
+              </div>
+            </div>
+
+            <div class="metas-quick-amounts" aria-label="Valores r&aacute;pidos de aporte">
+              <button class="metas-chip" type="button" data-amount="0">R$ 0</button>
+              <button class="metas-chip" type="button" data-amount="500">R$ 500</button>
+              <button class="metas-chip" type="button" data-amount="1000">R$ 1.000</button>
+              <button class="metas-chip" type="button" data-amount="5000">R$ 5.000</button>
+            </div>
+          </form>
+
+          <div class="metas-sim-status" id="rebalance-status" role="status" aria-live="polite" hidden></div>
+
+          <div class="empty-state" id="targets-empty" hidden>
+            <h3>Nenhuma meta salva na carteira</h3>
+            <p>Configure e salve suas metas de aloca&ccedil;&atilde;o ao lado para calcular os desvios e simular aportes.</p>
+          </div>
+
+          <div class="table-card" id="rebalance-table-card" hidden>
+            <table class="metas-rebalance-table">
+              <thead>
+                <tr>
+                  <th scope="col">Alvo</th>
+                  <th scope="col">Atual</th>
+                  <th scope="col">Ideal</th>
+                  <th scope="col">Desvio</th>
+                  <th scope="col">Aporte sugerido</th>
+                  <th scope="col">Pre&ccedil;o ref.</th>
+                  <th scope="col">Qtd. sugerida</th>
+                </tr>
+              </thead>
+              <tbody id="rebalance-tbody"></tbody>
+            </table>
+          </div>
         </article>
       </section>
     </main>
 
+    <script src="api.js"></script>
+    <script src="transaction-ui.js"></script>
     <script src="metas.js"></script>
   </body>
 </html>

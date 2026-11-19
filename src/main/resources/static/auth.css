@@ -113,6 +113,12 @@ input {
   align-items: center;
 }
 
+.preview-disclaimer {
+  margin: 16px 0 10px;
+  color: var(--text-soft);
+  font-size: 0.875rem;
+}
+
 .auth-card,
 .side-card {
   border: 1px solid var(--border);

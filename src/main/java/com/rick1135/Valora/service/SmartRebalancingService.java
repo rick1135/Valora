@@ -3,6 +3,7 @@ package com.rick1135.Valora.service;
 import com.rick1135.Valora.dto.response.AssetAllocationDTO;
 import com.rick1135.Valora.dto.response.AssetPositionSummaryDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
+import com.rick1135.Valora.dto.response.PortfolioTargetResponseDTO;
 import com.rick1135.Valora.dto.response.QuoteDTO;
 import com.rick1135.Valora.dto.response.SuggestedOrderDTO;
 import com.rick1135.Valora.entity.Asset;
@@ -35,7 +36,26 @@ public class SmartRebalancingService {
     private static final BigDecimal MAX_TARGET_TOTAL = new BigDecimal("100.10");
 
     @Transactional(readOnly = true)
+    public List<PortfolioTargetResponseDTO> getTargets(User user, UUID portfolioId) {
+        Portfolio portfolio = portfolioService.resolveOwnedPortfolio(user, portfolioId);
+        return targetRepository.findByPortfolio(portfolio).stream()
+                .map(target -> new PortfolioTargetResponseDTO(
+                        target.getId(),
+                        target.getAssetCategory() != null ? target.getAssetCategory().name() : null,
+                        target.getAsset() != null ? target.getAsset().getId() : null,
+                        target.getAsset() != null ? target.getAsset().getTicker() : null,
+                        target.getAsset() != null ? target.getAsset().getName() : null,
+                        target.getTargetPercentage()
+                ))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<SuggestedOrderDTO> calculateSuggestedOrders(User user, UUID portfolioId, BigDecimal contributionAmount) {
+        if (contributionAmount == null || contributionAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("O valor do aporte nao pode ser negativo.");
+        }
+
         Portfolio portfolio = portfolioService.resolveOwnedPortfolio(user, portfolioId);
         PortfolioSummaryDTO summary = portfolioService.getPortfolioSummary(user, portfolioId);
         List<PortfolioTarget> targets = targetRepository.findByPortfolio(portfolio);
@@ -225,6 +245,9 @@ public class SmartRebalancingService {
 
     @Transactional
     public void saveTargets(User user, UUID portfolioId, Map<String, BigDecimal> targetsMap) {
+        if (targetsMap == null || targetsMap.isEmpty()) {
+            throw new IllegalArgumentException("Informe ao menos uma meta de alocacao.");
+        }
         List<PortfolioTargetInput> targets = targetsMap.entrySet().stream()
                 .map(entry -> PortfolioTargetInput.forCategory(entry.getKey(), entry.getValue()))
                 .toList();
@@ -233,41 +256,89 @@ public class SmartRebalancingService {
 
     @Transactional
     public void saveTargets(User user, UUID portfolioId, List<PortfolioTargetInput> targets) {
-        Portfolio portfolio = portfolioService.resolveOwnedPortfolio(user, portfolioId);
+        if (targets == null || targets.isEmpty()) {
+            throw new IllegalArgumentException("Informe ao menos uma meta de alocacao.");
+        }
 
-        BigDecimal total = targets.stream()
-                .map(PortfolioTargetInput::targetPercentage)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        Set<AssetCategory> seenCategories = new HashSet<>();
+        Set<UUID> seenAssetIds = new HashSet<>();
+        BigDecimal total = BigDecimal.ZERO;
+
+        List<ValidatedTarget> validatedTargets = new ArrayList<>(targets.size());
+        for (PortfolioTargetInput input : targets) {
+            if (input == null) {
+                throw new IllegalArgumentException("Item de meta invalido.");
+            }
+
+            String normalizedCategory = input.assetCategory() != null ? input.assetCategory().trim() : null;
+            boolean hasCategory = normalizedCategory != null && !normalizedCategory.isEmpty();
+            boolean hasAsset = input.assetId() != null;
+
+            if (hasCategory == hasAsset) {
+                throw new IllegalArgumentException("A meta deve informar categoria ou ativo, exclusivamente.");
+            }
+
+            BigDecimal percentage = input.targetPercentage();
+            if (percentage == null || percentage.compareTo(BigDecimal.ZERO) <= 0 || percentage.compareTo(HUNDRED) > 0) {
+                throw new IllegalArgumentException("O percentual da meta deve ser maior que 0 e menor ou igual a 100.");
+            }
+
+            AssetCategory category = null;
+            UUID assetId = null;
+            if (hasCategory) {
+                try {
+                    category = AssetCategory.valueOf(normalizedCategory.toUpperCase(Locale.ROOT));
+                } catch (IllegalArgumentException ex) {
+                    throw new IllegalArgumentException("Categoria de ativo invalida: " + normalizedCategory);
+                }
+                if (!seenCategories.add(category)) {
+                    throw new IllegalArgumentException("Categoria duplicada nas metas: " + category.name());
+                }
+            } else {
+                assetId = input.assetId();
+                if (!seenAssetIds.add(assetId)) {
+                    throw new IllegalArgumentException("Ativo duplicado nas metas.");
+                }
+            }
+
+            total = total.add(percentage);
+            validatedTargets.add(new ValidatedTarget(category, assetId, percentage));
+        }
 
         if (total.compareTo(MIN_TARGET_TOTAL) < 0 || total.compareTo(MAX_TARGET_TOTAL) > 0) {
             throw new IllegalArgumentException("A soma das metas deve ser aproximadamente 100%. Atual: " + total + "%");
         }
 
-        targetRepository.deleteByPortfolio(portfolio);
+        Portfolio portfolio = portfolioService.resolveOwnedPortfolio(user, portfolioId);
 
-        targets.forEach(input -> {
-            if ((input.assetCategory() == null && input.assetId() == null)
-                    || (input.assetCategory() != null && input.assetId() != null)) {
-                throw new IllegalArgumentException("A meta deve informar categoria ou ativo, exclusivamente.");
-            }
-
+        List<PortfolioTarget> entities = new ArrayList<>(validatedTargets.size());
+        for (ValidatedTarget validated : validatedTargets) {
             PortfolioTarget target = new PortfolioTarget();
             target.setPortfolio(portfolio);
-            target.setTargetPercentage(input.targetPercentage());
+            target.setTargetPercentage(validated.targetPercentage());
 
-            if (input.assetId() != null) {
-                Asset asset = assetRepository.findById(input.assetId())
+            if (validated.assetId() != null) {
+                Asset asset = assetRepository.findById(validated.assetId())
                         .orElseThrow(() -> new IllegalArgumentException("Ativo nao encontrado para meta."));
                 target.setAsset(asset);
                 target.setAssetCategory(null);
             } else {
-                target.setAssetCategory(AssetCategory.valueOf(input.assetCategory()));
+                target.setAssetCategory(validated.category());
                 target.setAsset(null);
             }
+            entities.add(target);
+        }
 
-            targetRepository.save(target);
-        });
+        targetRepository.deleteByPortfolio(portfolio);
+        targetRepository.flush();
+        entities.forEach(targetRepository::save);
     }
+
+    private record ValidatedTarget(
+            AssetCategory category,
+            UUID assetId,
+            BigDecimal targetPercentage
+    ) {}
 
     private record GapAnalysis(
             String category,

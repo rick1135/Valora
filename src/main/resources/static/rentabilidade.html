@@ -5,12 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Valora | Rentabilidade</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="transaction-ui.css">
+    <link rel="stylesheet" href="rentabilidade-page.css">
   </head>
   <body>
     <header class="topbar">
       <div class="shell topbar__inner">
         <a class="brand" href="/" aria-label="Valora">Valora</a>
-        <span class="portfolio-label">Carteira</span>
+        <span class="portfolio-label" id="portfolio-name">Carteira</span>
+        <button class="button button--ghost topbar__logout" id="logout-btn" type="button">Sair</button>
       </div>
     </header>
 
@@ -18,16 +21,14 @@
       <div class="workspace-nav">
         <nav class="tabs" aria-label="Se&ccedil;&otilde;es da carteira">
           <a class="tab" href="/dashboard.html">Dashboard</a>
-          <a class="tab" href="#">Ativos</a>
           <a class="tab" href="/proventos.html">Proventos</a>
           <a class="tab tab--active" href="/rentabilidade.html" aria-current="page">Rentabilidade</a>
           <a class="tab" href="/metas.html">Metas</a>
-          <a class="tab" href="#">Lan&ccedil;amentos</a>
         </nav>
 
         <div class="actions">
-          <button class="button button--ghost" type="button">Integra&ccedil;&atilde;o B3</button>
-          <button class="button button--primary" type="button">
+          <button class="button button--ghost" type="button" disabled aria-disabled="true" title="Em breve (v2)">Integra&ccedil;&atilde;o B3</button>
+          <button class="button button--primary" id="new-transaction-btn" data-new-transaction type="button">
             <span class="button__icon" aria-hidden="true">+</span>
             Novo lan&ccedil;amento
           </button>
@@ -36,51 +37,64 @@
 
       <section class="summary" aria-labelledby="profitability-title">
         <h1 id="profitability-title">Rentabilidade</h1>
-        <p>Compare sua carteira com CDI, IPCA, IBOV e IFIX sem precisar garimpar planilhas.</p>
+        <p>Resultados consolidados da carteira a partir do resumo atual: lucro absoluto, realizado, n&atilde;o realizado, proventos e &iacute;ndices de refer&ecirc;ncia.</p>
       </section>
 
-      <section class="profitability-overview" aria-label="Resumo de rentabilidade">
-        <div class="profitability-cards" id="profitability-cards"></div>
+      <div class="dashboard-banner dashboard-banner--loading" id="rentabilidade-loading" role="status" aria-live="polite">
+        Carregando dados de rentabilidade...
+      </div>
+      <div class="dashboard-banner dashboard-banner--error" id="rentabilidade-error" role="alert" hidden></div>
+      <div class="dashboard-banner dashboard-banner--warning" id="fallback-notice" role="status" hidden></div>
 
-        <article class="panel performance-panel" aria-labelledby="comparison-title">
-          <div class="performance-header">
-            <h2 id="comparison-title">Rentabilidade comparada com &iacute;ndices</h2>
-            <ul class="comparison-legend" id="comparison-legend" aria-label="Legenda do gr&aacute;fico"></ul>
-          </div>
-
-          <div class="line-comparison" id="line-comparison" aria-label="Gr&aacute;fico comparativo de rentabilidade acumulada"></div>
-        </article>
+      <section class="empty-state" id="rentabilidade-empty" hidden>
+        <h2>Nenhum dado de rentabilidade ainda</h2>
+        <p>Registre seu primeiro lan&ccedil;amento para acompanhar lucro absoluto, realizado, n&atilde;o realizado, proventos e &iacute;ndices de refer&ecirc;ncia.</p>
+        <button class="button button--primary" id="empty-state-cta" type="button">
+          <span class="button__icon" aria-hidden="true">+</span>
+          Registrar primeiro lan&ccedil;amento
+        </button>
       </section>
 
-      <section class="panel return-matrix-panel" aria-labelledby="return-matrix-title">
-        <h2 id="return-matrix-title">Matriz mensal de retorno</h2>
+      <div id="rentabilidade-content" hidden>
+        <section class="rentability-cards" id="rentability-cards" aria-label="Indicadores de rentabilidade"></section>
 
-        <div class="return-table-card">
-          <table class="return-table">
-            <thead>
-              <tr>
-                <th scope="col">Ano</th>
-                <th scope="col">Jan</th>
-                <th scope="col">Fev</th>
-                <th scope="col">Mar</th>
-                <th scope="col">Abr</th>
-                <th scope="col">Mai</th>
-                <th scope="col">Jun</th>
-                <th scope="col">Jul</th>
-                <th scope="col">Ago</th>
-                <th scope="col">Set</th>
-                <th scope="col">Out</th>
-                <th scope="col">Nov</th>
-                <th scope="col">Dez</th>
-                <th scope="col">Retorno anual</th>
-              </tr>
-            </thead>
-            <tbody id="return-matrix"></tbody>
-          </table>
-        </div>
-      </section>
+        <section class="rentability-panels" aria-label="Detalhamento e &iacute;ndices de refer&ecirc;ncia">
+          <article class="panel rentability-panel" aria-labelledby="benchmarks-title">
+            <div class="panel__header">
+              <div>
+                <h2 id="benchmarks-title">&Iacute;ndices de refer&ecirc;ncia</h2>
+                <p class="panel__subtitle">Rentabilidade acumulada dos &iacute;ndices no per&iacute;odo da carteira, exibida como refer&ecirc;ncia separada.</p>
+              </div>
+            </div>
+
+            <ul class="benchmark-list" id="benchmark-list"></ul>
+            <p class="panel__empty" id="benchmarks-empty" hidden>Nenhum &iacute;ndice de refer&ecirc;ncia dispon&iacute;vel para esta carteira no momento.</p>
+
+            <p class="scope-note">
+              Refer&ecirc;ncia separada: o percentual da carteira considera o lucro absoluto sobre o custo atual das posi&ccedil;&otilde;es abertas, e n&atilde;o um retorno ponderado no tempo (TWR). Por isso, os &iacute;ndices s&atilde;o exibidos apenas como refer&ecirc;ncia de mercado, sem compara&ccedil;&atilde;o direta em pontos percentuais.
+            </p>
+          </article>
+
+          <article class="panel rentability-panel" aria-labelledby="breakdown-title">
+            <div class="panel__header">
+              <div>
+                <h2 id="breakdown-title">Composi&ccedil;&atilde;o do resultado</h2>
+                <p class="panel__subtitle">Base consolidada utilizada no c&aacute;lculo de rentabilidade.</p>
+              </div>
+            </div>
+
+            <div class="overview-breakdown" id="profitability-breakdown"></div>
+
+            <p class="scope-note">
+              Escopo atual: os valores exibidos refletem o resumo consolidado mais recente da carteira. S&eacute;rie hist&oacute;rica mensal, gr&aacute;fico evolutivo e matriz mensal de retorno ainda n&atilde;o est&atilde;o dispon&iacute;veis nesta vers&atilde;o da API.
+            </p>
+          </article>
+        </section>
+      </div>
     </main>
 
+    <script src="api.js"></script>
+    <script src="transaction-ui.js"></script>
     <script src="rentabilidade.js"></script>
   </body>
 </html>

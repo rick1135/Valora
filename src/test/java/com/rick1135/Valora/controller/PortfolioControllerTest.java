@@ -2,9 +2,11 @@ package com.rick1135.Valora.controller;
 
 import com.rick1135.Valora.dto.response.AssetAllocationDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
+import com.rick1135.Valora.dto.response.PortfolioTargetResponseDTO;
 import com.rick1135.Valora.dto.response.PositionResponseDTO;
 import com.rick1135.Valora.dto.response.SuggestedOrderDTO;
 import com.rick1135.Valora.exception.GlobalExceptionHandler;
+import com.rick1135.Valora.exception.PortfolioNotFoundException;
 import com.rick1135.Valora.service.PortfolioService;
 import com.rick1135.Valora.service.PositionService;
 import com.rick1135.Valora.service.SmartRebalancingService;
@@ -23,6 +25,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -110,6 +113,43 @@ class PortfolioControllerTest {
     }
 
     @Test
+    void getPortfolioTargetsShouldReturnCategoryAndAssetTargets() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
+        UUID categoryTargetId = UUID.randomUUID();
+        UUID assetTargetId = UUID.randomUUID();
+        UUID assetId = UUID.randomUUID();
+
+        when(smartRebalancingService.getTargets(any(), eq(portfolioId))).thenReturn(List.of(
+                new PortfolioTargetResponseDTO(categoryTargetId, "FII", null, null, null, new BigDecimal("40.00")),
+                new PortfolioTargetResponseDTO(assetTargetId, null, assetId, "WEGE3", "WEG S.A.", new BigDecimal("60.00"))
+        ));
+
+        mockMvc.perform(get("/portfolios/{portfolioId}/targets", portfolioId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(categoryTargetId.toString()))
+                .andExpect(jsonPath("$[0].assetCategory").value("FII"))
+                .andExpect(jsonPath("$[0].assetId").doesNotExist())
+                .andExpect(jsonPath("$[0].targetPercentage").value(40.0))
+                .andExpect(jsonPath("$[1].id").value(assetTargetId.toString()))
+                .andExpect(jsonPath("$[1].assetCategory").doesNotExist())
+                .andExpect(jsonPath("$[1].assetId").value(assetId.toString()))
+                .andExpect(jsonPath("$[1].ticker").value("WEGE3"))
+                .andExpect(jsonPath("$[1].assetName").value("WEG S.A."))
+                .andExpect(jsonPath("$[1].targetPercentage").value(60.0));
+    }
+
+    @Test
+    void getPortfolioTargetsShouldReturnNotFoundWhenPortfolioDoesNotBelongToUser() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
+        when(smartRebalancingService.getTargets(any(), eq(portfolioId)))
+                .thenThrow(new PortfolioNotFoundException("Carteira nao encontrada."));
+
+        mockMvc.perform(get("/portfolios/{portfolioId}/targets", portfolioId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Carteira nao encontrada."));
+    }
+
+    @Test
     void savePortfolioTargetsShouldReturnNoContent() throws Exception {
         UUID portfolioId = UUID.randomUUID();
 
@@ -127,6 +167,23 @@ class PortfolioControllerTest {
                 SmartRebalancingService.PortfolioTargetInput.forCategory("ACOES", new BigDecimal("50.00")),
                 SmartRebalancingService.PortfolioTargetInput.forCategory("FII", new BigDecimal("50.00"))
         )));
+    }
+
+    @Test
+    void savePortfolioTargetsShouldReturnBadRequestWhenValidationFails() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
+        doThrow(new IllegalArgumentException("A soma das metas deve ser aproximadamente 100%. Atual: 80.00%"))
+                .when(smartRebalancingService).saveTargets(any(), eq(portfolioId), any(List.class));
+
+        mockMvc.perform(put("/portfolios/{portfolioId}/targets", portfolioId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                [
+                                  {"assetCategory": "ACOES", "targetPercentage": 80.00}
+                                ]
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("A soma das metas deve ser aproximadamente 100%. Atual: 80.00%"));
     }
 
     @Test

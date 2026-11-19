@@ -5,12 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Valora | Proventos</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="transaction-ui.css">
+    <link rel="stylesheet" href="proventos-page.css">
   </head>
   <body>
     <header class="topbar">
       <div class="shell topbar__inner">
         <a class="brand" href="/" aria-label="Valora">Valora</a>
-        <span class="portfolio-label">Carteira</span>
+        <span class="portfolio-label" id="portfolio-name">Carteira</span>
+        <button class="button button--ghost topbar__logout" id="logout-btn" type="button">Sair</button>
       </div>
     </header>
 
@@ -18,16 +21,14 @@
       <div class="workspace-nav">
         <nav class="tabs" aria-label="Se&ccedil;&otilde;es da carteira">
           <a class="tab" href="/dashboard.html">Dashboard</a>
-          <a class="tab" href="#">Ativos</a>
           <a class="tab tab--active" href="/proventos.html" aria-current="page">Proventos</a>
           <a class="tab" href="/rentabilidade.html">Rentabilidade</a>
           <a class="tab" href="/metas.html">Metas</a>
-          <a class="tab" href="#">Lan&ccedil;amentos</a>
         </nav>
 
         <div class="actions">
-          <button class="button button--ghost" type="button">Integra&ccedil;&atilde;o B3</button>
-          <button class="button button--primary" type="button">
+          <button class="button button--ghost" type="button" disabled aria-disabled="true" title="Em breve (v2)">Integra&ccedil;&atilde;o B3</button>
+          <button class="button button--primary" id="new-transaction-btn" data-new-transaction type="button">
             <span class="button__icon" aria-hidden="true">+</span>
             Novo lan&ccedil;amento
           </button>
@@ -36,67 +37,56 @@
 
       <section class="summary" aria-labelledby="provents-title">
         <h1 id="provents-title">Proventos</h1>
-        <p>Acompanhe dividendos, JSCP e rendimentos recebidos ou a receber por m&ecirc;s, ativo e tipo de pagamento.</p>
+        <p>Acompanhe dividendos e JSCP provisionados, recebidos e a receber da carteira selecionada.</p>
       </section>
 
-      <section class="provents-overview" aria-label="Resumo e evolu&ccedil;&atilde;o de proventos">
-        <aside class="panel provents-summary-panel" aria-labelledby="provents-summary-title">
-          <h2 id="provents-summary-title">Resumo</h2>
+      <div class="dashboard-banner dashboard-banner--loading" id="provents-loading" role="status" aria-live="polite">
+        Carregando proventos da carteira...
+      </div>
+      <div class="dashboard-banner dashboard-banner--error" id="provents-error" role="alert" hidden></div>
 
-          <div class="provents-summary-block">
-            <p class="provents-summary-label">M&eacute;dia mensal &uacute;ltimos 12 meses</p>
-            <strong class="provents-summary-percent">90,52%</strong>
-            <div class="provents-progress" aria-hidden="true">
-              <span id="provents-progress"></span>
-            </div>
+      <section class="provents-kpis" id="provents-kpis" aria-label="Indicadores de proventos"></section>
+
+      <section class="provents-breakdown-grid" id="provents-breakdown" aria-label="Agrupamentos de proventos" hidden>
+        <article class="panel provents-section-panel" aria-labelledby="provents-by-asset-title">
+          <div class="provents-section-panel__header">
+            <h2 id="provents-by-asset-title">Proventos por ativo</h2>
+            <p class="provents-section-panel__subtitle">Valor l&iacute;quido acumulado</p>
           </div>
+          <ul class="provents-asset-list" id="provents-by-asset"></ul>
+          <p class="provents-empty-inline" id="provents-by-asset-empty" hidden>Nenhum provento agrupado por ativo.</p>
+        </article>
 
-          <div class="provents-summary-block">
-            <p class="provents-summary-label">Total de 12 meses</p>
-            <strong class="provents-summary-value">R$ 3.246,80</strong>
+        <article class="panel provents-section-panel" aria-labelledby="provents-by-type-title">
+          <div class="provents-section-panel__header">
+            <h2 id="provents-by-type-title">Por tipo de provento</h2>
+            <p class="provents-section-panel__subtitle">Bruto, IR retido e l&iacute;quido</p>
           </div>
-
-          <div class="provents-summary-block">
-            <p class="provents-summary-label">Total da carteira</p>
-            <strong class="provents-summary-value">R$ 84.230,17</strong>
-          </div>
-
-          <div class="provents-summary-block provents-summary-block--distribution">
-            <p class="provents-summary-label">Distribui&ccedil;&atilde;o em 12 meses</p>
-            <div class="provents-distribution" id="provents-distribution"></div>
-          </div>
-        </aside>
-
-        <article class="panel provents-chart-panel" aria-labelledby="provents-chart-title">
-          <div class="provents-panel-header">
-            <h2 id="provents-chart-title">Evolu&ccedil;&atilde;o de Proventos</h2>
-            <div class="provents-filters" aria-label="Filtros do gr&aacute;fico">
-              <button class="provents-filter provents-filter--active" type="button">Mensal</button>
-              <button class="provents-filter" type="button">Anual</button>
-              <button class="provents-filter" type="button">&Uacute;ltimos 12 meses</button>
-              <button class="provents-filter" type="button">Tipo de ativo</button>
-              <button class="provents-filter" type="button">Ativos</button>
-            </div>
-          </div>
-
-          <div class="provents-legend" aria-hidden="true">
-            <span><i class="provents-legend-dot provents-legend-dot--received"></i>Proventos recebidos</span>
-            <span><i class="provents-legend-dot provents-legend-dot--pending"></i>Proventos a receber</span>
-          </div>
-
-          <div class="provents-chart" id="provents-chart" aria-label="Gr&aacute;fico mensal de proventos recebidos e a receber"></div>
+          <ul class="provents-type-list" id="provents-by-type"></ul>
+          <p class="provents-empty-inline" id="provents-by-type-empty" hidden>Nenhum tipo de provento registrado.</p>
         </article>
       </section>
 
-      <section class="panel provents-table-panel" aria-labelledby="monthly-history-title">
+      <section class="panel provents-table-panel" id="monthly-history-panel" aria-labelledby="monthly-history-title" hidden>
         <div class="provents-table-header">
-          <h2 id="monthly-history-title">Hist&oacute;rico mensal</h2>
-          <div class="provents-filters" aria-label="Filtros do hist&oacute;rico mensal">
-            <button class="provents-filter provents-filter--active" type="button">Total</button>
-            <button class="provents-filter" type="button">2026</button>
-            <button class="provents-filter" type="button">Tipo de ativo</button>
-            <button class="provents-filter" type="button">Ativos</button>
+          <div>
+            <h2 id="monthly-history-title">Hist&oacute;rico mensal</h2>
+            <p class="provents-section-panel__subtitle" id="monthly-history-subtitle">Valores l&iacute;quidos por m&ecirc;s de pagamento (recebidos e a receber)</p>
           </div>
+          <ul class="provents-history-legend" aria-label="Legenda de status no hist&oacute;rico">
+            <li class="provents-history-legend__item">
+              <span class="provents-history-legend__dot provents-history-legend__dot--received" aria-hidden="true"></span>
+              Recebido
+            </li>
+            <li class="provents-history-legend__item">
+              <span class="provents-history-legend__dot provents-history-legend__dot--pending" aria-hidden="true"></span>
+              A receber
+            </li>
+            <li class="provents-history-legend__item">
+              <span class="provents-history-legend__dot provents-history-legend__dot--mixed" aria-hidden="true"></span>
+              Misto
+            </li>
+          </ul>
         </div>
 
         <div class="provents-table-scroll">
@@ -125,15 +115,10 @@
         </div>
       </section>
 
-      <section class="panel provents-table-panel" aria-labelledby="my-provents-title">
+      <section class="panel provents-table-panel" id="my-provents-panel" aria-labelledby="my-provents-title" hidden>
         <div class="provents-table-header">
           <h2 id="my-provents-title">Meus proventos</h2>
-          <div class="provents-filters" aria-label="Filtros dos meus proventos">
-            <button class="provents-filter provents-filter--active" type="button">Total</button>
-            <button class="provents-filter" type="button">2026</button>
-            <button class="provents-filter" type="button">Tipo de ativo</button>
-            <button class="provents-filter" type="button">Ativos</button>
-          </div>
+          <p class="provents-section-panel__subtitle" id="provents-count-label"></p>
         </div>
 
         <div class="provents-table-scroll">
@@ -143,21 +128,40 @@
                 <th scope="col">Ativo</th>
                 <th scope="col">Tipo</th>
                 <th scope="col">Status</th>
-                <th scope="col">Pagamento</th>
                 <th scope="col">Data Com</th>
                 <th scope="col">Data Pgto</th>
                 <th scope="col">Quantidade</th>
                 <th scope="col">Valor/un.</th>
-                <th scope="col">Total</th>
+                <th scope="col">Bruto</th>
+                <th scope="col">IR</th>
                 <th scope="col">L&iacute;quido</th>
               </tr>
             </thead>
             <tbody id="provents-table"></tbody>
           </table>
         </div>
+
+        <div class="provents-pagination" id="provents-pagination" hidden>
+          <p class="provents-pagination__info" id="provents-pagination-info"></p>
+          <div class="provents-pagination__controls">
+            <button class="button button--ghost" id="provents-prev-btn" type="button">Anterior</button>
+            <button class="button button--ghost" id="provents-next-btn" type="button">Pr&oacute;xima</button>
+          </div>
+        </div>
       </section>
+
+      <div class="empty-state" id="provents-empty" hidden>
+        <h3>Nenhum provento encontrado</h3>
+        <p>Ainda n&atilde;o h&aacute; dividendos ou JSCP provisionados para os ativos desta carteira.</p>
+        <button class="button button--primary" data-new-transaction type="button">
+          <span class="button__icon" aria-hidden="true">+</span>
+          Novo lan&ccedil;amento
+        </button>
+      </div>
     </main>
 
+    <script src="api.js"></script>
+    <script src="transaction-ui.js"></script>
     <script src="proventos.js"></script>
   </body>
 </html>

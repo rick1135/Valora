@@ -205,6 +205,35 @@ print(len(data))
 PY
 }
 
+json_array_first_field() {
+    local field="$1"
+    python3 - "$HTTP_BODY_FILE" "$field" <<'PY'
+import json, sys
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    data = json.load(f)
+if not isinstance(data, list) or not data or not isinstance(data[0], dict):
+    sys.exit(2)
+value = data[0].get(sys.argv[2])
+if value is None:
+    sys.exit(2)
+print(value)
+PY
+}
+
+json_decimal_equals() {
+    local field="$1"
+    local expected="$2"
+    python3 - "$HTTP_BODY_FILE" "$field" "$expected" <<'PY'
+import json, sys
+from decimal import Decimal
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    data = json.load(f)
+if not isinstance(data, dict) or data.get(sys.argv[2]) is None:
+    sys.exit(2)
+print("true" if Decimal(str(data[sys.argv[2]])) == Decimal(sys.argv[3]) else "false")
+PY
+}
+
 json_array_contains() {
     local field="$1"
     local expected="$2"
@@ -231,13 +260,13 @@ discover_base_url
 log "Aplicação exposta em ${BASE_URL}"
 wait_for_app_ready
 
-log "1/7 Validando profile 'prod' nos logs..."
+log "1/8 Validando profile 'prod' nos logs..."
 dc logs --no-color app > "$APP_LOG_FILE" 2>&1
 if ! grep -qE 'profile(s)? (is|are) active:.*"prod"' "$APP_LOG_FILE"; then
     fail "Profile 'prod' não confirmado nos logs da aplicação."
 fi
 
-log "2/7 Validando PostgreSQL, Flyway (incluindo V14) e Redis reais..."
+log "2/8 Validando PostgreSQL, Flyway (incluindo V14) e Redis reais..."
 FLYWAY_OK="$(dc exec -T postgres psql -U valora -d valora -tAc "SELECT count(*) FROM flyway_schema_history WHERE success = true;" | tr -d '[:space:]')"
 FLYWAY_FAIL="$(dc exec -T postgres psql -U valora -d valora -tAc "SELECT count(*) FROM flyway_schema_history WHERE success = false;" | tr -d '[:space:]')"
 FLYWAY_V14_OK="$(dc exec -T postgres psql -U valora -d valora -tAc "SELECT count(*) FROM flyway_schema_history WHERE version = '14' AND success = true;" | tr -d '[:space:]')"
@@ -249,7 +278,7 @@ REDIS_PONG="$(dc exec -T redis redis-cli ping | tr -d '[:space:]')"
 [[ "$REDIS_PONG" == "PONG" ]] || fail "Redis não respondeu PONG (recebido: ${REDIS_PONG})."
 log "Flyway OK (${FLYWAY_OK} migrações, V14 confirmada), Redis OK (${REDIS_PONG})."
 
-log "3/7 Validando cadastro e login..."
+log "3/8 Validando cadastro e login..."
 UNIQUE_TAG="$(date +%s)-$$"
 USER_A_EMAIL="smoke.a.${UNIQUE_TAG}@valora.local"
 USER_B_EMAIL="smoke.b.${UNIQUE_TAG}@valora.local"
@@ -272,7 +301,7 @@ assert_status "201" "cadastro usuário B"
 TOKEN_B="$(json_field "token")"
 [[ -n "$TOKEN_B" ]] || fail "Cadastro usuário B não retornou token."
 
-log "4/7 Validando catálogo inicial de ativos (GET /assets e /assets/search?ticker=PETR4)..."
+log "4/8 Validando catálogo inicial de ativos (GET /assets e /assets/search?ticker=PETR4)..."
 http_req GET "/assets?page=0&size=20" "$TOKEN_A"
 assert_status "200" "listar catálogo inicial"
 ASSETS_COUNT="$(json_array_len)"
@@ -282,9 +311,10 @@ http_req GET "/assets/search?ticker=PETR4" "$TOKEN_A"
 assert_status "200" "buscar PETR4 no catálogo inicial"
 PETR4_FOUND="$(json_array_contains "ticker" "PETR4" "ci")"
 [[ "$PETR4_FOUND" == "true" ]] || fail "Ativo PETR4 não encontrado em /assets/search?ticker=PETR4."
+PETR4_ID="$(json_array_first_field "id")"
 log "Catálogo inicial OK (${ASSETS_COUNT} ativos na página 0, PETR4 presente)."
 
-log "5/7 Validando rotação e revogação de refresh token..."
+log "5/8 Validando rotação e revogação de refresh token..."
 http_req POST "/auth/refresh" "" "{\"refreshToken\":\"${REFRESH_A1}\"}"
 assert_status "200" "rotação de refresh token"
 TOKEN_A_NEW="$(json_field "token")"
@@ -302,7 +332,7 @@ http_req POST "/auth/refresh" "" "{\"refreshToken\":\"${REFRESH_A2}\"}"
 assert_status "401" "reuso de refresh token revogado deve retornar 401"
 log "Rotação e revogação de refresh token OK."
 
-log "6/7 Validando isolamento entre usuários por HTTP..."
+log "6/8 Validando isolamento entre usuários por HTTP..."
 http_req GET "/portfolios"
 assert_status "401" "acesso sem autenticação a /portfolios deve retornar 401"
 
@@ -331,7 +361,35 @@ assert_status "404" "usuário B não pode ler positions de A"
 http_req DELETE "/portfolios/${PORTFOLIO_A_ID}" "$TOKEN_B"
 assert_status "404" "usuário B não pode excluir carteira de A"
 
-log "7/7 Validando persistência após reinício do serviço app..."
+log "7/8 Validando compra, metas e páginas complementares..."
+TX_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+http_req POST "/transactions" "$TOKEN_A_NEW" "{\"portfolioId\":\"${PORTFOLIO_A_ID}\",\"assetId\":\"${PETR4_ID}\",\"type\":\"BUY\",\"quantity\":10,\"unitPrice\":10,\"transactionDate\":\"${TX_DATE}\"}"
+assert_status "201" "registrar compra de PETR4"
+
+http_req GET "/portfolios/${PORTFOLIO_A_ID}/positions" "$TOKEN_A_NEW"
+assert_status "200" "posições após compra"
+[[ "$(json_array_contains "ticker" "PETR4" "ci")" == "true" ]] || fail "PETR4 ausente das posições após compra."
+
+http_req GET "/portfolios/${PORTFOLIO_A_ID}/summary" "$TOKEN_A_NEW"
+assert_status "200" "resumo após compra"
+[[ "$(json_decimal_equals "totalInvested" "100")" == "true" ]] || fail "Resumo não mostra custo investido de R$ 100 após compra."
+
+http_req PUT "/portfolios/${PORTFOLIO_A_ID}/targets" "$TOKEN_A_NEW" '[{"assetCategory":"ACOES","targetPercentage":100}]'
+assert_status "204" "salvar meta de alocação"
+http_req GET "/portfolios/${PORTFOLIO_A_ID}/targets" "$TOKEN_A_NEW"
+assert_status "200" "ler metas salvas"
+[[ "$(json_array_contains "assetCategory" "ACOES")" == "true" ]] || fail "Meta ACOES não foi retornada."
+http_req GET "/portfolios/${PORTFOLIO_A_ID}/rebalance?contributionAmount=100" "$TOKEN_A_NEW"
+assert_status "200" "simular aporte"
+http_req GET "/portfolios/${PORTFOLIO_A_ID}/targets" "$TOKEN_B"
+assert_status "404" "usuário B não pode ler metas de A"
+
+for page in dashboard.html proventos.html rentabilidade.html metas.html; do
+    http_req GET "/${page}"
+    assert_status "200" "página ${page}"
+done
+
+log "8/8 Validando persistência após reinício do serviço app..."
 dc restart app
 discover_base_url
 wait_for_app_ready

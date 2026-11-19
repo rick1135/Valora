@@ -1,4 +1,4 @@
-# Valora - Investment Portfolio API
+# Valora - Carteira de investimentos
 
 ![Java](https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=java)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.x-brightgreen?style=for-the-badge&logo=spring)
@@ -6,18 +6,11 @@
 ![Redis](https://img.shields.io/badge/Redis-7-red?style=for-the-badge&logo=redis)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=for-the-badge&logo=docker)
 
-**Valora** é uma API RESTful focada no controle de patrimônio financeiro. O sistema permite o registro de transações (compra e venda), cálculo automático de preço médio e consolidação
-de carteira em tempo real.
+**Valora** reúne uma aplicação web e uma API REST para registrar compras e vendas, acompanhar posições, proventos e metas de alocação.
 
 ## Status do Projeto
 
-O projeto está sendo desenvolvido em fases:
-
-- [x] **Fase 1:** Fundação, Autenticação JWT e Segurança;
-- [x] **Fase 2:** Dicionário de Ativos e Paginação;
-- [x] **Fase 3:** Motor de Transações, Posição Consolidada e Cálculo de Preço Médio;
-- [x] **Fase 4:** Integração com APIs externas (Cotações em Tempo Real) e Cálculo de Rentabilidade;
-- [ ] **Fase 5:** Dashboards e Relatórios.
+O fluxo principal já está disponível no navegador: cadastro, login, carteira, lançamento de compras e vendas e dashboard. As páginas complementares consultam dados da API. A aplicação ainda não oferece série histórica de rentabilidade da carteira, objetivos monetários com prazo, integração com a B3 nem recuperação de senha.
 
 ---
 
@@ -42,10 +35,9 @@ O projeto está sendo desenvolvido em fases:
     * **Tratamento de concorrência (race conditions):** Uso do `@Version` para impedir que duas ordens simultâneas corrompam a quantidade ou o preço médio.
     * **Tratamento Global de Exceções:** Respostas de erro padronizadas (RFC 7807) utilizando `@RestControllerAdvice`.
 
-### Próximos Passos
-* Evoluir endpoint de carteira com agregações por classe de ativo e indicadores consolidados.
-* Adicionar métricas e observabilidade para latência de consulta de cotação e taxa de acerto de cache.
-* Iniciar a Fase 5 com dashboards e relatórios.
+### Limites desta versão
+* A comparação com índices depende da cobertura da série disponível e não substitui uma rentabilidade ponderada por fluxos de caixa.
+* O registro público não cadastra ativos novos; a instalação limpa inclui um catálogo inicial. O cadastro de ativos adicionais requer administrador.
 
 ---
 
@@ -84,7 +76,7 @@ Para rodar o projeto localmente, você precisará ter instalado:
    ```bash
    cp .env.example .env
    ```
-   Ajuste `JWT_SECRET` (obrigatório em `prod` e no Docker Compose) e, opcionalmente, `BRAPI_TOKEN` para cotações em tempo real.
+   Gere um `JWT_SECRET` aleatório com `python3 -c 'import secrets; print(secrets.token_urlsafe(48))'` e substitua o exemplo no `.env`. Para usar a Brapi, crie uma conta em [brapi.dev](https://brapi.dev/), obtenha um token no painel da conta e preencha `BRAPI_TOKEN`. O token é opcional: sem ele, as cotações ficam indisponíveis e o resumo sinaliza os valores provisórios.
 
 3. **Suba a infraestrutura (PostgreSQL 16 + Redis 7):**
    ```bash
@@ -97,13 +89,14 @@ Para rodar o projeto localmente, você precisará ter instalado:
    ```bash
    ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
    ```
-   A aplicação estará disponível em `http://localhost:8080` e o Swagger UI em `http://localhost:8080/swagger-ui.html`.
+   A aplicação estará disponível em `http://localhost:8080`, com cadastro em `/cadastro.html`, login em `/login.html` e Swagger UI em `http://localhost:8080/swagger-ui.html`.
 
 5. **Execução completa via Docker Compose (perfil `prod`):**
    Para subir toda a stack (`postgres`, `redis` e `app`) com as portas vinculadas a `127.0.0.1` e `BRAPI_TOKEN` opcional:
    ```bash
-   JWT_SECRET=sua-chave-secreta docker compose up -d --build
+   docker compose up -d --build
    ```
+   O Compose lê `JWT_SECRET` e, se definido, `BRAPI_TOKEN` do arquivo `.env`. Aguarde o serviço `app` responder e abra `http://localhost:8080/cadastro.html`.
 
 ---
 
@@ -120,7 +113,7 @@ Para rodar o projeto localmente, você precisará ter instalado:
   ```bash
   bash scripts/smoke-clean-install.sh
   ```
-  O script sobe uma stack isolada em projeto e volumes descartáveis (sem alterar containers ou dados existentes), valida o profile `prod`, migrações Flyway, Redis, cadastro/login, catálogo inicial (`PETR4`), rotação/revogação de `refreshToken` e isolamento HTTP entre usuários.
+  O script sobe uma stack isolada em projeto e volumes descartáveis (sem alterar containers ou dados existentes), valida o perfil `prod`, migrações Flyway, Redis, cadastro/login, catálogo inicial (`PETR4`), rotação/revogação de `refreshToken`, isolamento HTTP entre usuários, compra com custo de R$ 100, metas de alocação e páginas complementares.
 
 ---
 
@@ -178,6 +171,7 @@ Para rodar o projeto localmente, você precisará ter instalado:
     * `GET /portfolios/{portfolioId}/positions` — Listar posições consolidadas da carteira
     * `GET /portfolios/{portfolioId}/summary` — Resumo financeiro, alocação e rentabilidade da carteira
     * `PUT /portfolios/{portfolioId}/targets` — Salvar metas de alocação da carteira
+    * `GET /portfolios/{portfolioId}/targets` — Ler metas de alocação salvas
     * `GET /portfolios/{portfolioId}/rebalance?contributionAmount={valor}` — Simular sugestões de aporte
 * **Transações (autenticado):**
     * `POST /transactions` — Registrar compra (`BUY`) ou venda (`SELL`)

@@ -3,6 +3,7 @@ package com.rick1135.Valora.controller;
 import com.rick1135.Valora.dto.request.PortfolioRequestDTO;
 import com.rick1135.Valora.dto.response.PortfolioResponseDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
+import com.rick1135.Valora.dto.response.PortfolioTargetResponseDTO;
 import com.rick1135.Valora.dto.response.PositionResponseDTO;
 import com.rick1135.Valora.dto.response.SuggestedOrderDTO;
 import com.rick1135.Valora.entity.User;
@@ -90,6 +91,14 @@ public class PortfolioController {
         return ResponseEntity.ok(portfolioService.getPortfolioSummary(user, portfolioId));
     }
 
+    @GetMapping("/{portfolioId}/targets")
+    public ResponseEntity<List<PortfolioTargetResponseDTO>> getPortfolioTargets(
+            @AuthenticationPrincipal User user,
+            @PathVariable UUID portfolioId
+    ) {
+        return ResponseEntity.ok(smartRebalancingService.getTargets(user, portfolioId));
+    }
+
     @PutMapping("/{portfolioId}/targets")
     public ResponseEntity<Void> savePortfolioTargets(
             @AuthenticationPrincipal User user,
@@ -106,7 +115,7 @@ public class PortfolioController {
             @PathVariable UUID portfolioId,
             @RequestParam(defaultValue = "0") BigDecimal contributionAmount
     ) {
-        if (contributionAmount.compareTo(BigDecimal.ZERO) < 0) {
+        if (contributionAmount == null || contributionAmount.compareTo(BigDecimal.ZERO) < 0) {
             throw new IllegalArgumentException("O valor do aporte nao pode ser negativo.");
         }
         return ResponseEntity.ok(smartRebalancingService.calculateSuggestedOrders(user, portfolioId, contributionAmount));

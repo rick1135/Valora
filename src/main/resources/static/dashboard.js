@@ -599,6 +599,13 @@
         if (window.ValoraAPI && typeof window.ValoraAPI.logout === "function") {
           await window.ValoraAPI.logout();
         }
+      } catch (error) {
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : "Erro ao encerrar sess\u00e3o.";
+        showError(message);
+        window.location.replace("/login.html");
       } finally {
         logoutBtn.disabled = false;
       }

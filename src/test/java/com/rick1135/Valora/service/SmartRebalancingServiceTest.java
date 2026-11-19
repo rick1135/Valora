@@ -3,6 +3,7 @@ package com.rick1135.Valora.service;
 import com.rick1135.Valora.dto.response.AssetAllocationDTO;
 import com.rick1135.Valora.dto.response.AssetPositionSummaryDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
+import com.rick1135.Valora.dto.response.PortfolioTargetResponseDTO;
 import com.rick1135.Valora.dto.response.QuoteDTO;
 import com.rick1135.Valora.dto.response.SuggestedOrderDTO;
 import com.rick1135.Valora.entity.Asset;
@@ -27,6 +28,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -400,8 +402,6 @@ class SmartRebalancingServiceTest {
     void shouldThrowExceptionWhenTargetsAreWayOff100() {
         User user = new User();
         UUID portfolioId = UUID.randomUUID();
-        Portfolio portfolio = new Portfolio();
-        when(portfolioService.resolveOwnedPortfolio(user, portfolioId)).thenReturn(portfolio);
 
         Map<String, BigDecimal> invalidTargets = Map.of(
                 "ACOES", new BigDecimal("50.00"),
@@ -448,6 +448,130 @@ class SmartRebalancingServiceTest {
         assertThat(cryptoOrder.currentAmount()).isEqualByComparingTo("10000.00");
         assertThat(cryptoOrder.suggestedInvestment()).isEqualByComparingTo("1000.00");
         assertThat(cryptoOrder.currentPrice()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void shouldReturnPolymorphicTargetsWithOwnership() {
+        User user = new User();
+        UUID portfolioId = UUID.randomUUID();
+        Portfolio portfolio = new Portfolio();
+        portfolio.setId(portfolioId);
+
+        Asset wege = asset(UUID.randomUUID(), "WEGE3", AssetCategory.ACOES);
+        wege.setName("WEG S.A.");
+
+        UUID fiiTargetId = UUID.randomUUID();
+        PortfolioTarget fiiTarget = new PortfolioTarget(fiiTargetId, portfolio, AssetCategory.FII, new BigDecimal("40.00"));
+        PortfolioTarget wegeTarget = assetTarget(portfolio, wege, new BigDecimal("60.00"));
+
+        when(portfolioService.resolveOwnedPortfolio(user, portfolioId)).thenReturn(portfolio);
+        when(targetRepository.findByPortfolio(portfolio)).thenReturn(List.of(fiiTarget, wegeTarget));
+
+        List<PortfolioTargetResponseDTO> result = rebalancingService.getTargets(user, portfolioId);
+
+        verify(portfolioService).resolveOwnedPortfolio(user, portfolioId);
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0)).isEqualTo(new PortfolioTargetResponseDTO(
+                fiiTargetId, "FII", null, null, null, new BigDecimal("40.00")
+        ));
+        assertThat(result.get(1)).isEqualTo(new PortfolioTargetResponseDTO(
+                wegeTarget.getId(), null, wege.getId(), "WEGE3", "WEG S.A.", new BigDecimal("60.00")
+        ));
+    }
+
+    @Test
+    void shouldRejectEmptyOrNullTargets() {
+        User user = new User();
+        UUID portfolioId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> rebalancingService.saveTargets(user, portfolioId, (List<SmartRebalancingService.PortfolioTargetInput>) null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Informe ao menos uma meta");
+
+        assertThatThrownBy(() -> rebalancingService.saveTargets(user, portfolioId, List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Informe ao menos uma meta");
+    }
+
+    @Test
+    void shouldRejectNonPositiveOrOutOfRangeTargetPercentages() {
+        User user = new User();
+        UUID portfolioId = UUID.randomUUID();
+
+        List<SmartRebalancingService.PortfolioTargetInput> negativeAndOver = List.of(
+                SmartRebalancingService.PortfolioTargetInput.forCategory("ACOES", new BigDecimal("-10.00")),
+                SmartRebalancingService.PortfolioTargetInput.forCategory("FII", new BigDecimal("110.00"))
+        );
+
+        assertThatThrownBy(() -> rebalancingService.saveTargets(user, portfolioId, negativeAndOver))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("percentual da meta deve ser maior que 0");
+
+        List<SmartRebalancingService.PortfolioTargetInput> zeroTarget = List.of(
+                SmartRebalancingService.PortfolioTargetInput.forCategory("ACOES", BigDecimal.ZERO),
+                SmartRebalancingService.PortfolioTargetInput.forCategory("FII", new BigDecimal("100.00"))
+        );
+
+        assertThatThrownBy(() -> rebalancingService.saveTargets(user, portfolioId, zeroTarget))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("percentual da meta deve ser maior que 0");
+    }
+
+    @Test
+    void shouldRejectDuplicateCategoriesOrAssets() {
+        User user = new User();
+        UUID portfolioId = UUID.randomUUID();
+        UUID assetId = UUID.randomUUID();
+
+        List<SmartRebalancingService.PortfolioTargetInput> duplicateCategory = List.of(
+                SmartRebalancingService.PortfolioTargetInput.forCategory("ACOES", new BigDecimal("50.00")),
+                SmartRebalancingService.PortfolioTargetInput.forCategory("ACOES", new BigDecimal("50.00"))
+        );
+
+        assertThatThrownBy(() -> rebalancingService.saveTargets(user, portfolioId, duplicateCategory))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Categoria duplicada");
+
+        List<SmartRebalancingService.PortfolioTargetInput> duplicateAsset = List.of(
+                SmartRebalancingService.PortfolioTargetInput.forAsset(assetId, new BigDecimal("50.00")),
+                SmartRebalancingService.PortfolioTargetInput.forAsset(assetId, new BigDecimal("50.00"))
+        );
+
+        assertThatThrownBy(() -> rebalancingService.saveTargets(user, portfolioId, duplicateAsset))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Ativo duplicado");
+    }
+
+    @Test
+    void shouldRejectInvalidCategoryAndAmbiguousTargets() {
+        User user = new User();
+        UUID portfolioId = UUID.randomUUID();
+
+        List<SmartRebalancingService.PortfolioTargetInput> invalidCategory = List.of(
+                SmartRebalancingService.PortfolioTargetInput.forCategory("INVALIDA", new BigDecimal("100.00"))
+        );
+
+        assertThatThrownBy(() -> rebalancingService.saveTargets(user, portfolioId, invalidCategory))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Categoria de ativo invalida");
+
+        List<SmartRebalancingService.PortfolioTargetInput> ambiguous = List.of(
+                new SmartRebalancingService.PortfolioTargetInput("ACOES", UUID.randomUUID(), new BigDecimal("100.00"))
+        );
+
+        assertThatThrownBy(() -> rebalancingService.saveTargets(user, portfolioId, ambiguous))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exclusivamente");
+    }
+
+    @Test
+    void shouldRejectNegativeContributionInCalculateSuggestedOrders() {
+        User user = new User();
+        UUID portfolioId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> rebalancingService.calculateSuggestedOrders(user, portfolioId, new BigDecimal("-1.00")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("nao pode ser negativo");
     }
 
     private Asset asset(UUID id, String ticker, AssetCategory category) {
