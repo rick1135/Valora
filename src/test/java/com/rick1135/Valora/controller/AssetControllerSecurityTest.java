@@ -23,6 +23,7 @@ import org.springframework.web.context.WebApplicationContext;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -44,11 +45,11 @@ class AssetControllerSecurityTest extends AbstractPostgresIntegrationTest {
     private AssetRepository assetRepository;
 
     private MockMvc mockMvc;
+    private final List<UUID> createdUserIds = new ArrayList<>();
+    private final List<String> createdTickers = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
-        assetRepository.deleteAll();
-        userRepository.deleteAll();
         List<SecurityFilterChain> securityFilterChains = new ArrayList<>(context.getBeansOfType(SecurityFilterChain.class).values());
         mockMvc = webAppContextSetup(context)
                 .addFilters(new FilterChainProxy(securityFilterChains))
@@ -58,56 +59,70 @@ class AssetControllerSecurityTest extends AbstractPostgresIntegrationTest {
     @AfterEach
     void tearDown() {
         org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        for (String ticker : createdTickers) {
+            assetRepository.findByTickerIgnoreCase(ticker).ifPresent(assetRepository::delete);
+        }
+        createdTickers.clear();
+        if (!createdUserIds.isEmpty()) {
+            userRepository.deleteAllById(createdUserIds);
+            createdUserIds.clear();
+        }
     }
 
     @Test
     void createAssetShouldReturnUnauthorizedWhenAuthenticationIsMissing() throws Exception {
+        String ticker = uniqueTicker("ACS");
+
         mockMvc.perform(post("/assets")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(validRequestBody()))
+                        .content(validRequestBody(ticker)))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void createAssetShouldReturnForbiddenWhenUserIsNotAdmin() throws Exception {
         String token = seedUserAndToken(UserRole.USER);
+        String ticker = uniqueTicker("ACS");
 
         mockMvc.perform(post("/assets")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(validRequestBody()))
+                        .content(validRequestBody(ticker)))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     void createAssetShouldReturnCreatedForAdmin() throws Exception {
         String token = seedUserAndToken(UserRole.ADMIN);
+        String ticker = uniqueTicker("ACS");
+        createdTickers.add(ticker);
 
         mockMvc.perform(post("/assets")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(validRequestBody()))
+                        .content(validRequestBody(ticker)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.ticker").value("PETR4"));
+                .andExpect(jsonPath("$.ticker").value(ticker));
     }
 
     private String seedUserAndToken(UserRole role) {
         User user = new User();
-        user.setEmail(role.name().toLowerCase() + "-asset@valora.dev");
+        user.setEmail(role.name().toLowerCase() + "-asset-" + UUID.randomUUID() + "@valora.dev");
         user.setPasswordHash("hash");
         user.setName(role.name());
         user.setRole(role);
         user = userRepository.saveAndFlush(user);
+        createdUserIds.add(user.getId());
         return tokenService.generateToken(user);
     }
 
-    private String validRequestBody() {
+    private String validRequestBody(String ticker) {
         return """
                 {
-                  "ticker": "PETR4",
+                  "ticker": "%s",
                   "name": "Petrobras",
                   "category": "ACOES"
                 }
-                """;
+                """.formatted(ticker);
     }
 }

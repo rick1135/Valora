@@ -2,6 +2,7 @@ package com.rick1135.Valora.repository;
 
 import com.rick1135.Valora.config.TestRedisConfig;
 import com.rick1135.Valora.support.AbstractPostgresIntegrationTest;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -10,6 +11,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,6 +24,19 @@ class PortfolioTargetIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    private final List<TestIds> createdRecords = new ArrayList<>();
+
+    @AfterEach
+    void tearDown() {
+        for (TestIds ids : createdRecords) {
+            jdbcTemplate.update("DELETE FROM portfolio_targets WHERE portfolio_id = ?", ids.portfolioId());
+            jdbcTemplate.update("DELETE FROM portfolios WHERE id = ?", ids.portfolioId());
+            jdbcTemplate.update("DELETE FROM assets WHERE id = ?", ids.assetId());
+            jdbcTemplate.update("DELETE FROM users WHERE id = ?", ids.userId());
+        }
+        createdRecords.clear();
+    }
 
     @Test
     void shouldRejectPortfolioTargetWithBothCategoryAndAssetFilled() {
@@ -50,12 +66,13 @@ class PortfolioTargetIntegrationTest extends AbstractPostgresIntegrationTest {
         UUID userId = UUID.randomUUID();
         UUID portfolioId = UUID.randomUUID();
         UUID assetId = UUID.randomUUID();
+        String ticker = uniqueTicker("PTG");
 
         jdbcTemplate.update("""
                         INSERT INTO users (id, email, password_hash, name, role, email_verified)
                         VALUES (?, ?, ?, ?, ?, ?)
                         """,
-                userId, "target-" + suffix + "@valora.test", "hash", "Target Test", "USER", true);
+                userId, "target-" + suffix + "-" + userId + "@valora.test", "hash", "Target Test", "USER", true);
 
         jdbcTemplate.update("""
                         INSERT INTO portfolios (id, user_id, name, description)
@@ -67,11 +84,13 @@ class PortfolioTargetIntegrationTest extends AbstractPostgresIntegrationTest {
                         INSERT INTO assets (id, ticker, ticker_normalized, name, category)
                         VALUES (?, ?, ?, ?, ?)
                         """,
-                assetId, "T" + suffix.replace("-", "").toUpperCase(), "T" + suffix.replace("-", "").toUpperCase(), "Target Asset", "ACOES");
+                assetId, ticker, ticker, "Target Asset", "ACOES");
 
-        return new TestIds(portfolioId, assetId);
+        TestIds ids = new TestIds(userId, portfolioId, assetId);
+        createdRecords.add(ids);
+        return ids;
     }
 
-    private record TestIds(UUID portfolioId, UUID assetId) {
+    private record TestIds(UUID userId, UUID portfolioId, UUID assetId) {
     }
 }

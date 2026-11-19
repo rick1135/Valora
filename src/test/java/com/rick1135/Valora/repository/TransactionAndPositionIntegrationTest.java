@@ -10,17 +10,20 @@ import com.rick1135.Valora.entity.TransactionType;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.entity.UserRole;
 import com.rick1135.Valora.support.AbstractPostgresIntegrationTest;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -43,13 +46,10 @@ class TransactionAndPositionIntegrationTest extends AbstractPostgresIntegrationT
     private PortfolioRepository portfolioRepository;
 
     @Autowired
-    private ProventProvisionRepository proventProvisionRepository;
-
-    @Autowired
-    private ProventRepository proventRepository;
-
-    @Autowired
     private AssetRepository assetRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private User user;
     private Portfolio portfolio;
@@ -57,16 +57,8 @@ class TransactionAndPositionIntegrationTest extends AbstractPostgresIntegrationT
 
     @BeforeEach
     void setUp() {
-        proventProvisionRepository.deleteAll();
-        proventRepository.deleteAll();
-        transactionRepository.deleteAll();
-        positionRepository.deleteAll();
-        portfolioRepository.deleteAll();
-        assetRepository.deleteAll();
-        userRepository.deleteAll();
-
         user = new User();
-        user.setEmail("investor@valora.dev");
+        user.setEmail("txp-" + UUID.randomUUID() + "@valora.dev");
         user.setPasswordHash("hash");
         user.setName("Investor");
         user.setRole(UserRole.USER);
@@ -78,10 +70,25 @@ class TransactionAndPositionIntegrationTest extends AbstractPostgresIntegrationT
         portfolio = portfolioRepository.saveAndFlush(portfolio);
 
         asset = new Asset();
-        asset.setTicker("PETR4");
+        asset.setTicker(uniqueTicker("TXP"));
         asset.setName("Petrobras");
         asset.setCategory(AssetCategory.ACOES);
         asset = assetRepository.saveAndFlush(asset);
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (portfolio != null) {
+            jdbcTemplate.update("DELETE FROM transactions WHERE portfolio_id = ?", portfolio.getId());
+            jdbcTemplate.update("DELETE FROM positions WHERE portfolio_id = ?", portfolio.getId());
+            portfolioRepository.deleteById(portfolio.getId());
+        }
+        if (asset != null) {
+            assetRepository.deleteById(asset.getId());
+        }
+        if (user != null) {
+            userRepository.deleteById(user.getId());
+        }
     }
 
     @Test

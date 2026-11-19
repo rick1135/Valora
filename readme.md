@@ -77,33 +77,115 @@ Para rodar o projeto localmente, você precisará ter instalado:
 1. **Clone o repositório:**
    ```bash
    git clone https://github.com/rick1135/valora.git
-   cd Valora
-   
-2. **Suba a infra do Banco de Dados e Cache(Docker):**
-    ```bash
-    docker compose up -d postgres redis
-    ```
-   O Flyway rodará automaticamente ao iniciar o Spring Boot, criando todas as tabelas e índices necessários.
+   cd valora
+   ```
 
-3. **Inicie a aplicação:**
+2. **Configure as variáveis de ambiente:**
+   ```bash
+   cp .env.example .env
+   ```
+   Ajuste `JWT_SECRET` (obrigatório em `prod` e no Docker Compose) e, opcionalmente, `BRAPI_TOKEN` para cotações em tempo real.
+
+3. **Suba a infraestrutura (PostgreSQL 16 + Redis 7):**
+   ```bash
+   docker compose up -d postgres redis
+   ```
+   Por padrão, o `docker-compose.yml` expõe as portas apenas em loopback (`127.0.0.1`), pois PostgreSQL e Redis não possuem proteção de rede configurada para desenvolvimento.
+   O Flyway executa automaticamente as migrações (`V1`–`V14`) na inicialização da aplicação, criando o schema, benchmarks iniciais e um catálogo inicial de ativos (`PETR4`, `VALE3`, `ITUB4`, `WEGE3`, `HGLG11`, `MXRF11`, `BOVA11`, `IVVB11`, `BTC` e `ETH`).
+
+4. **Inicie a aplicação localmente (perfil `dev`):**
    ```bash
    ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
    ```
-   A aplicação estará disponível em `http://localhost:8080`
+   A aplicação estará disponível em `http://localhost:8080` e o Swagger UI em `http://localhost:8080/swagger-ui.html`.
+
+5. **Execução completa via Docker Compose (perfil `prod`):**
+   Para subir toda a stack (`postgres`, `redis` e `app`) com as portas vinculadas a `127.0.0.1` e `BRAPI_TOKEN` opcional:
+   ```bash
+   JWT_SECRET=sua-chave-secreta docker compose up -d --build
+   ```
+
+---
+
+## Testes e Smoke Test
+
+* **Testes automatizados (`mvnw`):**
+  Requer Docker em execução para os testes de integração com Testcontainers:
+  ```bash
+  ./mvnw -B test
+  ```
+
+* **Smoke test de instalação limpa:**
+  Requer `docker` (com plugin `docker compose`), `curl` e `python3`:
+  ```bash
+  bash scripts/smoke-clean-install.sh
+  ```
+  O script sobe uma stack isolada em projeto e volumes descartáveis (sem alterar containers ou dados existentes), valida o profile `prod`, migrações Flyway, Redis, cadastro/login, catálogo inicial (`PETR4`), rotação/revogação de `refreshToken` e isolamento HTTP entre usuários.
+
+---
+
+## Comportamento de Cotações (Brapi vs. Fallback) e Autenticação
+
+* **Brapi sem token vs. fallback de cotação indisponível:**
+  * Se `BRAPI_TOKEN` estiver vazio, o `QuoteService` não faz chamadas à API da Brapi e considera as cotações como indisponíveis.
+  * O fallback só atua quando a cotação está indisponível (seja por ausência de token ou por falha/retorno sem preço válido da Brapi):
+    * Em `GET /portfolios/{portfolioId}/summary`, posições sem cotação disponível utilizam o `averagePrice` (preço médio) como fallback no cálculo do resumo financeiro.
+    * Em `GET /portfolios/{portfolioId}/positions`, `currentPrice` é retornado como `0` e `currentTotalValue` / `profitability` permanecem `null`.
+    * Em `GET /portfolios/{portfolioId}/rebalance`, novos ativos sem cotação recebem `currentPrice = 0` e `marketPriceReliable = false`.
+
+* **Login, refresh e logout:**
+  * `POST /auth/login` (e `POST /auth/register`) emite um `token` de acesso JWT stateless e um `refreshToken` persistido no Redis.
+  * `POST /auth/refresh` rotaciona o `refreshToken` (consome o anterior e emite um novo par).
+  * `POST /auth/logout` revoga o `refreshToken` no Redis (`204 No Content`), impedindo novas renovações, **sem invalidar o `token` de acesso JWT** já emitido (que permanece válido até expirar).
+
+---
+
+## Variáveis de Ambiente
+
+| Variável | Padrão (`dev` / Compose) | Descrição |
+| :--- | :--- | :--- |
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/valora` | URL JDBC do PostgreSQL (obrigatória em `prod`) |
+| `SPRING_DATASOURCE_USERNAME` | `valora` | Usuário do banco de dados (obrigatória em `prod`) |
+| `SPRING_DATASOURCE_PASSWORD` | `valora` | Senha do banco de dados (obrigatória em `prod`) |
+| `SPRING_DATA_REDIS_HOST` | `localhost` | Host do Redis (obrigatória em `prod`) |
+| `SPRING_DATA_REDIS_PORT` | `6379` | Porta do Redis |
+| `SPRING_DATA_REDIS_PASSWORD` | *(vazio)* | Senha do Redis (opcional) |
+| `JWT_SECRET` | `troque-esta-chave` (`dev`) / obrigatória (`prod` e Compose) | Chave de assinatura dos tokens JWT |
+| `BRAPI_TOKEN` | *(vazio)* | Token da API Brapi para cotações/proventos; opcional (se vazio, não consulta a Brapi e o resumo usa fallback quando a cotação está indisponível) |
+| `PROVENTS_SYNC_CRON` | `0 15 8 * * *` | Expressão cron para sincronização diária de proventos |
+| `PROVENTS_SYNC_ASSET_LOOKBACK_DAYS` | `365` | Janela em dias para busca de ativos na sincronização de proventos |
+| `PROVENTS_SYNC_JCP_RATE_IS_GROSS` | `true` | Define se a taxa de JCP da origem é bruta (`true`) ou líquida (`false`) |
+
+---
 
 ## Principais Endpoints da API
-* **Auth:**
-    * `POST /auth/register` - Registrar novo usuário
-    * `POST /auth/login` - Autenticar e obter JWT
+
+* **Autenticação (público):**
+    * `POST /auth/register` — Registrar novo usuário (`USER`) e retornar `token` + `refreshToken`
+    * `POST /auth/login` — Autenticar com e-mail e senha e obter `token` + `refreshToken`
+    * `POST /auth/refresh` — Renovar `token` e `refreshToken`
+    * `POST /auth/logout` — Revogar `refreshToken` no Redis (`204 No Content`)
 * **Ativos:**
-    * `POST /assets` - Cadastrar um novo ativo (Ex: PETR4)
-    * `GET /assets/search?ticker={ticker}` - Busca ativos (Público/Autenticado)
-* **Transações:**
-    * `POST /transactions` - Registra uma compra ou venda (atualiza a posição automaticamente).
-* **Portfólio:**
-    * `GET /portfolio` - Retorna a carteira atualizada do usuário logado (Quantidade, Preço Médio e Custo Total).
+    * `GET /assets?page=0&size=20&sort=ticker&direction=asc` — Listar ativos paginados (autenticado)
+    * `GET /assets/search?ticker={ticker}` — Buscar ativos por ticker com `ILIKE` (autenticado)
+    * `POST /assets` — Cadastrar novo ativo (requer perfil `ADMIN`)
+* **Portfólios (autenticado):**
+    * `POST /portfolios` — Criar carteira
+    * `GET /portfolios` — Listar carteiras do usuário
+    * `GET /portfolios/{portfolioId}` — Detalhar carteira
+    * `PUT /portfolios/{portfolioId}` — Atualizar carteira
+    * `DELETE /portfolios/{portfolioId}` — Remover carteira
+    * `GET /portfolios/{portfolioId}/positions` — Listar posições consolidadas da carteira
+    * `GET /portfolios/{portfolioId}/summary` — Resumo financeiro, alocação e rentabilidade da carteira
+    * `PUT /portfolios/{portfolioId}/targets` — Salvar metas de alocação da carteira
+    * `GET /portfolios/{portfolioId}/rebalance?contributionAmount={valor}` — Simular sugestões de aporte
+* **Transações (autenticado):**
+    * `POST /transactions` — Registrar compra (`BUY`) ou venda (`SELL`)
+    * `GET /transactions?portfolioId={id}` — Histórico paginado com filtros opcionais (`ticker`, `type`, `startDate`, `endDate`)
 * **Proventos:**
-    * `POST /provents` - Cadastra um evento de provento (DIVIDEND/JCP) e provisiona automaticamente por posição na data COM.
-    * `GET /provents/me` - Lista os proventos provisionados do usuário autenticado.
-    * `POST /provents/sync` - Sincroniza automaticamente dividendos/JCP da brapi para ativos atualmente em carteira.
-    * Sincronização agendada diária via `provents.sync.cron` (também disponível por trigger manual no endpoint acima).
+    * `GET /provents/me?portfolioId={id}` — Listar proventos provisionados do usuário (autenticado, paginado)
+    * `POST /provents` — Cadastrar evento de provento (`DIVIDEND`/`JCP`) e provisionar por data COM (requer perfil `ADMIN`)
+    * `POST /provents/sync` — Sincronizar dividendos/JCP da Brapi para ativos em carteira (requer perfil `ADMIN`)
+* **Documentação OpenAPI (público):**
+    * `GET /swagger-ui.html` — Interface Swagger UI
+    * `GET /v3/api-docs` — Especificação OpenAPI JSON

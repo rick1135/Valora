@@ -7,11 +7,6 @@ import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.entity.UserRole;
 import com.rick1135.Valora.repository.AssetRepository;
-import com.rick1135.Valora.repository.PortfolioRepository;
-import com.rick1135.Valora.repository.PositionRepository;
-import com.rick1135.Valora.repository.ProventProvisionRepository;
-import com.rick1135.Valora.repository.ProventRepository;
-import com.rick1135.Valora.repository.TransactionRepository;
 import com.rick1135.Valora.repository.UserRepository;
 import com.rick1135.Valora.service.TokenService;
 import com.rick1135.Valora.support.AbstractPostgresIntegrationTest;
@@ -22,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
@@ -51,21 +47,14 @@ class ProventControllerSecurityTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private AssetRepository assetRepository;
     @Autowired
-    private TransactionRepository transactionRepository;
-    @Autowired
-    private PositionRepository positionRepository;
-    @Autowired
-    private ProventRepository proventRepository;
-    @Autowired
-    private ProventProvisionRepository proventProvisionRepository;
-    @Autowired
-    private PortfolioRepository portfolioRepository;
+    private JdbcTemplate jdbcTemplate;
 
     private MockMvc mockMvc;
+    private final List<UUID> createdUserIds = new ArrayList<>();
+    private final List<UUID> createdAssetIds = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
-        clearData();
         List<SecurityFilterChain> securityFilterChains = new ArrayList<>(context.getBeansOfType(SecurityFilterChain.class).values());
         mockMvc = webAppContextSetup(context)
                 .addFilters(new FilterChainProxy(securityFilterChains))
@@ -75,11 +64,21 @@ class ProventControllerSecurityTest extends AbstractPostgresIntegrationTest {
     @AfterEach
     void tearDown() {
         org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        for (UUID assetId : createdAssetIds) {
+            jdbcTemplate.update("DELETE FROM provent_provisions WHERE asset_id = ?", assetId);
+            jdbcTemplate.update("DELETE FROM provents WHERE asset_id = ?", assetId);
+            assetRepository.deleteById(assetId);
+        }
+        createdAssetIds.clear();
+        if (!createdUserIds.isEmpty()) {
+            userRepository.deleteAllById(createdUserIds);
+            createdUserIds.clear();
+        }
     }
 
     @Test
     void createProventShouldReturnUnauthorizedWhenAuthenticationIsMissing() throws Exception {
-        UUID assetId = seedAsset();
+        UUID assetId = seedAsset(uniqueTicker("PCS"));
 
         mockMvc.perform(post("/provents")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -89,7 +88,7 @@ class ProventControllerSecurityTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void createProventShouldReturnForbiddenWhenUserIsNotAdmin() throws Exception {
-        UUID assetId = seedAsset();
+        UUID assetId = seedAsset(uniqueTicker("PCS"));
         String token = seedUserAndToken(UserRole.USER);
 
         mockMvc.perform(post("/provents")
@@ -101,7 +100,8 @@ class ProventControllerSecurityTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void createProventShouldReturnCreatedForAdmin() throws Exception {
-        UUID assetId = seedAsset();
+        String ticker = uniqueTicker("PCS");
+        UUID assetId = seedAsset(ticker);
         String token = seedUserAndToken(UserRole.ADMIN);
 
         mockMvc.perform(post("/provents")
@@ -109,7 +109,7 @@ class ProventControllerSecurityTest extends AbstractPostgresIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validRequestBody(assetId)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.ticker").value("ITSA4"));
+                .andExpect(jsonPath("$.ticker").value(ticker));
     }
 
     @Test
@@ -124,30 +124,23 @@ class ProventControllerSecurityTest extends AbstractPostgresIntegrationTest {
 
     private String seedUserAndToken(UserRole role) {
         User user = new User();
-        user.setEmail(role.name().toLowerCase() + "@valora.dev");
+        user.setEmail(role.name().toLowerCase() + "-prov-" + UUID.randomUUID() + "@valora.dev");
         user.setPasswordHash("hash");
         user.setName(role.name());
         user.setRole(role);
         user = userRepository.saveAndFlush(user);
+        createdUserIds.add(user.getId());
         return tokenService.generateToken(user);
     }
 
-    private UUID seedAsset() {
+    private UUID seedAsset(String ticker) {
         Asset asset = new Asset();
-        asset.setTicker("ITSA4");
+        asset.setTicker(ticker);
         asset.setName("Itausa");
         asset.setCategory(AssetCategory.ACOES);
-        return assetRepository.saveAndFlush(asset).getId();
-    }
-
-    private void clearData() {
-        proventProvisionRepository.deleteAll();
-        proventRepository.deleteAll();
-        transactionRepository.deleteAll();
-        positionRepository.deleteAll();
-        portfolioRepository.deleteAll();
-        assetRepository.deleteAll();
-        userRepository.deleteAll();
+        UUID assetId = assetRepository.saveAndFlush(asset).getId();
+        createdAssetIds.add(assetId);
+        return assetId;
     }
 
     private String validRequestBody(UUID assetId) {

@@ -4,6 +4,9 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 
+import java.util.Locale;
+import java.util.UUID;
+
 public abstract class AbstractPostgresIntegrationTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16")
             .withDatabaseName("valora_test")
@@ -12,6 +15,11 @@ public abstract class AbstractPostgresIntegrationTest {
 
     static {
         POSTGRES.start();
+    }
+
+    protected static String uniqueTicker(String prefix) {
+        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase(Locale.ROOT);
+        return prefix.toUpperCase(Locale.ROOT) + suffix;
     }
 
     @DynamicPropertySource

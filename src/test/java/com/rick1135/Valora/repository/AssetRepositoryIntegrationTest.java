@@ -4,13 +4,16 @@ import com.rick1135.Valora.config.TestRedisConfig;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.support.AbstractPostgresIntegrationTest;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
+
+import java.util.Locale;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -22,21 +25,28 @@ class AssetRepositoryIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private AssetRepository assetRepository;
 
-    @BeforeEach
-    void setUp() {
-        assetRepository.deleteAll();
+    private UUID createdAssetId;
+
+    @AfterEach
+    void tearDown() {
+        if (createdAssetId != null) {
+            assetRepository.deleteById(createdAssetId);
+            createdAssetId = null;
+        }
     }
 
     @Test
     void shouldEnforceCaseInsensitiveUniqueTicker() {
+        String ticker = uniqueTicker("ARI");
+
         Asset first = new Asset();
-        first.setTicker("petr4");
+        first.setTicker(ticker.toLowerCase(Locale.ROOT));
         first.setName("Petrobras");
         first.setCategory(AssetCategory.ACOES);
-        assetRepository.saveAndFlush(first);
+        createdAssetId = assetRepository.saveAndFlush(first).getId();
 
         Asset second = new Asset();
-        second.setTicker("PETR4");
+        second.setTicker(ticker.toUpperCase(Locale.ROOT));
         second.setName("Petrobras PN");
         second.setCategory(AssetCategory.ACOES);
 
