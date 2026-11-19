@@ -1,5 +1,6 @@
 const TOKEN_STORAGE_KEY = "valora.accessToken";
 const REFRESH_TOKEN_STORAGE_KEY = "valora.refreshToken";
+const ACTIVE_PORTFOLIO_ID_KEY = "valora.activePortfolioId";
 
 function setStatus(form, message, tone = "error") {
   const status = form.querySelector("[data-form-status]");
@@ -17,6 +18,12 @@ function readValue(form, name) {
 function storeTokens(responseBody) {
   if (!responseBody.token || !responseBody.refreshToken) {
     throw new Error("Resposta de autenticacao incompleta.");
+  }
+
+  localStorage.removeItem(ACTIVE_PORTFOLIO_ID_KEY);
+  if (window.ValoraAPI?.setTokens) {
+    window.ValoraAPI.setTokens(responseBody);
+    return;
   }
 
   localStorage.setItem(TOKEN_STORAGE_KEY, responseBody.token);

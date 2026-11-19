@@ -5,12 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Valora | Dashboard</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="transaction-ui.css">
   </head>
   <body>
     <header class="topbar">
       <div class="shell topbar__inner">
         <a class="brand" href="/" aria-label="Valora">Valora</a>
-        <span class="portfolio-label">Carteira</span>
+        <span class="portfolio-label" id="portfolio-name">Carteira</span>
+        <button class="button button--ghost topbar__logout" id="logout-btn" type="button">Sair</button>
       </div>
     </header>
 
@@ -26,8 +28,8 @@
         </nav>
 
         <div class="actions">
-          <button class="button button--ghost" type="button">Integra&ccedil;&atilde;o B3</button>
-          <button class="button button--primary" type="button">
+          <button class="button button--ghost" type="button" disabled aria-disabled="true" title="Em breve (v2)">Integra&ccedil;&atilde;o B3</button>
+          <button class="button button--primary" id="new-transaction-btn" data-new-transaction type="button">
             <span class="button__icon" aria-hidden="true">+</span>
             Novo lan&ccedil;amento
           </button>
@@ -39,50 +41,47 @@
         <p>Vis&atilde;o executiva dos investimentos, performance e distribui&ccedil;&atilde;o por classe de ativo.</p>
       </section>
 
+      <div class="dashboard-banner dashboard-banner--loading" id="dashboard-loading" role="status" aria-live="polite">
+        Carregando dados da carteira...
+      </div>
+      <div class="dashboard-banner dashboard-banner--error" id="dashboard-error" role="alert" hidden></div>
+      <div class="dashboard-banner dashboard-banner--warning" id="fallback-notice" role="status" hidden></div>
+
       <section class="metric-grid" id="metric-grid" aria-label="Indicadores da carteira"></section>
 
       <section class="insight-grid" aria-label="An&aacute;lises da carteira">
-        <article class="panel growth-panel" aria-labelledby="growth-title">
+        <article class="panel growth-panel" aria-labelledby="overview-title">
           <div class="panel__header">
-            <h2 id="growth-title">Evolu&ccedil;&atilde;o do patrim&ocirc;nio</h2>
-            <div class="segmented-controls" aria-label="Filtros do gr&aacute;fico">
-              <button type="button">12 meses</button>
-              <button type="button">Todos os tipos</button>
+            <div>
+              <h2 id="overview-title">Composi&ccedil;&atilde;o do patrim&ocirc;nio</h2>
+              <p class="panel__subtitle">Valores consolidados da carteira selecionada.</p>
             </div>
           </div>
 
-          <div class="chart-legend" aria-hidden="true">
-            <span>Valor aplicado</span>
-            <span>Ganho de capital</span>
-          </div>
-
-          <div class="bar-chart" id="equity-chart" aria-label="Evolu&ccedil;&atilde;o mensal do patrim&ocirc;nio"></div>
+          <div class="overview-breakdown" id="overview-breakdown"></div>
+          <p class="panel__footnote" id="history-note">
+            Gr&aacute;fico de evolu&ccedil;&atilde;o mensal indispon&iacute;vel no MVP (sem s&eacute;rie hist&oacute;rica no servidor).
+          </p>
         </article>
 
         <article class="panel allocation-panel" aria-labelledby="allocation-title">
           <h2 id="allocation-title">Ativos na carteira</h2>
 
-          <div class="allocation-content">
+          <div class="allocation-content" id="allocation-content">
             <div class="allocation-visual" aria-hidden="true">
-              <svg viewBox="0 0 320 320" role="img" aria-label="Distribui&ccedil;&atilde;o por classe de ativo">
-                <g transform="rotate(-90 160 160)">
-                  <circle class="allocation-ring allocation-ring--fiis" cx="160" cy="160" r="106"></circle>
-                  <circle class="allocation-ring allocation-ring--crypto" cx="160" cy="160" r="82"></circle>
-                  <circle class="allocation-ring allocation-ring--stocks" cx="160" cy="160" r="58"></circle>
-                </g>
-                <circle class="allocation-hole" cx="160" cy="160" r="54"></circle>
-              </svg>
+              <svg id="allocation-chart" viewBox="0 0 320 320" role="img" aria-label="Distribui&ccedil;&atilde;o por classe de ativo"></svg>
             </div>
 
             <ul class="allocation-list" id="allocation-list"></ul>
           </div>
+          <p class="panel__empty" id="allocation-empty" hidden>Nenhum ativo alocado nesta carteira.</p>
         </article>
       </section>
 
       <section class="assets" aria-labelledby="assets-title">
         <h2 id="assets-title">Meus ativos</h2>
 
-        <div class="table-card">
+        <div class="table-card" id="assets-table-card">
           <table>
             <thead>
               <tr>
@@ -90,18 +89,28 @@
                 <th scope="col">Qtd.</th>
                 <th scope="col">Pre&ccedil;o m&eacute;dio</th>
                 <th scope="col">Pre&ccedil;o atual</th>
-                <th scope="col">Varia&ccedil;&atilde;o</th>
+                <th scope="col">Valor atual</th>
                 <th scope="col">Rentab.</th>
                 <th scope="col">% carteira</th>
-                <th scope="col">Comprar?</th>
               </tr>
             </thead>
             <tbody id="assets-table"></tbody>
           </table>
         </div>
+
+        <div class="empty-state" id="assets-empty" hidden>
+          <h3>Sua carteira est&aacute; vazia</h3>
+          <p>Registre sua primeira compra para acompanhar patrim&ocirc;nio, aloca&ccedil;&atilde;o e rentabilidade com dados reais.</p>
+          <button class="button button--primary" id="empty-state-cta" type="button">
+            <span class="button__icon" aria-hidden="true">+</span>
+            Registrar primeira compra
+          </button>
+        </div>
       </section>
     </main>
 
+    <script src="api.js"></script>
+    <script src="transaction-ui.js"></script>
     <script src="dashboard.js"></script>
   </body>
 </html>
