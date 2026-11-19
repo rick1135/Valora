@@ -26,17 +26,35 @@ public class FixedIncomeYieldCalculator {
     }
 
     public BigDecimal calculateCurrentValue(BigDecimal averagePrice, BigDecimal quantity, LocalDate purchaseDate, BigDecimal annualRate) {
-        if (averagePrice == null || quantity == null || purchaseDate == null) {
+        return calculateCurrentValue(averagePrice, quantity, purchaseDate, annualRate, null);
+    }
+
+    public BigDecimal calculateCurrentValue(
+            BigDecimal averagePrice,
+            BigDecimal quantity,
+            LocalDate purchaseDate,
+            BigDecimal annualRate,
+            LocalDate expirationDate
+    ) {
+        if (averagePrice == null || quantity == null) {
             return BigDecimal.ZERO;
         }
 
         BigDecimal principal = averagePrice.multiply(quantity);
+        if (purchaseDate == null) {
+            return principal.setScale(FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
+        }
 
         if (annualRate == null || annualRate.compareTo(BigDecimal.ZERO) == 0) {
             return principal.setScale(FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
         }
 
-        long days = ChronoUnit.DAYS.between(purchaseDate, marketCalendar.today());
+        LocalDate today = marketCalendar.today();
+        LocalDate effectiveEndDate = (expirationDate != null && expirationDate.isBefore(today))
+                ? expirationDate
+                : today;
+
+        long days = ChronoUnit.DAYS.between(purchaseDate, effectiveEndDate);
         if (days <= 0) {
             return principal.setScale(FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
         }

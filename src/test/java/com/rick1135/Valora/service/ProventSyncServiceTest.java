@@ -9,11 +9,14 @@ import com.rick1135.Valora.dto.request.ProventRequestDTO;
 import com.rick1135.Valora.dto.response.ProventSyncResponseDTO;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
+import com.rick1135.Valora.entity.ProventRateBasis;
+import com.rick1135.Valora.entity.ProventType;
 import com.rick1135.Valora.exception.ProventAlreadyExistsException;
 import com.rick1135.Valora.repository.PositionRepository;
 import com.rick1135.Valora.repository.TransactionRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -140,6 +143,109 @@ class ProventSyncServiceTest {
         assertThat(response.invalidEventsIgnored()).isEqualTo(0);
         assertThat(response.integrationErrors()).isEqualTo(0);
         verify(proventService, times(2)).createProvent(any(ProventRequestDTO.class), any(Asset.class), any(ProventOriginMetadata.class));
+        verify(proventService, times(1)).reconcileProvisionsForExistingProvent(any(ProventOriginMetadata.class));
+    }
+
+    @Test
+    void syncShouldPreserveGrossJcpRateAndPassGrossOriginBasis() {
+        ReflectionTestUtils.setField(proventSyncService, "brapiToken", "token-ok");
+        ReflectionTestUtils.setField(proventSyncService, "jcpRateIsGross", true);
+        when(clock.instant()).thenReturn(Instant.parse("2026-03-20T12:00:00Z"));
+
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("BBAS3");
+        asset.setCategory(AssetCategory.ACOES);
+
+        when(transactionRepository.findDistinctAssetsWithTransactionsSince(any(Instant.class)))
+                .thenReturn(List.of(asset));
+        when(positionRepository.findDistinctAssetsByQuantityGreaterThan(BigDecimal.ZERO))
+                .thenReturn(List.of());
+
+        BrapiCashDividendDTO grossJcp = new BrapiCashDividendDTO(
+                "BBAS3",
+                Instant.parse("2026-04-20T00:00:00Z"),
+                new BigDecimal("1.00000000"),
+                "ON",
+                Instant.parse("2026-03-26T00:00:00Z"),
+                "BRBBASACNOR3",
+                "JCP",
+                Instant.parse("2026-03-31T00:00:00Z"),
+                null
+        );
+
+        when(brapiClient.getQuoteWithDividends("BBAS3", "token-ok"))
+                .thenReturn(new BrapiResponseDTO(List.of(
+                        new BrapiResultDTO("BBAS3", new BigDecimal("25.00"), new BrapiDividendsDataDTO(List.of(grossJcp)))
+                )));
+        when(marketCalendar.financialDate(Instant.parse("2026-03-31T00:00:00Z")))
+                .thenReturn(LocalDate.of(2026, 3, 31));
+        when(marketCalendar.financialDate(Instant.parse("2026-04-20T00:00:00Z")))
+                .thenReturn(LocalDate.of(2026, 4, 20));
+
+        ProventSyncResponseDTO response = proventSyncService.syncFromCurrentPortfolioAssets();
+
+        assertThat(response.proventsCreated()).isEqualTo(1);
+
+        ArgumentCaptor<ProventRequestDTO> requestCaptor = ArgumentCaptor.forClass(ProventRequestDTO.class);
+        ArgumentCaptor<ProventOriginMetadata> metadataCaptor = ArgumentCaptor.forClass(ProventOriginMetadata.class);
+        verify(proventService).createProvent(requestCaptor.capture(), eq(asset), metadataCaptor.capture());
+
+        assertThat(requestCaptor.getValue().type()).isEqualTo(ProventType.JCP);
+        assertThat(requestCaptor.getValue().amountPerShare()).isEqualByComparingTo("1.00000000");
+        assertThat(metadataCaptor.getValue().sourceRateBasis()).isEqualTo(ProventRateBasis.GROSS);
+    }
+
+    @Test
+    void syncShouldPreserveNetJcpRateAndPassNetOriginBasisAndBoundaryDatesWhenConfiguredAsNet() {
+        ReflectionTestUtils.setField(proventSyncService, "brapiToken", "token-ok");
+        ReflectionTestUtils.setField(proventSyncService, "jcpRateIsGross", false);
+        when(clock.instant()).thenReturn(Instant.parse("2026-01-05T12:00:00Z"));
+
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("BBAS3");
+        asset.setCategory(AssetCategory.ACOES);
+
+        when(transactionRepository.findDistinctAssetsWithTransactionsSince(any(Instant.class)))
+                .thenReturn(List.of(asset));
+        when(positionRepository.findDistinctAssetsByQuantityGreaterThan(BigDecimal.ZERO))
+                .thenReturn(List.of());
+
+        BrapiCashDividendDTO netJcp = new BrapiCashDividendDTO(
+                "BBAS3",
+                Instant.parse("2026-01-01T00:00:00Z"),
+                new BigDecimal("0.82500000"),
+                "ON",
+                Instant.parse("2025-12-15T00:00:00Z"),
+                "BRBBASACNOR3",
+                "JCP",
+                Instant.parse("2025-12-20T00:00:00Z"),
+                null
+        );
+
+        when(brapiClient.getQuoteWithDividends("BBAS3", "token-ok"))
+                .thenReturn(new BrapiResponseDTO(List.of(
+                        new BrapiResultDTO("BBAS3", new BigDecimal("25.00"), new BrapiDividendsDataDTO(List.of(netJcp)))
+                )));
+        when(marketCalendar.financialDate(Instant.parse("2025-12-20T00:00:00Z")))
+                .thenReturn(LocalDate.of(2025, 12, 20));
+        when(marketCalendar.financialDate(Instant.parse("2026-01-01T00:00:00Z")))
+                .thenReturn(LocalDate.of(2026, 1, 1));
+
+        ProventSyncResponseDTO response = proventSyncService.syncFromCurrentPortfolioAssets();
+
+        assertThat(response.proventsCreated()).isEqualTo(1);
+
+        ArgumentCaptor<ProventRequestDTO> requestCaptor = ArgumentCaptor.forClass(ProventRequestDTO.class);
+        ArgumentCaptor<ProventOriginMetadata> metadataCaptor = ArgumentCaptor.forClass(ProventOriginMetadata.class);
+        verify(proventService).createProvent(requestCaptor.capture(), eq(asset), metadataCaptor.capture());
+
+        assertThat(requestCaptor.getValue().type()).isEqualTo(ProventType.JCP);
+        assertThat(requestCaptor.getValue().amountPerShare()).isEqualByComparingTo("0.82500000");
+        assertThat(requestCaptor.getValue().comDate()).isEqualTo(LocalDate.of(2025, 12, 20));
+        assertThat(requestCaptor.getValue().paymentDate()).isEqualTo(LocalDate.of(2026, 1, 1));
+        assertThat(metadataCaptor.getValue().sourceRateBasis()).isEqualTo(ProventRateBasis.NET);
     }
 
     @Test

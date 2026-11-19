@@ -9,7 +9,6 @@ import com.rick1135.Valora.entity.Transaction;
 import com.rick1135.Valora.entity.TransactionType;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.AssetNotFoundException;
-import com.rick1135.Valora.exception.InsufficientPositionException;
 import com.rick1135.Valora.mapper.TransactionMapper;
 import com.rick1135.Valora.repository.AssetRepository;
 import com.rick1135.Valora.repository.PositionRepository;
@@ -20,8 +19,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 @Service
@@ -33,6 +34,8 @@ public class TransactionService {
     private final TransactionMapper transactionMapper;
     private final PortfolioService portfolioService;
     private final MarketCalendar marketCalendar;
+    private final PositionTimelineCalculator positionTimelineCalculator;
+    private final ProventService proventService;
 
     @Transactional
     public TransactionResponseDTO processTransaction(User user, TransactionDTO dto) {
@@ -43,6 +46,13 @@ public class TransactionService {
         Transaction transaction = transactionMapper.toEntity(dto);
         transaction.setPortfolio(portfolio);
         transaction.setAsset(asset);
+
+        List<Transaction> timeline = new ArrayList<>(
+                transactionRepository.findByPortfolioAndAssetOrderByTransactionDateAscIdAsc(portfolio, asset)
+        );
+        timeline.add(transaction);
+
+        PositionTimelineCalculator.PositionTimelineResult timelineResult = effectiveTimelineCalculator().replay(timeline);
         Transaction savedTransaction = transactionRepository.save(transaction);
 
         Position position = positionRepository.findByPortfolioAndAsset(portfolio, asset)
@@ -50,19 +60,28 @@ public class TransactionService {
                     Position newPosition = new Position();
                     newPosition.setPortfolio(portfolio);
                     newPosition.setAsset(asset);
-                    newPosition.setQuantity(BigDecimal.ZERO);
-                    newPosition.setAveragePrice(BigDecimal.ZERO);
                     return newPosition;
                 });
 
-        if (dto.type() == TransactionType.BUY) {
-            handleBuy(position, dto);
-        } else if (dto.type() == TransactionType.SELL) {
-            handleSell(position, dto);
-        }
+        position.setQuantity(timelineResult.quantity());
+        position.setAveragePrice(timelineResult.averagePrice());
+        position.setPurchaseDate(timelineResult.purchaseDate());
 
         Position savedPosition = positionRepository.save(position);
+        reconcileProventsFromTransactionDate(portfolio, asset, savedTransaction);
         return transactionMapper.toResponse(savedTransaction, asset, savedPosition);
+    }
+
+    private void reconcileProventsFromTransactionDate(
+            Portfolio portfolio,
+            Asset asset,
+            Transaction savedTransaction
+    ) {
+        if (proventService == null || savedTransaction.getTransactionDate() == null) {
+            return;
+        }
+        LocalDate transactionMarketDate = effectiveMarketCalendar().marketDate(savedTransaction.getTransactionDate());
+        proventService.reconcileProvisionsForPortfolioAndAsset(portfolio, asset, transactionMarketDate);
     }
 
     @Transactional(readOnly = true)
@@ -88,45 +107,14 @@ public class TransactionService {
                 .map(transactionMapper::toHistoryResponse);
     }
 
-    private void handleBuy(Position position, TransactionDTO dto) {
-        BigDecimal currentQuantity = position.getQuantity();
-        BigDecimal currentAvgPrice = position.getAveragePrice();
-        boolean openingPosition = currentQuantity.compareTo(BigDecimal.ZERO) == 0;
-
-        BigDecimal buyQuantity = dto.quantity();
-        BigDecimal buyAvgPrice = dto.unitPrice();
-
-        BigDecimal currentTotalValue = currentQuantity.multiply(currentAvgPrice);
-        BigDecimal buyTotalValue = buyQuantity.multiply(buyAvgPrice);
-        BigDecimal newQuantity = currentQuantity.add(buyQuantity);
-
-        BigDecimal newAvgPrice = currentTotalValue.add(buyTotalValue)
-                .divide(newQuantity, com.rick1135.Valora.common.FinancialConstants.EXTENDED_PRECISION_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
-
-        position.setQuantity(newQuantity);
-        position.setAveragePrice(newAvgPrice);
-
-        if (openingPosition || position.getPurchaseDate() == null) {
-            position.setPurchaseDate(effectiveMarketCalendar().marketDate(dto.transactionDate()));
-        }
+    private PositionTimelineCalculator effectiveTimelineCalculator() {
+        return positionTimelineCalculator != null
+                ? positionTimelineCalculator
+                : new PositionTimelineCalculator(effectiveMarketCalendar());
     }
 
     private MarketCalendar effectiveMarketCalendar() {
         return marketCalendar != null ? marketCalendar : new MarketCalendar(java.time.Clock.systemDefaultZone());
-    }
-
-    private void handleSell(Position position, TransactionDTO dto) {
-        if (position.getQuantity().compareTo(dto.quantity()) < 0) {
-            throw new InsufficientPositionException("Quantidade insuficiente para venda");
-        }
-
-        BigDecimal newQuantity = position.getQuantity().subtract(dto.quantity());
-        position.setQuantity(newQuantity);
-
-        if (newQuantity.compareTo(BigDecimal.ZERO) == 0) {
-            position.setAveragePrice(BigDecimal.ZERO);
-            position.setPurchaseDate(null);
-        }
     }
 
     private String normalizeTicker(String ticker) {

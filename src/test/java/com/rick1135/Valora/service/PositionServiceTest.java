@@ -2,6 +2,8 @@ package com.rick1135.Valora.service;
 
 import com.rick1135.Valora.dto.response.PositionResponseDTO;
 import com.rick1135.Valora.entity.Asset;
+import com.rick1135.Valora.entity.AssetCategory;
+import com.rick1135.Valora.entity.FixedIncomeIndexer;
 import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.User;
@@ -39,6 +41,9 @@ class PositionServiceTest {
 
     @Mock
     private PortfolioService portfolioService;
+
+    @Mock
+    private FixedIncomeValuationService fixedIncomeValuationService;
 
     @Spy
     private PositionMapper positionMapper = Mappers.getMapper(PositionMapper.class);
@@ -98,5 +103,88 @@ class PositionServiceTest {
         assertThatThrownBy(() -> positionService.getUserPortfolio(user, portfolioId))
                 .isInstanceOf(PortfolioNotFoundException.class);
         verify(positionRepository, never()).findByPortfolio(any());
+    }
+
+    @Test
+    void getUserPortfolioShouldValuateFixedIncomeWithoutCallingQuoteService() {
+        User user = new User();
+        Portfolio portfolioEntity = new Portfolio();
+        portfolioEntity.setId(UUID.randomUUID());
+        portfolioEntity.setUser(user);
+        portfolioEntity.setName("Renda Fixa");
+
+        Asset cdb = new Asset();
+        cdb.setId(UUID.randomUUID());
+        cdb.setTicker("CDB_PRE");
+        cdb.setName("CDB Prefixado");
+        cdb.setCategory(AssetCategory.RENDA_FIXA);
+        cdb.setIndexer(FixedIncomeIndexer.PRE);
+        cdb.setAnnualRate(new BigDecimal("10.00"));
+
+        Position cdbPosition = new Position();
+        cdbPosition.setId(UUID.randomUUID());
+        cdbPosition.setPortfolio(portfolioEntity);
+        cdbPosition.setAsset(cdb);
+        cdbPosition.setQuantity(new BigDecimal("2.00000000"));
+        cdbPosition.setAveragePrice(new BigDecimal("1000.00000000"));
+
+        when(portfolioService.resolveOwnedPortfolio(user, portfolioEntity.getId())).thenReturn(portfolioEntity);
+        when(positionRepository.findByPortfolio(portfolioEntity)).thenReturn(List.of(cdbPosition));
+        when(fixedIncomeValuationService.valuatePortfolioPositions(portfolioEntity, List.of(cdbPosition)))
+                .thenReturn(Map.of(cdbPosition, new FixedIncomeValuationService.FixedIncomeValuationResult(
+                        new BigDecimal("2200.00000000"),
+                        new BigDecimal("1100.00000000"),
+                        true
+                )));
+
+        List<PositionResponseDTO> result = positionService.getUserPortfolio(user, portfolioEntity.getId());
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().ticker()).isEqualTo("CDB_PRE");
+        assertThat(result.getFirst().currentPrice()).isEqualByComparingTo("1100.00000000");
+        assertThat(result.getFirst().currentTotalValue()).isEqualByComparingTo("2200.00000000");
+        assertThat(result.getFirst().profitability()).isEqualByComparingTo("10.0000");
+        verify(quoteService, never()).getCurrentPrices(any());
+    }
+
+    @Test
+    void getUserPortfolioShouldLeaveCurrentValueAndProfitabilityNullWhenFixedIncomeValuationIsUnreliable() {
+        User user = new User();
+        Portfolio portfolioEntity = new Portfolio();
+        portfolioEntity.setId(UUID.randomUUID());
+        portfolioEntity.setUser(user);
+        portfolioEntity.setName("Renda Fixa Legada");
+
+        Asset cdbCdi = new Asset();
+        cdbCdi.setId(UUID.randomUUID());
+        cdbCdi.setTicker("CDB_CDI");
+        cdbCdi.setName("CDB CDI");
+        cdbCdi.setCategory(AssetCategory.RENDA_FIXA);
+        cdbCdi.setIndexer(FixedIncomeIndexer.CDI);
+        cdbCdi.setAnnualRate(new BigDecimal("110.00"));
+
+        Position cdbPosition = new Position();
+        cdbPosition.setId(UUID.randomUUID());
+        cdbPosition.setPortfolio(portfolioEntity);
+        cdbPosition.setAsset(cdbCdi);
+        cdbPosition.setQuantity(new BigDecimal("1.00000000"));
+        cdbPosition.setAveragePrice(new BigDecimal("1000.00000000"));
+
+        when(portfolioService.resolveOwnedPortfolio(user, portfolioEntity.getId())).thenReturn(portfolioEntity);
+        when(positionRepository.findByPortfolio(portfolioEntity)).thenReturn(List.of(cdbPosition));
+        when(fixedIncomeValuationService.valuatePortfolioPositions(portfolioEntity, List.of(cdbPosition)))
+                .thenReturn(Map.of(cdbPosition, new FixedIncomeValuationService.FixedIncomeValuationResult(
+                        new BigDecimal("1000.00000000"),
+                        new BigDecimal("1000.00000000"),
+                        false
+                )));
+
+        List<PositionResponseDTO> result = positionService.getUserPortfolio(user, portfolioEntity.getId());
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().currentPrice()).isNull();
+        assertThat(result.getFirst().currentTotalValue()).isNull();
+        assertThat(result.getFirst().profitability()).isNull();
+        verify(quoteService, never()).getCurrentPrices(any());
     }
 }

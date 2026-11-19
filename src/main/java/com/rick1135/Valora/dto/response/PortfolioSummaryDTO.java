@@ -27,12 +27,33 @@ public record PortfolioSummaryDTO(
 
     public record ProfitabilityDTO(
             BigDecimal absoluteProfit,
+            BigDecimal unrealizedProfit,
+            BigDecimal realizedProfit,
             BigDecimal totalPercentage,
             BigDecimal dayAbsoluteVariation,
             BigDecimal dayPercentageVariation,
             boolean dayChangeAvailable,
             List<BenchmarkComparisonDTO> benchmarkComparisons
     ) {
+        public ProfitabilityDTO(
+                BigDecimal absoluteProfit,
+                BigDecimal totalPercentage,
+                BigDecimal dayAbsoluteVariation,
+                BigDecimal dayPercentageVariation,
+                boolean dayChangeAvailable,
+                List<BenchmarkComparisonDTO> benchmarkComparisons
+        ) {
+            this(
+                    absoluteProfit,
+                    absoluteProfit,
+                    BigDecimal.ZERO,
+                    totalPercentage,
+                    dayAbsoluteVariation,
+                    dayPercentageVariation,
+                    dayChangeAvailable,
+                    benchmarkComparisons
+            );
+        }
     }
 
     public record BenchmarkComparisonDTO(

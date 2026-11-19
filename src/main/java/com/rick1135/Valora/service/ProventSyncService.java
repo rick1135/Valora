@@ -28,8 +28,6 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class ProventSyncService {
-    private static final BigDecimal JCP_NET_FACTOR = new BigDecimal("0.85");
-
     private final TransactionRepository transactionRepository;
     private final PositionRepository positionRepository;
     private final BrapiClient brapiClient;
@@ -94,8 +92,8 @@ public class ProventSyncService {
                 }
 
                 ProventType type = mapType(event.label());
-                BigDecimal amountPerShare = normalizeAmountPerShare(type, event.rate());
-                boolean sourceRateIsGross = type == ProventType.JCP ? jcpRateIsGross : true;
+                BigDecimal amountPerShare = normalizeAmountPerShare(event.rate());
+                boolean sourceRateIsGross = type != ProventType.JCP || jcpRateIsGross;
                 ProventRequestDTO request = new ProventRequestDTO(
                         asset.getId(),
                         type,
@@ -116,6 +114,16 @@ public class ProventSyncService {
                     proventsCreated++;
                 } catch (ProventAlreadyExistsException duplicate) {
                     duplicatesIgnored++;
+                    try {
+                        proventService.reconcileProvisionsForExistingProvent(originMetadata);
+                    } catch (Exception reconcileException) {
+                        integrationErrors++;
+                        log.error("Unexpected error while reconciling existing provent for ticker={} label={}: {}",
+                                asset.getTicker(),
+                                event.label(),
+                                reconcileException.getMessage(),
+                                reconcileException);
+                    }
                 } catch (IllegalArgumentException invalid) {
                     invalidEventsIgnored++;
                     log.warn("Skipping invalid provent event for ticker={} label={} reason={}",
@@ -191,10 +199,10 @@ public class ProventSyncService {
         return ProventType.DIVIDEND;
     }
 
-    private BigDecimal normalizeAmountPerShare(ProventType type, BigDecimal originalRate) {
-        if (type == ProventType.JCP && jcpRateIsGross) {
-            return originalRate.multiply(JCP_NET_FACTOR).setScale(com.rick1135.Valora.common.FinancialConstants.EXTENDED_PRECISION_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
-        }
-        return originalRate.setScale(com.rick1135.Valora.common.FinancialConstants.EXTENDED_PRECISION_SCALE, com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING);
+    private BigDecimal normalizeAmountPerShare(BigDecimal originalRate) {
+        return originalRate.setScale(
+                com.rick1135.Valora.common.FinancialConstants.EXTENDED_PRECISION_SCALE,
+                com.rick1135.Valora.common.FinancialConstants.DEFAULT_ROUNDING
+        );
     }
 }

@@ -189,3 +189,10 @@ Para rodar o projeto localmente, você precisará ter instalado:
 * **Documentação OpenAPI (público):**
     * `GET /swagger-ui.html` — Interface Swagger UI
     * `GET /v3/api-docs` — Especificação OpenAPI JSON
+
+### Regras dos indicadores financeiros
+
+* O resumo separa resultado realizado em vendas, resultado ainda em aberto nas posições e proventos pagos. A rentabilidade percentual usa o custo das posições atualmente abertas como denominador; com carteira encerrada e resultado acumulado diferente de zero, o percentual fica indisponível. Esse percentual não representa retorno ponderado pelo tempo ou pelos aportes.
+* Títulos de renda fixa com indexador `PRE` e taxa anual informada são estimados pela capitalização da taxa contratual desde cada compra, limitada à data de vencimento. O cálculo não inclui impostos, taxas, resgate antecipado ou marcação a mercado. Títulos `CDI`, `SELIC` e `IPCA` ainda não têm modelo de remuneração suficiente: `/positions` deixa o valor atual indisponível e `/summary` usa o custo como valor provisório, sinalizado em `fallbackQuoteUsed` e `fallbackTickers`.
+* Proventos usam a posição na data COM, inclusive após lançamento retroativo. JCP com taxa de origem bruta discrimina imposto retido e valor líquido; a alíquota usada é 15% para pagamentos anteriores a 2026 e 17,5% a partir de 2026. Quando a origem informa taxa líquida, o sistema não infere o bruto.
+* Benchmarks sem dados suficientes para o período da carteira são apresentados como indisponíveis, sem substituir a ausência de dados por rendimento zero.

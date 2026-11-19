@@ -187,7 +187,11 @@
     const fallbackUsed = Boolean(summary?.fallbackQuoteUsed);
     const profitability = summary?.profitability || {};
     const absoluteProfit = toNumber(profitability.absoluteProfit);
-    const totalPercentage = toNumber(profitability.totalPercentage);
+    const hasTotalPercentage =
+      profitability.totalPercentage !== null &&
+      profitability.totalPercentage !== undefined &&
+      Number.isFinite(Number(profitability.totalPercentage));
+    const totalPercentage = hasTotalPercentage ? Number(profitability.totalPercentage) : null;
 
     const dayChangeAvailable = Boolean(profitability.dayChangeAvailable);
     const dayPct = toNumber(profitability.dayPercentageVariation);
@@ -197,8 +201,21 @@
     const profitTone =
       absoluteProfit > 0 ? "" : absoluteProfit < 0 ? "negative" : "neutral";
     const pctTone =
-      totalPercentage > 0 ? "" : totalPercentage < 0 ? "negative" : "neutral";
-    const trendSymbol = totalPercentage > 0 ? "\u2197" : totalPercentage < 0 ? "\u2198" : null;
+      totalPercentage === null
+        ? "neutral"
+        : totalPercentage > 0
+          ? ""
+          : totalPercentage < 0
+            ? "negative"
+            : "neutral";
+    const trendSymbol =
+      totalPercentage === null
+        ? null
+        : totalPercentage > 0
+          ? "\u2197"
+          : totalPercentage < 0
+            ? "\u2198"
+            : null;
 
     const benchmarks = Array.isArray(profitability.benchmarkComparisons)
       ? profitability.benchmarkComparisons
@@ -212,11 +229,26 @@
         item.percentage !== undefined &&
         Number.isFinite(Number(item.percentage))
     );
+    const unavailableBenchmarkNames = benchmarks
+      .filter(
+        (item) =>
+          item &&
+          typeof item.name === "string" &&
+          item.name.trim() !== "" &&
+          (item.percentage === null ||
+            item.percentage === undefined ||
+            !Number.isFinite(Number(item.percentage)))
+      )
+      .map((item) => item.name.trim());
     const rentabilityNote = primaryBenchmark
       ? `${primaryBenchmark.name}: ${formatPercent(primaryBenchmark.percentage, true)}`
-      : hasPositions
-        ? "Retorno total sobre o valor aplicado"
-        : "Sem opera\u00e7\u00f5es registradas";
+      : unavailableBenchmarkNames.length > 0
+        ? `Benchmark indispon\u00edvel (${unavailableBenchmarkNames.join(", ")})`
+        : !hasTotalPercentage
+          ? "Carteira zerada com resultado realizado"
+          : hasPositions
+            ? "Retorno total sobre o valor aplicado"
+            : "Sem opera\u00e7\u00f5es registradas";
 
     const patrimonyNote = fallbackUsed
       ? `Valor aplicado: ${formatCurrency(totalInvested)} \u2022 Fallback por pre\u00e7o m\u00e9dio`
@@ -247,11 +279,13 @@
       }),
       buildMetricCard({
         label: "Rentabilidade",
-        value: formatPercent(totalPercentage, totalPercentage > 0),
+        value: hasTotalPercentage
+          ? formatPercent(totalPercentage, totalPercentage > 0)
+          : "Indispon\u00edvel",
         note: rentabilityNote,
         tone: pctTone,
         trend: trendSymbol,
-        trendTone: totalPercentage < 0 ? "negative" : "",
+        trendTone: totalPercentage !== null && totalPercentage < 0 ? "negative" : "",
       }),
     ];
 

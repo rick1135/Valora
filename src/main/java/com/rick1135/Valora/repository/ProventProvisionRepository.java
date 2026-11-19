@@ -1,5 +1,6 @@
 package com.rick1135.Valora.repository;
 
+import com.rick1135.Valora.entity.Provent;
 import com.rick1135.Valora.entity.ProventProvision;
 import com.rick1135.Valora.entity.ProventStatus;
 import com.rick1135.Valora.entity.Portfolio;
@@ -13,12 +14,17 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ProventProvisionRepository extends JpaRepository<ProventProvision, UUID> {
     List<ProventProvision> findByPortfolioOrderByProventPaymentDateDescProventComDateDesc(Portfolio portfolio);
 
     Page<ProventProvision> findByPortfolio(Portfolio portfolio, Pageable pageable);
+
+    Optional<ProventProvision> findByProventAndPortfolio(Provent provent, Portfolio portfolio);
+
+    List<ProventProvision> findByProvent(Provent provent);
 
     boolean existsByPortfolio(Portfolio portfolio);
 

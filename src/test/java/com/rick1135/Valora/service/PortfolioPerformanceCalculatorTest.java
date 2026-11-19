@@ -4,6 +4,7 @@ import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.dto.response.QuoteDTO;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
+import com.rick1135.Valora.entity.FixedIncomeIndexer;
 import com.rick1135.Valora.entity.Position;
 import org.junit.jupiter.api.Test;
 
@@ -163,6 +164,72 @@ class PortfolioPerformanceCalculatorTest {
 
         assertThat(summary.totalPatrimony()).isEqualByComparingTo("1100.0000000000");
         assertThat(summary.totalInvested()).isEqualByComparingTo("1000.0000000000");
+    }
+
+    @Test
+    void calculateShouldDistinguishUnrealizedRealizedAndTotalProfit() {
+        Position openPosition = position("PETR4", AssetCategory.ACOES, "6.00000000", "10.00");
+
+        PortfolioSummaryDTO summary = calculator.calculate(
+                List.of(openPosition),
+                Map.of("PETR4", new QuoteDTO("PETR4", new BigDecimal("15.00"), BigDecimal.ZERO, BigDecimal.ZERO, null, null, null)),
+                new BigDecimal("5.00"),
+                new BigDecimal("20.00"),
+                List.of()
+        );
+
+        assertThat(summary.totalInvested()).isEqualByComparingTo("60.0000000000");
+        assertThat(summary.totalPatrimony()).isEqualByComparingTo("90.0000000000");
+        assertThat(summary.profitability().unrealizedProfit()).isEqualByComparingTo("30.0000000000");
+        assertThat(summary.profitability().realizedProfit()).isEqualByComparingTo("20.00");
+        assertThat(summary.profitability().absoluteProfit()).isEqualByComparingTo("55.0000000000");
+    }
+
+    @Test
+    void calculateShouldPreserveRealizedProfitWhenAllPositionsAreClosed() {
+        PortfolioSummaryDTO summary = calculator.calculate(
+                List.of(),
+                Map.of(),
+                BigDecimal.ZERO,
+                new BigDecimal("20.00"),
+                List.of()
+        );
+
+        assertThat(summary.totalInvested()).isEqualByComparingTo("0");
+        assertThat(summary.totalPatrimony()).isEqualByComparingTo("0");
+        assertThat(summary.profitability().unrealizedProfit()).isEqualByComparingTo("0");
+        assertThat(summary.profitability().realizedProfit()).isEqualByComparingTo("20.00");
+        assertThat(summary.profitability().absoluteProfit()).isEqualByComparingTo("20.00");
+        assertThat(summary.profitability().totalPercentage()).isNull();
+    }
+
+    @Test
+    void calculateShouldFlagUnreliableFixedIncomeValuationAndUsePrincipalFallback() {
+        Asset asset = new Asset();
+        asset.setTicker("CDB_CDI");
+        asset.setCategory(AssetCategory.RENDA_FIXA);
+        asset.setIndexer(FixedIncomeIndexer.CDI);
+        asset.setAnnualRate(new BigDecimal("100.00"));
+
+        Position position = new Position();
+        position.setAsset(asset);
+        position.setQuantity(new BigDecimal("2"));
+        position.setAveragePrice(new BigDecimal("1000.00"));
+        position.setPurchaseDate(LocalDate.now().minusYears(1));
+
+        PortfolioSummaryDTO summary = calculator.calculate(
+                List.of(position),
+                Map.of(),
+                BigDecimal.ZERO,
+                List.of()
+        );
+
+        assertThat(summary.totalPatrimony()).isEqualByComparingTo("2000.0000000000");
+        assertThat(summary.totalInvested()).isEqualByComparingTo("2000.0000000000");
+        assertThat(summary.fallbackQuoteUsed()).isTrue();
+        assertThat(summary.fallbackTickers()).containsExactly("CDB_CDI");
+        assertThat(summary.allocations().getFirst().marketPriceReliable()).isFalse();
+        assertThat(summary.positions().getFirst().marketPriceReliable()).isFalse();
     }
 
     private Position position(String ticker, AssetCategory category, String quantity, String averagePrice) {

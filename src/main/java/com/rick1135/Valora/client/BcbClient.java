@@ -10,7 +10,7 @@ import java.util.List;
 
 @Component
 public class BcbClient {
-    private static final String BASE_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs";
+    private static final String BASE_URL = "https://api.bcb.gov.br/dados/serie";
     private final RestClient restClient;
 
     public BcbClient(RestClient.Builder builder) {
@@ -19,7 +19,7 @@ public class BcbClient {
 
     public List<BcbDataDTO> getSeriesData(int seriesCode, String startDate, String endDate) {
         return restClient.get()
-                .uri("/{seriesCode}/dados?formato=json&dataInicial={startDate}&dataFinal={endDate}",
+                .uri("/bcdata.sgs.{seriesCode}/dados?formato=json&dataInicial={startDate}&dataFinal={endDate}",
                         seriesCode, startDate, endDate)
                 .retrieve()
                 .body(new org.springframework.core.ParameterizedTypeReference<List<BcbDataDTO>>() {});

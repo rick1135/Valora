@@ -1,9 +1,11 @@
 package com.rick1135.Valora.repository;
 
+import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Transaction;
 import com.rick1135.Valora.entity.TransactionType;
 import com.rick1135.Valora.repository.projection.UserAssetHoldingProjection;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -39,6 +41,20 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     );
 
     @Query("""
+           select coalesce(sum(case when t.type = :buyType then t.quantity else -t.quantity end), 0)
+           from Transaction t
+           where t.portfolio.id = :portfolioId
+             and t.asset.id = :assetId
+             and t.transactionDate <= :comDate
+           """)
+    java.math.BigDecimal findPortfolioHoldingQuantityByAssetAtDate(
+            @Param("portfolioId") UUID portfolioId,
+            @Param("assetId") UUID assetId,
+            @Param("comDate") Instant comDate,
+            @Param("buyType") TransactionType buyType
+    );
+
+    @Query("""
            select t
            from Transaction t
            where t.portfolio = :portfolio
@@ -58,6 +74,11 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
     @Query("SELECT MIN(t.transactionDate) FROM Transaction t WHERE t.portfolio = :portfolio")
     java.util.Optional<java.time.Instant> findFirstTransactionDateByPortfolio(Portfolio portfolio);
+
+    List<Transaction> findByPortfolioAndAssetOrderByTransactionDateAscIdAsc(Portfolio portfolio, Asset asset);
+
+    @EntityGraph(attributePaths = "asset")
+    List<Transaction> findByPortfolioOrderByTransactionDateAscIdAsc(Portfolio portfolio);
 
     boolean existsByPortfolio(Portfolio portfolio);
 }

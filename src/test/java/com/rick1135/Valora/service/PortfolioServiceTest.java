@@ -5,9 +5,14 @@ import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.dto.response.QuoteDTO;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
+import com.rick1135.Valora.entity.Benchmark;
+import com.rick1135.Valora.entity.BenchmarkType;
+import com.rick1135.Valora.entity.FixedIncomeIndexer;
 import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.ProventStatus;
+import com.rick1135.Valora.entity.Transaction;
+import com.rick1135.Valora.entity.TransactionType;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.PortfolioNotFoundException;
 import com.rick1135.Valora.mapper.PortfolioMapper;
@@ -65,6 +70,21 @@ class PortfolioServiceTest {
 
     @Spy
     private PortfolioPerformanceCalculator performanceCalculator = new PortfolioPerformanceCalculator(new FixedIncomeYieldCalculator());
+
+    @Spy
+    private MarketCalendar marketCalendar = new MarketCalendar(java.time.Clock.system(java.time.ZoneId.of("America/Sao_Paulo")));
+
+    @Spy
+    private PositionTimelineCalculator positionTimelineCalculator = new PositionTimelineCalculator(
+            new MarketCalendar(java.time.Clock.system(java.time.ZoneId.of("America/Sao_Paulo")))
+    );
+
+    @Spy
+    private FixedIncomeValuationService fixedIncomeValuationService = new FixedIncomeValuationService(
+            new FixedIncomeYieldCalculator(),
+            new MarketCalendar(java.time.Clock.system(java.time.ZoneId.of("America/Sao_Paulo"))),
+            null
+    );
 
     @InjectMocks
     private PortfolioService portfolioService;
@@ -206,6 +226,114 @@ class PortfolioServiceTest {
         verify(transactionRepository, never()).existsByPortfolio(any());
         verify(positionRepository, never()).existsByPortfolio(any());
         verify(proventProvisionRepository, never()).existsByPortfolio(any());
+    }
+
+    @Test
+    void getPortfolioSummaryShouldIncludeRealizedProfitWhenPositionIsClosed() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("PETR4");
+        asset.setCategory(AssetCategory.ACOES);
+
+        Transaction buy = new Transaction();
+        buy.setId(UUID.randomUUID());
+        buy.setPortfolio(portfolio);
+        buy.setAsset(asset);
+        buy.setType(TransactionType.BUY);
+        buy.setQuantity(new BigDecimal("10.00000000"));
+        buy.setUnitPrice(new BigDecimal("10.00000000"));
+        buy.setTransactionDate(java.time.Instant.parse("2026-01-10T14:00:00Z"));
+
+        Transaction sell = new Transaction();
+        sell.setId(UUID.randomUUID());
+        sell.setPortfolio(portfolio);
+        sell.setAsset(asset);
+        sell.setType(TransactionType.SELL);
+        sell.setQuantity(new BigDecimal("10.00000000"));
+        sell.setUnitPrice(new BigDecimal("12.00000000"));
+        sell.setTransactionDate(java.time.Instant.parse("2026-01-20T14:00:00Z"));
+
+        when(portfolioRepository.findByIdAndUser(portfolio.getId(), user)).thenReturn(Optional.of(portfolio));
+        when(positionRepository.findByPortfolioAndQuantityGreaterThan(portfolio, BigDecimal.ZERO)).thenReturn(List.of());
+        when(proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID))
+                .thenReturn(BigDecimal.ZERO);
+        when(transactionRepository.findByPortfolioOrderByTransactionDateAscIdAsc(portfolio))
+                .thenReturn(List.of(buy, sell));
+
+        PortfolioSummaryDTO summary = portfolioService.getPortfolioSummary(user, portfolio.getId());
+
+        assertThat(summary.totalInvested()).isEqualByComparingTo("0");
+        assertThat(summary.totalPatrimony()).isEqualByComparingTo("0");
+        assertThat(summary.profitability().unrealizedProfit()).isEqualByComparingTo("0");
+        assertThat(summary.profitability().realizedProfit()).isEqualByComparingTo("20.00");
+        assertThat(summary.profitability().absoluteProfit()).isEqualByComparingTo("20.00");
+        assertThat(summary.profitability().totalPercentage()).isNull();
+    }
+
+    @Test
+    void getPortfolioSummaryShouldUseFixedIncomeValuationServiceAndSignalReliability() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+
+        Asset cdbCdi = new Asset();
+        cdbCdi.setId(UUID.randomUUID());
+        cdbCdi.setTicker("CDB-CDI");
+        cdbCdi.setCategory(AssetCategory.RENDA_FIXA);
+        cdbCdi.setIndexer(FixedIncomeIndexer.CDI);
+        cdbCdi.setAnnualRate(new BigDecimal("105.00"));
+
+        Position cdbPosition = new Position();
+        cdbPosition.setAsset(cdbCdi);
+        cdbPosition.setQuantity(new BigDecimal("2"));
+        cdbPosition.setAveragePrice(new BigDecimal("1000.00"));
+        cdbPosition.setPurchaseDate(java.time.LocalDate.now().minusDays(90));
+
+        when(portfolioRepository.findByIdAndUser(portfolio.getId(), user)).thenReturn(Optional.of(portfolio));
+        when(positionRepository.findByPortfolioAndQuantityGreaterThan(portfolio, BigDecimal.ZERO))
+                .thenReturn(List.of(cdbPosition));
+        when(proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID))
+                .thenReturn(BigDecimal.ZERO);
+        when(transactionRepository.findByPortfolioOrderByTransactionDateAscIdAsc(portfolio))
+                .thenReturn(List.of());
+
+        PortfolioSummaryDTO summary = portfolioService.getPortfolioSummary(user, portfolio.getId());
+
+        assertThat(summary.totalInvested()).isEqualByComparingTo("2000.00000000");
+        assertThat(summary.totalPatrimony()).isEqualByComparingTo("2000.00000000");
+        assertThat(summary.fallbackQuoteUsed()).isTrue();
+        assertThat(summary.fallbackTickers()).containsExactly("CDB-CDI");
+        assertThat(summary.allocations().getFirst().marketPriceReliable()).isFalse();
+        assertThat(summary.positions().getFirst().marketPriceReliable()).isFalse();
+        verify(quoteService, never()).getCurrentQuotes(any());
+    }
+
+    @Test
+    void getPortfolioSummaryShouldKeepUnavailableBenchmarkPercentageAsNull() {
+        User user = new User();
+        Portfolio portfolio = portfolio(user);
+        Benchmark ibov = new Benchmark();
+        ibov.setName("IBOV");
+        ibov.setTicker("^BVSP");
+        ibov.setType(BenchmarkType.INDEX);
+
+        java.time.Instant firstTx = java.time.Instant.parse("2026-01-10T14:00:00Z");
+        when(portfolioRepository.findByIdAndUser(portfolio.getId(), user)).thenReturn(Optional.of(portfolio));
+        when(positionRepository.findByPortfolioAndQuantityGreaterThan(portfolio, BigDecimal.ZERO)).thenReturn(List.of());
+        when(proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID))
+                .thenReturn(BigDecimal.ZERO);
+        when(transactionRepository.findFirstTransactionDateByPortfolio(portfolio)).thenReturn(Optional.of(firstTx));
+        when(benchmarkRepository.findAll()).thenReturn(List.of(ibov));
+        when(benchmarkValueRepository.findByBenchmarkInRange(any(), any(), any())).thenReturn(List.of());
+        when(benchmarkPerformanceCalculator.calculateYield(any(), any(), any(), any())).thenReturn(null);
+
+        PortfolioSummaryDTO summary = portfolioService.getPortfolioSummary(user, portfolio.getId());
+
+        assertThat(summary.profitability().benchmarkComparisons()).hasSize(1);
+        assertThat(summary.profitability().benchmarkComparisons().getFirst().name()).isEqualTo("IBOV");
+        assertThat(summary.profitability().benchmarkComparisons().getFirst().percentage()).isNull();
     }
 
     private Position buildPosition(String ticker, AssetCategory category, String quantity, String averagePrice) {

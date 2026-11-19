@@ -5,11 +5,14 @@ import com.rick1135.Valora.dto.response.AssetAllocationDTO;
 import com.rick1135.Valora.dto.response.AssetPositionSummaryDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.dto.response.QuoteDTO;
+import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.entity.Position;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -19,9 +22,26 @@ import java.util.stream.Collectors;
 public class PortfolioPerformanceCalculator {
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     private final FixedIncomeYieldCalculator fixedIncomeYieldCalculator;
+    private final FixedIncomeValuationService fixedIncomeValuationService;
+
+    @Autowired
+    public PortfolioPerformanceCalculator(
+            FixedIncomeYieldCalculator fixedIncomeYieldCalculator,
+            FixedIncomeValuationService fixedIncomeValuationService
+    ) {
+        this.fixedIncomeYieldCalculator = fixedIncomeYieldCalculator;
+        this.fixedIncomeValuationService = fixedIncomeValuationService;
+    }
 
     public PortfolioPerformanceCalculator(FixedIncomeYieldCalculator fixedIncomeYieldCalculator) {
-        this.fixedIncomeYieldCalculator = fixedIncomeYieldCalculator;
+        this(
+                fixedIncomeYieldCalculator,
+                new FixedIncomeValuationService(
+                        fixedIncomeYieldCalculator,
+                        new MarketCalendar(Clock.systemDefaultZone()),
+                        null
+                )
+        );
     }
 
     public PortfolioSummaryDTO calculate(
@@ -30,8 +50,29 @@ public class PortfolioPerformanceCalculator {
             BigDecimal totalProvents,
             List<PortfolioSummaryDTO.BenchmarkComparisonDTO> benchmarkComparisons
     ) {
+        return calculate(positions, currentQuotes, totalProvents, ZERO, benchmarkComparisons);
+    }
+
+    public PortfolioSummaryDTO calculate(
+            List<Position> positions,
+            Map<String, QuoteDTO> currentQuotes,
+            BigDecimal totalProvents,
+            BigDecimal realizedProfit,
+            List<PortfolioSummaryDTO.BenchmarkComparisonDTO> benchmarkComparisons
+    ) {
+        return calculate(positions, currentQuotes, totalProvents, realizedProfit, benchmarkComparisons, Map.of());
+    }
+
+    public PortfolioSummaryDTO calculate(
+            List<Position> positions,
+            Map<String, QuoteDTO> currentQuotes,
+            BigDecimal totalProvents,
+            BigDecimal realizedProfit,
+            List<PortfolioSummaryDTO.BenchmarkComparisonDTO> benchmarkComparisons,
+            Map<Position, FixedIncomeValuationService.FixedIncomeValuationResult> fixedIncomeValuations
+    ) {
         List<PositionSummaryLine> positionLines = positions.stream()
-                .map(position -> buildPositionSummaryLine(position, currentQuotes))
+                .map(position -> buildPositionSummaryLine(position, currentQuotes, fixedIncomeValuations))
                 .toList();
 
         BigDecimal totalInvested = positionLines.stream()
@@ -42,15 +83,24 @@ public class PortfolioPerformanceCalculator {
                 .map(PositionSummaryLine::patrimony)
                 .reduce(ZERO, BigDecimal::add);
 
-        BigDecimal absoluteProfit = totalPatrimony
-                .add(defaultBigDecimal(totalProvents))
-                .subtract(totalInvested);
+        BigDecimal unrealizedProfit = totalPatrimony.subtract(totalInvested);
+        BigDecimal normalizedRealizedProfit = defaultBigDecimal(realizedProfit);
+        BigDecimal normalizedTotalProvents = defaultBigDecimal(totalProvents);
 
-        BigDecimal totalPercentage = totalInvested.compareTo(ZERO) > 0
-                ? absoluteProfit
-                .multiply(new BigDecimal("100"))
-                .divide(totalInvested, FinancialConstants.PERCENTAGE_SCALE, FinancialConstants.DEFAULT_ROUNDING)
-                : ZERO;
+        BigDecimal absoluteProfit = unrealizedProfit
+                .add(normalizedRealizedProfit)
+                .add(normalizedTotalProvents);
+
+        BigDecimal totalPercentage;
+        if (totalInvested.compareTo(ZERO) > 0) {
+            totalPercentage = absoluteProfit
+                    .multiply(new BigDecimal("100"))
+                    .divide(totalInvested, FinancialConstants.PERCENTAGE_SCALE, FinancialConstants.DEFAULT_ROUNDING);
+        } else if (absoluteProfit.compareTo(ZERO) == 0) {
+            totalPercentage = ZERO;
+        } else {
+            totalPercentage = null;
+        }
 
         BigDecimal dayAbsoluteVariation = positionLines.stream()
                 .map(PositionSummaryLine::dayAbsoluteVariation)
@@ -74,9 +124,11 @@ public class PortfolioPerformanceCalculator {
         return new PortfolioSummaryDTO(
                 totalPatrimony,
                 totalInvested,
-                defaultBigDecimal(totalProvents),
+                normalizedTotalProvents,
                 new PortfolioSummaryDTO.ProfitabilityDTO(
                         absoluteProfit,
+                        unrealizedProfit,
+                        normalizedRealizedProfit,
                         totalPercentage,
                         dayAbsoluteVariation,
                         dayPercentageVariation,
@@ -140,34 +192,40 @@ public class PortfolioPerformanceCalculator {
         return new CategoryAllocationAccumulator(totalValue, currentPrice, marketPriceReliable);
     }
 
-    private PositionSummaryLine buildPositionSummaryLine(Position position, Map<String, QuoteDTO> currentQuotes) {
+    private PositionSummaryLine buildPositionSummaryLine(
+            Position position,
+            Map<String, QuoteDTO> currentQuotes,
+            Map<Position, FixedIncomeValuationService.FixedIncomeValuationResult> fixedIncomeValuations
+    ) {
         String ticker = position.getAsset().getTicker();
         BigDecimal quantity = defaultBigDecimal(position.getQuantity());
         BigDecimal fallbackPrice = defaultBigDecimal(position.getAveragePrice());
 
         BigDecimal effectivePrice;
+        BigDecimal patrimony;
         QuoteDTO quote = null;
         boolean hasValidQuote;
 
-        if (position.getAsset().getCategory() == com.rick1135.Valora.entity.AssetCategory.RENDA_FIXA) {
-            BigDecimal currentValue = fixedIncomeYieldCalculator.calculateCurrentValue(
-                    position.getAveragePrice(),
-                    position.getQuantity(),
-                    position.getPurchaseDate(),
-                    position.getAsset().getAnnualRate()
-            );
-            effectivePrice = (quantity.compareTo(ZERO) > 0)
-                    ? currentValue.divide(quantity, FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING)
+        if (position.getAsset().getCategory() == AssetCategory.RENDA_FIXA) {
+            FixedIncomeValuationService.FixedIncomeValuationResult valuation =
+                    (fixedIncomeValuations != null && fixedIncomeValuations.containsKey(position))
+                            ? fixedIncomeValuations.get(position)
+                            : effectiveFixedIncomeValuationService().valuatePosition(position, List.of());
+            hasValidQuote = valuation != null && valuation.reliable();
+            effectivePrice = valuation != null && valuation.currentUnitPrice() != null
+                    ? valuation.currentUnitPrice()
                     : fallbackPrice;
-            hasValidQuote = true;
+            patrimony = valuation != null && valuation.currentTotalValue() != null
+                    ? valuation.currentTotalValue()
+                    : safeMultiply(quantity, effectivePrice);
         } else {
             quote = currentQuotes.get(ticker);
             BigDecimal quotePrice = quote == null ? ZERO : defaultBigDecimal(quote.price());
             hasValidQuote = quotePrice.compareTo(ZERO) > 0;
             effectivePrice = hasValidQuote ? quotePrice : fallbackPrice;
+            patrimony = safeMultiply(quantity, effectivePrice);
         }
 
-        BigDecimal patrimony = safeMultiply(quantity, effectivePrice);
         DayVariation dayVariation = calculateDayVariation(quantity, effectivePrice, quote, hasValidQuote && quote != null);
 
         return new PositionSummaryLine(
@@ -207,6 +265,16 @@ public class PortfolioPerformanceCalculator {
         }
         BigDecimal previousPrice = currentPrice.divide(denominator, FinancialConstants.INTERMEDIATE_CALCULATION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
         return new DayVariation(quantity.multiply(currentPrice.subtract(previousPrice)), true);
+    }
+
+    private FixedIncomeValuationService effectiveFixedIncomeValuationService() {
+        return fixedIncomeValuationService != null
+                ? fixedIncomeValuationService
+                : new FixedIncomeValuationService(
+                        fixedIncomeYieldCalculator,
+                        new MarketCalendar(Clock.systemDefaultZone()),
+                        null
+                );
     }
 
     private BigDecimal safeMultiply(BigDecimal left, BigDecimal right) {

@@ -4,9 +4,11 @@ import com.rick1135.Valora.dto.request.PortfolioRequestDTO;
 import com.rick1135.Valora.dto.response.PortfolioResponseDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.dto.response.QuoteDTO;
+import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.ProventStatus;
+import com.rick1135.Valora.entity.Transaction;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.PortfolioNotFoundException;
 import com.rick1135.Valora.mapper.PortfolioMapper;
@@ -37,6 +39,8 @@ public class PortfolioService {
     private final BenchmarkValueRepository benchmarkValueRepository;
     private final BenchmarkPerformanceCalculator benchmarkPerformanceCalculator;
     private final MarketCalendar marketCalendar;
+    private final PositionTimelineCalculator positionTimelineCalculator;
+    private final FixedIncomeValuationService fixedIncomeValuationService;
 
     @Transactional
     public PortfolioResponseDTO createPortfolio(User user, PortfolioRequestDTO dto) {
@@ -102,26 +106,49 @@ public class PortfolioService {
         Portfolio portfolio = resolveOwnedPortfolio(user, portfolioId);
         List<Position> positions = positionRepository.findByPortfolioAndQuantityGreaterThan(portfolio, ZERO);
 
-        List<String> tickers = positions.stream()
+        List<Position> fixedIncomePositions = positions.stream()
+                .filter(position -> position.getAsset().getCategory() == AssetCategory.RENDA_FIXA)
+                .toList();
+
+        List<String> variableIncomeTickers = positions.stream()
+                .filter(position -> position.getAsset().getCategory() != AssetCategory.RENDA_FIXA)
                 .map(position -> position.getAsset().getTicker())
                 .distinct()
                 .toList();
 
-        Map<String, QuoteDTO> currentQuotes = tickers.isEmpty() ? Map.of() : quoteService.getCurrentQuotes(tickers);
+        Map<String, QuoteDTO> currentQuotes = variableIncomeTickers.isEmpty()
+                ? Map.of()
+                : quoteService.getCurrentQuotes(variableIncomeTickers);
         BigDecimal totalProvents = defaultBigDecimal(
                 proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID)
         );
+        List<Transaction> portfolioTransactions = transactionRepository.findByPortfolioOrderByTransactionDateAscIdAsc(portfolio);
+        BigDecimal realizedProfit = effectiveTimelineCalculator().calculateRealizedProfit(portfolioTransactions);
+        Map<Position, FixedIncomeValuationService.FixedIncomeValuationResult> fixedIncomeValuations =
+                fixedIncomePositions.isEmpty()
+                        ? Map.of()
+                        : effectiveFixedIncomeValuationService().valuatePositions(fixedIncomePositions, portfolioTransactions);
 
         List<PortfolioSummaryDTO.BenchmarkComparisonDTO> benchmarkComparisons = calculateBenchmarkComparisons(portfolio);
 
-        return performanceCalculator.calculate(positions, currentQuotes, totalProvents, benchmarkComparisons);
+        return performanceCalculator.calculate(
+                positions,
+                currentQuotes,
+                totalProvents,
+                realizedProfit,
+                benchmarkComparisons,
+                fixedIncomeValuations
+        );
     }
 
     private List<PortfolioSummaryDTO.BenchmarkComparisonDTO> calculateBenchmarkComparisons(Portfolio portfolio) {
+        java.util.Optional<java.time.Instant> firstTransactionInstant =
+                transactionRepository.findFirstTransactionDateByPortfolio(portfolio);
+        if (firstTransactionInstant.isEmpty()) {
+            return List.of();
+        }
         MarketCalendar calendar = effectiveMarketCalendar();
-        java.time.Instant firstTransactionInstant = transactionRepository.findFirstTransactionDateByPortfolio(portfolio)
-                .orElseGet(calendar::now);
-        java.time.LocalDate startDate = calendar.marketDate(firstTransactionInstant);
+        java.time.LocalDate startDate = calendar.marketDate(firstTransactionInstant.get());
         java.time.LocalDate endDate = calendar.today();
 
         return benchmarkRepository.findAll().stream()
@@ -133,8 +160,24 @@ public class PortfolioService {
                 .toList();
     }
 
+    private FixedIncomeValuationService effectiveFixedIncomeValuationService() {
+        return fixedIncomeValuationService != null
+                ? fixedIncomeValuationService
+                : new FixedIncomeValuationService(
+                        new FixedIncomeYieldCalculator(),
+                        effectiveMarketCalendar(),
+                        transactionRepository
+                );
+    }
+
     private MarketCalendar effectiveMarketCalendar() {
         return marketCalendar != null ? marketCalendar : new MarketCalendar(java.time.Clock.systemDefaultZone());
+    }
+
+    private PositionTimelineCalculator effectiveTimelineCalculator() {
+        return positionTimelineCalculator != null
+                ? positionTimelineCalculator
+                : new PositionTimelineCalculator(effectiveMarketCalendar());
     }
 
     @Transactional(readOnly = true)

@@ -321,6 +321,346 @@ class ProventServiceTest {
         verify(proventProvisionRepository, never()).findByPortfolio(any(), any());
     }
 
+    @Test
+    void createProventShouldApplySeventeenPointFivePercentWithholdingTaxForGrossJcpFrom2026() {
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("BBAS3");
+        asset.setCategory(AssetCategory.ACOES);
+
+        Portfolio portfolio = portfolio();
+
+        LocalDate comDate = LocalDate.of(2026, 3, 20);
+        LocalDate paymentDate = LocalDate.of(2026, 4, 5);
+        ProventRequestDTO request = new ProventRequestDTO(
+                asset.getId(),
+                ProventType.JCP,
+                new BigDecimal("1.00000000"),
+                comDate,
+                paymentDate
+        );
+
+        ProventOriginMetadata grossOrigin = grossJcpOrigin("brapi-bbas3-jcp-2026", "BBAS3", new BigDecimal("1.00000000"));
+
+        when(proventRepository.existsByOriginSourceAndOriginEventKey(ProventSource.BRAPI, "brapi-bbas3-jcp-2026"))
+                .thenReturn(false);
+        when(proventRepository.save(any(Provent.class))).thenAnswer(invocation -> {
+            Provent provent = invocation.getArgument(0);
+            provent.setId(UUID.randomUUID());
+            return provent;
+        });
+        when(transactionRepository.findPortfolioHoldingsByAssetAtDate(eq(asset.getId()), any(Instant.class), eq(TransactionType.BUY)))
+                .thenReturn(List.of(holding(portfolio.getId(), new BigDecimal("100.00000000"))));
+        when(portfolioRepository.findAllById(any())).thenReturn(List.of(portfolio));
+        when(marketCalendar.endOfMarketDay(comDate)).thenReturn(Instant.parse("2026-03-21T02:59:59.999999999Z"));
+        when(marketCalendar.today()).thenReturn(LocalDate.of(2026, 3, 21));
+
+        proventService.createProvent(request, asset, grossOrigin);
+
+        ArgumentCaptor<List<ProventProvision>> captor = ArgumentCaptor.forClass(List.class);
+        verify(proventProvisionRepository).saveAll(captor.capture());
+        ProventProvision provision = captor.getValue().getFirst();
+        assertThat(provision.getGrossAmount()).isEqualByComparingTo("100.00000000");
+        assertThat(provision.getWithholdingTaxAmount()).isEqualByComparingTo("17.50000000");
+        assertThat(provision.getNetAmount()).isEqualByComparingTo("82.50000000");
+        assertThat(provision.getStatus()).isEqualTo(ProventStatus.PENDING);
+    }
+
+    @Test
+    void createProventShouldApplySeventeenPointFivePercentWithholdingTaxForGrossJcpOnExactEffectiveDate() {
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("BBAS3");
+        asset.setCategory(AssetCategory.ACOES);
+
+        Portfolio portfolio = portfolio();
+
+        LocalDate comDate = LocalDate.of(2025, 12, 20);
+        LocalDate paymentDate = LocalDate.of(2026, 1, 1);
+        ProventRequestDTO request = new ProventRequestDTO(
+                asset.getId(),
+                ProventType.JCP,
+                new BigDecimal("1.00000000"),
+                comDate,
+                paymentDate
+        );
+
+        ProventOriginMetadata grossOrigin = grossJcpOrigin("brapi-bbas3-jcp-boundary-2026", "BBAS3", new BigDecimal("1.00000000"));
+
+        when(proventRepository.existsByOriginSourceAndOriginEventKey(ProventSource.BRAPI, "brapi-bbas3-jcp-boundary-2026"))
+                .thenReturn(false);
+        when(proventRepository.save(any(Provent.class))).thenAnswer(invocation -> {
+            Provent provent = invocation.getArgument(0);
+            provent.setId(UUID.randomUUID());
+            return provent;
+        });
+        when(transactionRepository.findPortfolioHoldingsByAssetAtDate(eq(asset.getId()), any(Instant.class), eq(TransactionType.BUY)))
+                .thenReturn(List.of(holding(portfolio.getId(), new BigDecimal("100.00000000"))));
+        when(portfolioRepository.findAllById(any())).thenReturn(List.of(portfolio));
+        when(marketCalendar.endOfMarketDay(comDate)).thenReturn(Instant.parse("2025-12-21T02:59:59.999999999Z"));
+        when(marketCalendar.today()).thenReturn(LocalDate.of(2026, 1, 2));
+
+        proventService.createProvent(request, asset, grossOrigin);
+
+        ArgumentCaptor<List<ProventProvision>> captor = ArgumentCaptor.forClass(List.class);
+        verify(proventProvisionRepository).saveAll(captor.capture());
+        ProventProvision provision = captor.getValue().getFirst();
+        assertThat(provision.getGrossAmount()).isEqualByComparingTo("100.00000000");
+        assertThat(provision.getWithholdingTaxAmount()).isEqualByComparingTo("17.50000000");
+        assertThat(provision.getNetAmount()).isEqualByComparingTo("82.50000000");
+        assertThat(provision.getStatus()).isEqualTo(ProventStatus.PAID);
+    }
+
+    @Test
+    void createProventShouldPreserveFifteenPercentWithholdingTaxForGrossJcpBefore2026() {
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("BBAS3");
+        asset.setCategory(AssetCategory.ACOES);
+
+        Portfolio portfolio = portfolio();
+
+        LocalDate comDate = LocalDate.of(2025, 12, 20);
+        LocalDate paymentDate = LocalDate.of(2025, 12, 31);
+        ProventRequestDTO request = new ProventRequestDTO(
+                asset.getId(),
+                ProventType.JCP,
+                new BigDecimal("1.00000000"),
+                comDate,
+                paymentDate
+        );
+
+        ProventOriginMetadata grossOrigin = grossJcpOrigin("brapi-bbas3-jcp-2025", "BBAS3", new BigDecimal("1.00000000"));
+
+        when(proventRepository.existsByOriginSourceAndOriginEventKey(ProventSource.BRAPI, "brapi-bbas3-jcp-2025"))
+                .thenReturn(false);
+        when(proventRepository.save(any(Provent.class))).thenAnswer(invocation -> {
+            Provent provent = invocation.getArgument(0);
+            provent.setId(UUID.randomUUID());
+            return provent;
+        });
+        when(transactionRepository.findPortfolioHoldingsByAssetAtDate(eq(asset.getId()), any(Instant.class), eq(TransactionType.BUY)))
+                .thenReturn(List.of(holding(portfolio.getId(), new BigDecimal("100.00000000"))));
+        when(portfolioRepository.findAllById(any())).thenReturn(List.of(portfolio));
+        when(marketCalendar.endOfMarketDay(comDate)).thenReturn(Instant.parse("2025-12-21T02:59:59.999999999Z"));
+        when(marketCalendar.today()).thenReturn(LocalDate.of(2026, 1, 2));
+
+        proventService.createProvent(request, asset, grossOrigin);
+
+        ArgumentCaptor<List<ProventProvision>> captor = ArgumentCaptor.forClass(List.class);
+        verify(proventProvisionRepository).saveAll(captor.capture());
+        ProventProvision provision = captor.getValue().getFirst();
+        assertThat(provision.getGrossAmount()).isEqualByComparingTo("100.00000000");
+        assertThat(provision.getWithholdingTaxAmount()).isEqualByComparingTo("15.00000000");
+        assertThat(provision.getNetAmount()).isEqualByComparingTo("85.00000000");
+        assertThat(provision.getStatus()).isEqualTo(ProventStatus.PAID);
+    }
+
+    @Test
+    void createProventShouldNotApplyTaxForNetJcpFrom2026() {
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("BBAS3");
+        asset.setCategory(AssetCategory.ACOES);
+
+        Portfolio portfolio = portfolio();
+
+        LocalDate comDate = LocalDate.of(2026, 3, 20);
+        LocalDate paymentDate = LocalDate.of(2026, 4, 5);
+        ProventRequestDTO request = new ProventRequestDTO(
+                asset.getId(),
+                ProventType.JCP,
+                new BigDecimal("1.00000000"),
+                comDate,
+                paymentDate
+        );
+
+        ProventOriginMetadata netOrigin = new ProventOriginMetadata(
+                ProventSource.BRAPI,
+                "brapi-bbas3-jcp-net-2026",
+                "JCP",
+                null,
+                "BBAS3",
+                null,
+                null,
+                null,
+                null,
+                new BigDecimal("1.00000000"),
+                ProventRateBasis.NET
+        );
+
+        when(proventRepository.existsByOriginSourceAndOriginEventKey(ProventSource.BRAPI, "brapi-bbas3-jcp-net-2026"))
+                .thenReturn(false);
+        when(proventRepository.save(any(Provent.class))).thenAnswer(invocation -> {
+            Provent provent = invocation.getArgument(0);
+            provent.setId(UUID.randomUUID());
+            return provent;
+        });
+        when(transactionRepository.findPortfolioHoldingsByAssetAtDate(eq(asset.getId()), any(Instant.class), eq(TransactionType.BUY)))
+                .thenReturn(List.of(holding(portfolio.getId(), new BigDecimal("100.00000000"))));
+        when(portfolioRepository.findAllById(any())).thenReturn(List.of(portfolio));
+        when(marketCalendar.endOfMarketDay(comDate)).thenReturn(Instant.parse("2026-03-21T02:59:59.999999999Z"));
+        when(marketCalendar.today()).thenReturn(LocalDate.of(2026, 3, 21));
+
+        proventService.createProvent(request, asset, netOrigin);
+
+        ArgumentCaptor<List<ProventProvision>> captor = ArgumentCaptor.forClass(List.class);
+        verify(proventProvisionRepository).saveAll(captor.capture());
+        ProventProvision provision = captor.getValue().getFirst();
+        assertThat(provision.getGrossAmount()).isEqualByComparingTo("100.00000000");
+        assertThat(provision.getWithholdingTaxAmount()).isEqualByComparingTo("0.00000000");
+        assertThat(provision.getNetAmount()).isEqualByComparingTo("100.00000000");
+        assertThat(provision.getStatus()).isEqualTo(ProventStatus.PENDING);
+    }
+
+    @Test
+    void reconcileProvisionsForPortfolioAndAssetShouldCreateUpdateAndDeleteBasedOnComDateHoldings() {
+        Portfolio portfolio = portfolio();
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("PETR4");
+
+        LocalDate fromComDate = LocalDate.of(2026, 1, 1);
+
+        Provent pCreate = new Provent();
+        pCreate.setId(UUID.randomUUID());
+        pCreate.setAsset(asset);
+        pCreate.setType(ProventType.JCP);
+        pCreate.setOriginRateBasis(ProventRateBasis.GROSS);
+        pCreate.setAmountPerShare(new BigDecimal("1.00000000"));
+        pCreate.setComDate(LocalDate.of(2026, 2, 10));
+        pCreate.setPaymentDate(LocalDate.of(2026, 2, 20));
+
+        Provent pUpdate = new Provent();
+        pUpdate.setId(UUID.randomUUID());
+        pUpdate.setAsset(asset);
+        pUpdate.setType(ProventType.DIVIDEND);
+        pUpdate.setOriginRateBasis(ProventRateBasis.NET);
+        pUpdate.setAmountPerShare(new BigDecimal("0.50000000"));
+        pUpdate.setComDate(LocalDate.of(2026, 3, 10));
+        pUpdate.setPaymentDate(LocalDate.of(2026, 4, 10));
+
+        Provent pDelete = new Provent();
+        pDelete.setId(UUID.randomUUID());
+        pDelete.setAsset(asset);
+        pDelete.setType(ProventType.DIVIDEND);
+        pDelete.setOriginRateBasis(ProventRateBasis.NET);
+        pDelete.setAmountPerShare(new BigDecimal("0.30000000"));
+        pDelete.setComDate(LocalDate.of(2026, 3, 25));
+        pDelete.setPaymentDate(LocalDate.of(2026, 4, 25));
+
+        ProventProvision existingUpdate = new ProventProvision();
+        existingUpdate.setId(UUID.randomUUID());
+        existingUpdate.setProvent(pUpdate);
+        existingUpdate.setPortfolio(portfolio);
+        existingUpdate.setAsset(asset);
+        existingUpdate.setQuantityOnComDate(new BigDecimal("10.00000000"));
+        existingUpdate.setStatus(ProventStatus.PENDING);
+
+        ProventProvision existingDelete = new ProventProvision();
+        existingDelete.setId(UUID.randomUUID());
+        existingDelete.setProvent(pDelete);
+        existingDelete.setPortfolio(portfolio);
+        existingDelete.setAsset(asset);
+
+        when(proventRepository.findByAssetAndComDateGreaterThanEqual(asset, fromComDate))
+                .thenReturn(List.of(pCreate, pUpdate, pDelete));
+        when(marketCalendar.today()).thenReturn(LocalDate.of(2026, 3, 20));
+
+        Instant endFeb = Instant.parse("2026-02-11T02:59:59.999999999Z");
+        Instant endMar10 = Instant.parse("2026-03-11T02:59:59.999999999Z");
+        Instant endMar25 = Instant.parse("2026-03-26T02:59:59.999999999Z");
+        when(marketCalendar.endOfMarketDay(pCreate.getComDate())).thenReturn(endFeb);
+        when(marketCalendar.endOfMarketDay(pUpdate.getComDate())).thenReturn(endMar10);
+        when(marketCalendar.endOfMarketDay(pDelete.getComDate())).thenReturn(endMar25);
+
+        when(transactionRepository.findPortfolioHoldingQuantityByAssetAtDate(portfolio.getId(), asset.getId(), endFeb, TransactionType.BUY))
+                .thenReturn(new BigDecimal("100.00000000"));
+        when(transactionRepository.findPortfolioHoldingQuantityByAssetAtDate(portfolio.getId(), asset.getId(), endMar10, TransactionType.BUY))
+                .thenReturn(new BigDecimal("40.00000000"));
+        when(transactionRepository.findPortfolioHoldingQuantityByAssetAtDate(portfolio.getId(), asset.getId(), endMar25, TransactionType.BUY))
+                .thenReturn(BigDecimal.ZERO);
+
+        when(proventProvisionRepository.findByProventAndPortfolio(pCreate, portfolio)).thenReturn(Optional.empty());
+        when(proventProvisionRepository.findByProventAndPortfolio(pUpdate, portfolio)).thenReturn(Optional.of(existingUpdate));
+        when(proventProvisionRepository.findByProventAndPortfolio(pDelete, portfolio)).thenReturn(Optional.of(existingDelete));
+
+        proventService.reconcileProvisionsForPortfolioAndAsset(portfolio, asset, fromComDate);
+
+        ArgumentCaptor<ProventProvision> savedCaptor = ArgumentCaptor.forClass(ProventProvision.class);
+        verify(proventProvisionRepository, times(2)).save(savedCaptor.capture());
+        verify(proventProvisionRepository).delete(existingDelete);
+
+        List<ProventProvision> saved = savedCaptor.getAllValues();
+        ProventProvision created = saved.get(0);
+        assertThat(created.getProvent()).isSameAs(pCreate);
+        assertThat(created.getGrossAmount()).isEqualByComparingTo("100.00000000");
+        assertThat(created.getWithholdingTaxAmount()).isEqualByComparingTo("17.50000000");
+        assertThat(created.getNetAmount()).isEqualByComparingTo("82.50000000");
+        assertThat(created.getStatus()).isEqualTo(ProventStatus.PAID);
+
+        ProventProvision updated = saved.get(1);
+        assertThat(updated).isSameAs(existingUpdate);
+        assertThat(updated.getQuantityOnComDate()).isEqualByComparingTo("40.00000000");
+        assertThat(updated.getGrossAmount()).isEqualByComparingTo("20.00000000");
+        assertThat(updated.getWithholdingTaxAmount()).isEqualByComparingTo("0.00000000");
+        assertThat(updated.getNetAmount()).isEqualByComparingTo("20.00000000");
+        assertThat(updated.getStatus()).isEqualTo(ProventStatus.PENDING);
+    }
+
+    @Test
+    void reconcileProvisionsForPortfolioAndAssetShouldFallbackToAvailableEventDateWhenPaymentDateIsMissing() {
+        Portfolio portfolio = portfolio();
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("BBAS3");
+
+        Provent legacyJcpWithoutPaymentDate = new Provent();
+        legacyJcpWithoutPaymentDate.setId(UUID.randomUUID());
+        legacyJcpWithoutPaymentDate.setAsset(asset);
+        legacyJcpWithoutPaymentDate.setType(ProventType.JCP);
+        legacyJcpWithoutPaymentDate.setOriginRateBasis(ProventRateBasis.GROSS);
+        legacyJcpWithoutPaymentDate.setAmountPerShare(new BigDecimal("1.00000000"));
+        legacyJcpWithoutPaymentDate.setComDate(LocalDate.of(2025, 12, 20));
+        legacyJcpWithoutPaymentDate.setPaymentDate(null);
+
+        Instant endComDate = Instant.parse("2025-12-21T02:59:59.999999999Z");
+        when(proventRepository.findByAsset(asset)).thenReturn(List.of(legacyJcpWithoutPaymentDate));
+        when(marketCalendar.endOfMarketDay(LocalDate.of(2025, 12, 20))).thenReturn(endComDate);
+        when(marketCalendar.today()).thenReturn(LocalDate.of(2026, 2, 1));
+        when(transactionRepository.findPortfolioHoldingQuantityByAssetAtDate(
+                portfolio.getId(), asset.getId(), endComDate, TransactionType.BUY))
+                .thenReturn(new BigDecimal("100.00000000"));
+        when(proventProvisionRepository.findByProventAndPortfolio(legacyJcpWithoutPaymentDate, portfolio))
+                .thenReturn(Optional.empty());
+
+        proventService.reconcileProvisionsForPortfolioAndAsset(portfolio, asset);
+
+        ArgumentCaptor<ProventProvision> savedCaptor = ArgumentCaptor.forClass(ProventProvision.class);
+        verify(proventProvisionRepository).save(savedCaptor.capture());
+
+        ProventProvision provision = savedCaptor.getValue();
+        assertThat(provision.getGrossAmount()).isEqualByComparingTo("100.00000000");
+        assertThat(provision.getWithholdingTaxAmount()).isEqualByComparingTo("15.00000000");
+        assertThat(provision.getNetAmount()).isEqualByComparingTo("85.00000000");
+    }
+
+    private ProventOriginMetadata grossJcpOrigin(String eventKey, String ticker, BigDecimal rate) {
+        return new ProventOriginMetadata(
+                ProventSource.BRAPI,
+                eventKey,
+                "JCP",
+                null,
+                ticker,
+                null,
+                null,
+                null,
+                null,
+                rate,
+                ProventRateBasis.GROSS
+        );
+    }
+
     private UserAssetHoldingProjection holding(UUID portfolioId, BigDecimal quantity) {
         return new UserAssetHoldingProjection() {
             @Override

@@ -54,13 +54,13 @@ public class BenchmarkSyncService {
             try {
                 int seriesCode = getSeriesCode(benchmark.getTicker());
                 LocalDate today = marketCalendar.today();
-                LocalDate lastStoredDate = benchmarkValueRepository.findLatestByBenchmark(benchmark)
-                        .map(BenchmarkValue::getReferenceDate)
+                Optional<LocalDate> latestStored = benchmarkValueRepository.findLatestByBenchmark(benchmark)
+                        .map(BenchmarkValue::getReferenceDate);
+                latestStored.ifPresent(date -> checkSyncDelay(benchmark, date));
+
+                LocalDate startDate = latestStored
+                        .map(date -> date.plusDays(1))
                         .orElse(today.minusYears(1));
-
-                checkSyncDelay(benchmark, lastStoredDate);
-
-                LocalDate startDate = lastStoredDate.plusDays(1);
                 LocalDate endDate = today;
 
                 if (startDate.isAfter(endDate)) continue;
@@ -73,8 +73,12 @@ public class BenchmarkSyncService {
 
                 if (data != null && !data.isEmpty()) {
                     for (BcbClient.BcbDataDTO dto : data) {
-                        LocalDate date = LocalDate.parse(dto.getData(), BCB_DATE_FORMATTER);
-                        BigDecimal value = new BigDecimal(dto.getValor());
+                        if (dto == null || dto.getData() == null || dto.getData().isBlank()
+                                || dto.getValor() == null || dto.getValor().isBlank()) {
+                            continue;
+                        }
+                        LocalDate date = LocalDate.parse(dto.getData().trim(), BCB_DATE_FORMATTER);
+                        BigDecimal value = new BigDecimal(dto.getValor().trim());
                         saveValue(benchmark, date, value);
                     }
                 } else {
@@ -82,6 +86,9 @@ public class BenchmarkSyncService {
                     // However, we don't want to log error for weekends.
                     if (marketCalendar.isMarketHoliday(endDate) || !marketCalendar.isBusinessDay(endDate)) {
                         log.debug("Nenhum dado retornado para {} em dia nao util.", benchmark.getTicker());
+                    } else {
+                        log.warn("Nenhum dado retornado para benchmark BCB {} no periodo {} a {}.",
+                                benchmark.getTicker(), startDate, endDate);
                     }
                 }
             } catch (Exception e) {
@@ -106,7 +113,8 @@ public class BenchmarkSyncService {
                     // Only sync if last stored date is before today
                     if (lastStoredDate.isBefore(today)) {
                         Optional<QuoteDTO> quote = quoteService.getCurrentQuote(benchmark.getTicker());
-                        quote.ifPresent(q -> saveValue(benchmark, today, q.price()));
+                        quote.filter(q -> q.price() != null)
+                                .ifPresent(q -> saveValue(benchmark, today, q.price()));
                     }
                 }
             } catch (Exception e) {
@@ -138,6 +146,9 @@ public class BenchmarkSyncService {
     }
 
     private void saveValue(Benchmark benchmark, LocalDate date, BigDecimal value) {
+        if (date == null || value == null) {
+            return;
+        }
         if (benchmarkValueRepository.findByBenchmarkAndReferenceDate(benchmark, date).isEmpty()) {
             BenchmarkValue bv = new BenchmarkValue();
             bv.setBenchmark(benchmark);
