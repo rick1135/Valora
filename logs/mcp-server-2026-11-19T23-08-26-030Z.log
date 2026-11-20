@@ -1,0 +1,39 @@
+[2026-11-19T23:08:26.098Z] [WARN] Could not read package.json from project root: Error: ENOENT: no such file or directory, open 'C:\Users\User\Documents\Valora\Valora\package.json'
+[2026-11-19T23:08:26.098Z] [ERROR] Couldn't find project name in package json
+[2026-11-19T23:08:26.098Z] [WARN] Could not read package.json from project root: Error: ENOENT: no such file or directory, open 'C:\Users\User\Documents\Valora\Valora\package.json'
+[2026-11-19T23:08:26.098Z] [INFO] Initializing MCP Server: unnamed-mcp-server@0.0.0
+[2026-11-19T23:08:26.098Z] [DEBUG] Initialized ToolLoader with directory: C:\Users\User\AppData\Roaming\npm\node_modules\jira-mcp-server\dist\tools
+[2026-11-19T23:08:26.099Z] [DEBUG] Initialized PromptLoader with directory: C:\Users\User\AppData\Roaming\npm\node_modules\jira-mcp-server\dist\prompts
+[2026-11-19T23:08:26.099Z] [DEBUG] Initialized ResourceLoader with directory: C:\Users\User\AppData\Roaming\npm\node_modules\jira-mcp-server\dist\resources
+[2026-11-19T23:08:26.099Z] [DEBUG] Looking for tools in: C:\Users\User\AppData\Roaming\npm\node_modules\jira-mcp-server\dist\tools
+[2026-11-19T23:08:26.099Z] [DEBUG] Looking for prompts in: C:\Users\User\AppData\Roaming\npm\node_modules\jira-mcp-server\dist\prompts
+[2026-11-19T23:08:26.099Z] [DEBUG] Looking for resources in: C:\Users\User\AppData\Roaming\npm\node_modules\jira-mcp-server\dist\resources
+[2026-11-19T23:08:26.099Z] [DEBUG] Attempting to load tools from: C:\Users\User\AppData\Roaming\npm\node_modules\jira-mcp-server\dist\tools
+[2026-11-19T23:08:26.099Z] [DEBUG] Found files in directory: ExampleTool.js
+[2026-11-19T23:08:26.099Z] [DEBUG] Checking file ExampleTool.js: included
+[2026-11-19T23:08:26.099Z] [DEBUG] Attempting to load tool from: C:\Users\User\AppData\Roaming\npm\node_modules\jira-mcp-server\dist\tools\ExampleTool.js
+[2026-11-19T23:08:26.101Z] [DEBUG] Validated tool: example_tool
+[2026-11-19T23:08:26.101Z] [DEBUG] Successfully loaded 1 tools: example_tool
+[2026-11-19T23:08:26.101Z] [DEBUG] Attempting to load prompts from: C:\Users\User\AppData\Roaming\npm\node_modules\jira-mcp-server\dist\prompts
+[2026-11-19T23:08:26.101Z] [DEBUG] No prompts directory found
+[2026-11-19T23:08:26.101Z] [DEBUG] Attempting to load resources from: C:\Users\User\AppData\Roaming\npm\node_modules\jira-mcp-server\dist\resources
+[2026-11-19T23:08:26.101Z] [DEBUG] No resources directory found
+[2026-11-19T23:08:26.102Z] [DEBUG] No prompts directory found
+[2026-11-19T23:08:26.102Z] [DEBUG] No resources directory found
+[2026-11-19T23:08:26.102Z] [DEBUG] Creating MCP Server instance
+[2026-11-19T23:08:26.102Z] [DEBUG] Server created with capabilities: {"tools":{"enabled":true}}
+[2026-11-19T23:08:26.102Z] [INFO] Starting transport...
+[2026-11-19T23:08:26.102Z] [DEBUG] Creating transport: stdio
+[2026-11-19T23:08:26.102Z] [INFO] Starting stdio transport
+[2026-11-19T23:08:26.102Z] [INFO] Transport connected successfully
+[2026-11-19T23:08:26.102Z] [INFO] Started unnamed-mcp-server@0.0.0
+[2026-11-19T23:08:26.102Z] [INFO] Transport: stdio
+[2026-11-19T23:08:26.102Z] [INFO] Tools (1): example_tool
+[2026-11-19T23:08:26.102Z] [INFO] Server running and ready for connections
+[2026-11-19T23:08:26.104Z] [DEBUG] Transport sending message: {"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}
+[2026-11-19T23:08:26.105Z] [DEBUG] Transport sending message: {"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{"enabled":true}},"serverInfo":{"name":"unnamed-mcp-server","version":"0.0.0"}},"jsonrpc":"2.0","id":2}
+[2026-11-19T23:08:26.105Z] [DEBUG] Received ListTools request: {"method":"tools/list","params":{}}
+[2026-11-19T23:08:26.105Z] [DEBUG] Found 1 tools to return
+[2026-11-19T23:08:26.105Z] [DEBUG] Tool definitions: [{"name":"example_tool","description":"An example tool that processes messages","inputSchema":{"type":"object","properties":{"message":{"type":"string","description":"Message to process"}}}}]
+[2026-11-19T23:08:26.105Z] [DEBUG] Sending ListTools response: {"tools":[{"name":"example_tool","description":"An example tool that processes messages","inputSchema":{"type":"object","properties":{"message":{"type":"string","description":"Message to process"}}}}]}
+[2026-11-19T23:08:26.105Z] [DEBUG] Transport sending message: {"result":{"tools":[{"name":"example_tool","description":"An example tool that processes messages","inputSchema":{"type":"object","properties":{"message":{"type":"string","description":"Message to process"}}}}]},"jsonrpc":"2.0","id":3}
