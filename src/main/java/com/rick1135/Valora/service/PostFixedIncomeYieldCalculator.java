@@ -31,15 +31,28 @@ public class PostFixedIncomeYieldCalculator {
         this(new MarketCalendar(Clock.systemDefaultZone()));
     }
 
-    public record PostFixedValuation(BigDecimal currentValue, boolean reliable, LocalDate valuedThrough) {
+    /**
+     * @param currentValue value after applying the available daily rates
+     * @param reliable whether the valuation has sufficient benchmark coverage
+     * @param valuedThrough last date whose daily rate was applied to the returned value, or {@code null}
+     *                      when no daily rate was applied
+     * @param pendingLatestObservation whether the unpublished D-1 observation
+     *                                 ({@code previousBusinessDay(today)}) was tolerated
+     */
+    public record PostFixedValuation(
+            BigDecimal currentValue, boolean reliable, LocalDate valuedThrough, boolean pendingLatestObservation
+    ) {
         public PostFixedValuation(BigDecimal currentValue, boolean reliable) {
-            this(currentValue, reliable, null);
+            this(currentValue, reliable, null, false);
+        }
+
+        public PostFixedValuation(BigDecimal currentValue, boolean reliable, LocalDate valuedThrough) {
+            this(currentValue, reliable, valuedThrough, false);
         }
     }
 
     /**
      * Benchmark rates for CDI and SELIC are percentages per day keyed by observation date.
-     * For daily accrual, {@code valuedThrough} is the last date whose rate was applied.
      * IPCA falls back to principal until the contractual monetary adjustment convention
      * (including anniversary and lag) and ANBIMA projections are modeled.
      */
@@ -50,18 +63,12 @@ public class PostFixedIncomeYieldCalculator {
             Map<LocalDate, BigDecimal> benchmarkRates
     ) {
         if (!supportsRateModel(asset)) {
-            return valuation(principal, false, null);
+            return valuation(principal, false, null, false);
         }
         LocalDate today = marketCalendar.today();
         LocalDate endDate = effectiveEndDate(today, asset.getExpirationDate());
-        if (purchaseDate == null) {
-            return valuation(principal, true, null);
-        }
-        if (!purchaseDate.isBefore(endDate)) {
-            return valuation(principal, true, endDate);
-        }
-        if (principal.signum() <= 0) {
-            return valuation(principal, true, null);
+        if (purchaseDate == null || !purchaseDate.isBefore(endDate) || principal.signum() <= 0) {
+            return valuation(principal, true, null, false);
         }
         return dailyValuation(asset, principal, purchaseDate, endDate, today, benchmarkRates);
     }
@@ -97,6 +104,7 @@ public class PostFixedIncomeYieldCalculator {
         LocalDate latestBusinessDay = marketCalendar.previousBusinessDay(today);
         BigDecimal accumulated = BigDecimal.ONE;
         LocalDate lastCoveredDate = null;
+        boolean pendingLatestObservation = false;
         for (LocalDate date = startDate; date.isBefore(endDate); date = date.plusDays(1)) {
             if (!marketCalendar.isBusinessDay(date)) {
                 continue;
@@ -105,19 +113,22 @@ public class PostFixedIncomeYieldCalculator {
             if (rate == null) {
                 // Only the latest daily observation can be delayed by publication.
                 if (lastCoveredDate != null && date.equals(latestBusinessDay)) {
+                    pendingLatestObservation = true;
                     break;
                 }
-                return valuation(principal, false, null);
+                return valuation(principal, false, null, false);
             }
             BigDecimal indexFactor = rateFactor(rate.multiply(indexMultiplier));
             if (indexFactor.signum() <= 0) {
-                return valuation(principal, false, null);
+                return valuation(principal, false, null, false);
             }
             accumulated = accumulated.multiply(indexFactor, MATH_CONTEXT).multiply(spreadFactor, MATH_CONTEXT);
             lastCoveredDate = date;
         }
-        LocalDate valuedThrough = lastCoveredDate == null ? startDate : lastCoveredDate;
-        return valuation(principal.multiply(accumulated), true, valuedThrough);
+        if (lastCoveredDate == null) {
+            return valuation(principal, true, null, false);
+        }
+        return valuation(principal.multiply(accumulated), true, lastCoveredDate, pendingLatestObservation);
     }
 
     private static BigDecimal dailySpreadFactor(BigDecimal spreadRate) {
@@ -129,11 +140,14 @@ public class PostFixedIncomeYieldCalculator {
         return BigDecimal.ONE.add(percentage.movePointLeft(2));
     }
 
-    private static PostFixedValuation valuation(BigDecimal value, boolean reliable, LocalDate valuedThrough) {
+    private static PostFixedValuation valuation(
+            BigDecimal value, boolean reliable, LocalDate valuedThrough, boolean pendingLatestObservation
+    ) {
         return new PostFixedValuation(
                 value.setScale(FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING),
                 reliable,
-                valuedThrough
+                valuedThrough,
+                pendingLatestObservation
         );
     }
 }

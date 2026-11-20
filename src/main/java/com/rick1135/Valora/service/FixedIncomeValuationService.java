@@ -71,10 +71,17 @@ public class FixedIncomeValuationService {
             BigDecimal currentTotalValue,
             BigDecimal currentUnitPrice,
             boolean reliable,
-            LocalDate valuedThrough
+            LocalDate valuedThrough,
+            boolean pendingLatestObservation
     ) {
         public FixedIncomeValuationResult(BigDecimal currentTotalValue, BigDecimal currentUnitPrice, boolean reliable) {
-            this(currentTotalValue, currentUnitPrice, reliable, null);
+            this(currentTotalValue, currentUnitPrice, reliable, null, false);
+        }
+
+        public FixedIncomeValuationResult(
+                BigDecimal currentTotalValue, BigDecimal currentUnitPrice, boolean reliable, LocalDate valuedThrough
+        ) {
+            this(currentTotalValue, currentUnitPrice, reliable, valuedThrough, false);
         }
     }
 
@@ -219,6 +226,7 @@ public class FixedIncomeValuationService {
         Asset asset = position.getAsset();
         BigDecimal totalValue = BigDecimal.ZERO;
         LocalDate valuedThrough = null;
+        boolean pendingLatestObservation = false;
         for (ValuationLot lot : lots) {
             if (isFixedRate(asset)) {
                 totalValue = totalValue.add(fixedIncomeYieldCalculator.calculateCurrentValue(
@@ -233,6 +241,7 @@ public class FixedIncomeValuationService {
                 return principalFallback(position);
             }
             totalValue = totalValue.add(valuation.currentValue());
+            pendingLatestObservation |= valuation.pendingLatestObservation();
             LocalDate lotValuedThrough = valuation.valuedThrough();
             if (lotValuedThrough != null && (valuedThrough == null || lotValuedThrough.isBefore(valuedThrough))) {
                 valuedThrough = lotValuedThrough;
@@ -241,7 +250,7 @@ public class FixedIncomeValuationService {
         totalValue = totalValue.setScale(FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
         BigDecimal unitPrice = totalValue.divide(position.getQuantity(),
                 FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
-        return new FixedIncomeValuationResult(totalValue, unitPrice, true, valuedThrough);
+        return new FixedIncomeValuationResult(totalValue, unitPrice, true, valuedThrough, pendingLatestObservation);
     }
 
     private FixedIncomeValuationResult principalFallback(Position position) {

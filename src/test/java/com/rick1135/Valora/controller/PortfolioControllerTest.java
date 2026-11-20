@@ -1,6 +1,7 @@
 package com.rick1135.Valora.controller;
 
 import com.rick1135.Valora.dto.response.AssetAllocationDTO;
+import com.rick1135.Valora.dto.response.AssetPositionSummaryDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.dto.response.PortfolioTargetResponseDTO;
 import com.rick1135.Valora.dto.response.PositionResponseDTO;
@@ -20,6 +21,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -110,6 +112,42 @@ class PortfolioControllerTest {
                 .andExpect(jsonPath("$.fallbackTickers[0]").value("ETF11"))
                 .andExpect(jsonPath("$.allocations[0].category").value("ACOES"))
                 .andExpect(jsonPath("$.allocations[0].percentage").value(71.4286));
+    }
+
+    @Test
+    void getPortfolioPositionsAndSummaryShouldSerializeFixedIncomeCoverage() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
+        UUID assetId = UUID.randomUUID();
+        LocalDate valuedThrough = LocalDate.of(2025, 4, 22);
+        BigDecimal principal = new BigDecimal("1000.00");
+        BigDecimal currentValue = new BigDecimal("1001.10");
+        BigDecimal profitability = new BigDecimal("0.11");
+        PositionResponseDTO position = new PositionResponseDTO(
+                assetId, "CDB_CDI", "CDB CDI", BigDecimal.ONE, principal, principal, currentValue, currentValue,
+                profitability, valuedThrough, true
+        );
+        AssetPositionSummaryDTO positionSummary = new AssetPositionSummaryDTO(
+                assetId, "CDB_CDI", "RENDA_FIXA", currentValue, BigDecimal.ONE, currentValue, true, valuedThrough, true
+        );
+        PortfolioSummaryDTO summary = new PortfolioSummaryDTO(
+                currentValue, principal, BigDecimal.ZERO,
+                new PortfolioSummaryDTO.ProfitabilityDTO(
+                        currentValue.subtract(principal), profitability, BigDecimal.ZERO, BigDecimal.ZERO, false, List.of()
+                ),
+                List.of(), List.of(positionSummary), false, List.of()
+        );
+        when(positionService.getUserPortfolio(any(), eq(portfolioId))).thenReturn(List.of(position));
+        when(portfolioService.getPortfolioSummary(any(), eq(portfolioId))).thenReturn(summary);
+
+        mockMvc.perform(get("/portfolios/{portfolioId}/positions", portfolioId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].valuedThrough").value("2025-04-22"))
+                .andExpect(jsonPath("$[0].pendingLatestObservation").value(true));
+
+        mockMvc.perform(get("/portfolios/{portfolioId}/summary", portfolioId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.positions[0].valuedThrough").value("2025-04-22"))
+                .andExpect(jsonPath("$.positions[0].pendingLatestObservation").value(true));
     }
 
     @Test

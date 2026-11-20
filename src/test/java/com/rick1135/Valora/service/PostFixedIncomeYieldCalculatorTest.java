@@ -37,7 +37,7 @@ class PostFixedIncomeYieldCalculatorTest {
                         APRIL_17.plusDays(4), BigDecimal.TEN, APRIL_24, BigDecimal.TEN)
         );
 
-        assertValuation(result, expectedValue, true, APRIL_23);
+        assertValuation(result, expectedValue, true, APRIL_23, false);
     }
 
     @Test
@@ -48,7 +48,7 @@ class PostFixedIncomeYieldCalculatorTest {
                 asset, PRINCIPAL, APRIL_17, Map.of(APRIL_17, DAILY_RATE, APRIL_22, DAILY_RATE, APRIL_23, DAILY_RATE)
         );
 
-        assertValuation(result, "1001.66878105", true, APRIL_23);
+        assertValuation(result, "1001.66878105", true, APRIL_23, false);
     }
 
     @ParameterizedTest
@@ -74,7 +74,7 @@ class PostFixedIncomeYieldCalculatorTest {
                 asset, PRINCIPAL, purchaseDate, rates
         );
 
-        assertValuation(result, "1000.00000000", false, null);
+        assertValuation(result, "1000.00000000", false, null, false);
     }
 
     @ParameterizedTest
@@ -86,7 +86,7 @@ class PostFixedIncomeYieldCalculatorTest {
                 asset, PRINCIPAL, APRIL_23, Map.of(APRIL_23, DAILY_RATE)
         );
 
-        assertValuation(result, "1000.00000000", false, null);
+        assertValuation(result, "1000.00000000", false, null, false);
     }
 
     @Test
@@ -97,7 +97,7 @@ class PostFixedIncomeYieldCalculatorTest {
                 asset, PRINCIPAL, APRIL_23, Map.of(APRIL_23, DAILY_RATE)
         );
 
-        assertValuation(result, "1000.55000000", true, APRIL_23);
+        assertValuation(result, "1000.55000000", true, APRIL_23, false);
     }
 
     @Test
@@ -109,7 +109,7 @@ class PostFixedIncomeYieldCalculatorTest {
                 asset, PRINCIPAL, APRIL_17, Map.of(APRIL_17, DAILY_RATE, APRIL_22, DAILY_RATE, APRIL_23, BigDecimal.TEN)
         );
 
-        assertValuation(result, "1001.10030250", true, APRIL_22);
+        assertValuation(result, "1001.10030250", true, APRIL_22, false);
     }
 
     @ParameterizedTest
@@ -121,7 +121,7 @@ class PostFixedIncomeYieldCalculatorTest {
                 asset, PRINCIPAL, lastCoveredDate, Map.of(lastCoveredDate, DAILY_RATE)
         );
 
-        assertValuation(result, "1000.55000000", true, lastCoveredDate);
+        assertValuation(result, "1000.55000000", true, lastCoveredDate, true);
     }
 
     @Test
@@ -131,13 +131,13 @@ class PostFixedIncomeYieldCalculatorTest {
 
         assertValuation(calculator.calculateCurrentValue(
                 asset, PRINCIPAL, APRIL_17, Map.of(APRIL_17, DAILY_RATE, APRIL_22, DAILY_RATE)
-        ), "1001.10030250", true, APRIL_22);
+        ), "1001.10030250", true, APRIL_22, true);
         assertValuation(calculator.calculateCurrentValue(
                 asset, PRINCIPAL, APRIL_17, Map.of(APRIL_17, DAILY_RATE)
-        ), "1000.00000000", false, null);
+        ), "1000.00000000", false, null, false);
         assertValuation(calculator.calculateCurrentValue(
                 asset, PRINCIPAL, APRIL_23, Map.of()
-        ), "1000.00000000", false, null);
+        ), "1000.00000000", false, null, false);
     }
 
     @Test
@@ -148,7 +148,7 @@ class PostFixedIncomeYieldCalculatorTest {
                 asset, PRINCIPAL, APRIL_17, Map.of(APRIL_17, DAILY_RATE, APRIL_23, DAILY_RATE)
         );
 
-        assertValuation(result, "1000.00000000", false, null);
+        assertValuation(result, "1000.00000000", false, null, false);
     }
 
     @Test
@@ -160,7 +160,7 @@ class PostFixedIncomeYieldCalculatorTest {
                 asset, PRINCIPAL, purchaseDate, Map.of()
         );
 
-        assertValuation(result, "1000.00000000", true, purchaseDate);
+        assertValuation(result, "1000.00000000", true, null, false);
     }
 
     @Test
@@ -168,9 +168,12 @@ class PostFixedIncomeYieldCalculatorTest {
         Asset asset = asset(FixedIncomeIndexer.CDI, FixedIncomeRateType.PERCENTAGE_OF_INDEX, "100");
         PostFixedIncomeYieldCalculator calculator = calculatorOn(APRIL_24);
 
-        assertValuation(calculator.calculateCurrentValue(asset, PRINCIPAL, null, Map.of()), "1000.00000000", true, null);
-        assertValuation(calculator.calculateCurrentValue(asset, PRINCIPAL, APRIL_24, Map.of()), "1000.00000000", true, APRIL_24);
-        assertValuation(calculator.calculateCurrentValue(asset, BigDecimal.ZERO, APRIL_17, Map.of()), "0.00000000", true, null);
+        assertValuation(calculator.calculateCurrentValue(asset, PRINCIPAL, null, Map.of()),
+                "1000.00000000", true, null, false);
+        assertValuation(calculator.calculateCurrentValue(asset, PRINCIPAL, APRIL_24, Map.of()),
+                "1000.00000000", true, null, false);
+        assertValuation(calculator.calculateCurrentValue(asset, BigDecimal.ZERO, APRIL_17, Map.of()),
+                "0.00000000", true, null, false);
     }
 
     @Test
@@ -180,7 +183,7 @@ class PostFixedIncomeYieldCalculatorTest {
 
         PostFixedValuation result = calculatorOn(APRIL_24).calculateCurrentValue(asset, PRINCIPAL, APRIL_24, Map.of());
 
-        assertValuation(result, "1000.00000000", true, APRIL_24);
+        assertValuation(result, "1000.00000000", true, null, false);
     }
 
     private PostFixedIncomeYieldCalculator calculatorOn(LocalDate date) {
@@ -201,10 +204,12 @@ class PostFixedIncomeYieldCalculatorTest {
     }
 
     private void assertValuation(
-            PostFixedValuation result, String expectedValue, boolean reliable, LocalDate valuedThrough
+            PostFixedValuation result, String expectedValue, boolean reliable, LocalDate valuedThrough,
+            boolean pendingLatestObservation
     ) {
         assertThat(result.reliable()).isEqualTo(reliable);
         assertThat(result.currentValue()).isEqualTo(new BigDecimal(expectedValue));
         assertThat(result.valuedThrough()).isEqualTo(valuedThrough);
+        assertThat(result.pendingLatestObservation()).isEqualTo(pendingLatestObservation);
     }
 }

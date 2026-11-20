@@ -76,6 +76,7 @@ class FixedIncomeValuationServiceTest {
         assertThat(result.currentTotalValue()).isEqualByComparingTo("2100.00000000");
         assertThat(result.currentUnitPrice()).isEqualByComparingTo("1050.00000000");
         assertThat(result.valuedThrough()).isNull();
+        assertThat(result.pendingLatestObservation()).isFalse();
     }
 
     @Test
@@ -166,9 +167,11 @@ class FixedIncomeValuationServiceTest {
         assertThat(results.get(multipleLots).currentTotalValue()).isEqualByComparingTo("1901.75486603");
         assertThat(results.get(multipleLots).currentUnitPrice()).isEqualByComparingTo("950.87743302");
         assertThat(results.get(multipleLots).valuedThrough()).isEqualTo(secondOpenDay);
+        assertThat(results.get(multipleLots).pendingLatestObservation()).isFalse();
         assertThat(results.get(singleLot).reliable()).isTrue();
         assertThat(results.get(singleLot).currentTotalValue()).isEqualByComparingTo("1000.55000000");
         assertThat(results.get(singleLot).valuedThrough()).isEqualTo(secondOpenDay);
+        assertThat(results.get(singleLot).pendingLatestObservation()).isFalse();
         verify(benchmarkRepository).findByTicker("CDI");
         verify(benchmarkValueRepository).findByBenchmarkInRange(cdi, firstOpenDay, secondOpenDay);
         verifyNoMoreInteractions(benchmarkRepository, benchmarkValueRepository);
@@ -192,7 +195,7 @@ class FixedIncomeValuationServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = FixedIncomeIndexer.class, names = {"CDI", "SELIC"})
-    void valuatePositionShouldReportEarliestLotCoverageWhenD1IsPending(FixedIncomeIndexer indexer) {
+    void valuatePositionShouldReportCoverageAndPendingD1WhenAnyOpenLotIsPending(FixedIncomeIndexer indexer) {
         LocalDate lastCoveredDate = LocalDate.of(2025, 4, 16);
         var calendar = new MarketCalendar(Clock.fixed(Instant.parse("2025-04-22T15:00:00Z"), ZoneOffset.UTC));
         var service = new FixedIncomeValuationService(new FixedIncomeYieldCalculator(calendar), calendar,
@@ -212,6 +215,7 @@ class FixedIncomeValuationServiceTest {
         assertThat(result.reliable()).isTrue();
         assertThat(result.currentTotalValue()).isEqualByComparingTo("2000.55000000");
         assertThat(result.valuedThrough()).isEqualTo(lastCoveredDate);
+        assertThat(result.pendingLatestObservation()).isTrue();
     }
 
     @Test
@@ -226,6 +230,7 @@ class FixedIncomeValuationServiceTest {
         assertThat(result.currentTotalValue()).isEqualByComparingTo("2000.00000000");
         assertThat(result.currentUnitPrice()).isEqualByComparingTo("1000.00000000");
         assertThat(result.valuedThrough()).isNull();
+        assertThat(result.pendingLatestObservation()).isFalse();
         verifyNoInteractions(benchmarkRepository, benchmarkValueRepository);
     }
 

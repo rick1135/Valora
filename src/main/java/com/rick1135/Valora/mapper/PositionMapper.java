@@ -7,6 +7,7 @@ import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface PositionMapper {
@@ -19,11 +20,15 @@ public interface PositionMapper {
     @Mapping(target = "currentPrice", source = "currentPrice")
     @Mapping(target = "currentTotalValue", source = "currentTotalValue")
     @Mapping(target = "profitability", source = "profitability")
+    @Mapping(target = "valuedThrough", source = "valuedThrough")
+    @Mapping(target = "pendingLatestObservation", source = "pendingLatestObservation")
     PositionResponseDTO toResponse(
             Position position,
             BigDecimal totalCost,
             BigDecimal currentPrice,
             BigDecimal currentTotalValue,
-            BigDecimal profitability
+            BigDecimal profitability,
+            LocalDate valuedThrough,
+            boolean pendingLatestObservation
     );
 }
