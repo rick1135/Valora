@@ -11,6 +11,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -19,13 +20,20 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,6 +44,9 @@ class TokenServiceTest {
 
     @Mock
     private ValueOperations<String, Object> valueOperations;
+
+    @Mock
+    private SetOperations<String, Object> setOperations;
 
     private TokenService tokenService;
 
@@ -64,12 +75,30 @@ class TokenServiceTest {
         String refreshToken = tokenService.generateRefreshToken(user);
 
         ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(valueOperations).set(keyCaptor.capture(), org.mockito.Mockito.eq(user.getId().toString()), org.mockito.Mockito.eq(Duration.ofDays(30)));
+        verify(valueOperations).set(keyCaptor.capture(), eq(user.getId().toString()), eq(Duration.ofDays(30)));
         String redisKey = keyCaptor.getValue();
 
         assertThat(refreshToken).isNotBlank();
         assertThat(redisKey).startsWith("auth:refresh:");
         assertThat(redisKey).doesNotContain(refreshToken);
+    }
+
+    @Test
+    void generateRefreshTokenIndexesKeyForUserAndRenewsIndexTtl() {
+        User user = user("user@valora.dev");
+        user.setId(UUID.randomUUID());
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+
+        tokenService.generateRefreshToken(user);
+
+        var refreshKey = ArgumentCaptor.forClass(String.class);
+        var indexKey = "auth:refresh:user:" + user.getId();
+        var ttl = Duration.ofDays(30);
+        var order = inOrder(valueOperations, setOperations, redisTemplate);
+        order.verify(valueOperations).set(refreshKey.capture(), eq(user.getId().toString()), eq(ttl));
+        order.verify(setOperations).add(indexKey, refreshKey.getValue());
+        order.verify(redisTemplate).expire(indexKey, ttl);
     }
 
     @Test
@@ -82,6 +111,32 @@ class TokenServiceTest {
 
         assertThat(consumedUserId).isEqualTo(userId);
         verify(valueOperations).getAndDelete(anyString());
+    }
+
+    @Test
+    void consumeRefreshTokenRemovesConsumedKeyFromUserIndex() {
+        UUID userId = UUID.randomUUID();
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(valueOperations.getAndDelete(anyString())).thenReturn(userId.toString());
+
+        assertThat(tokenService.consumeRefreshToken("refresh-token")).isEqualTo(userId);
+
+        var refreshKey = ArgumentCaptor.forClass(String.class);
+        verify(valueOperations).getAndDelete(refreshKey.capture());
+        verify(setOperations).remove("auth:refresh:user:" + userId, refreshKey.getValue());
+    }
+
+    @Test
+    void consumeRefreshTokenIgnoresIndexCleanupFailure() {
+        UUID userId = UUID.randomUUID();
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(valueOperations.getAndDelete(anyString())).thenReturn(userId.toString());
+        doThrow(new RuntimeException("redis down"))
+                .when(setOperations).remove(eq("auth:refresh:user:" + userId), anyString());
+
+        assertThat(tokenService.consumeRefreshToken("refresh-token")).isEqualTo(userId);
     }
 
     @Test
@@ -201,6 +256,56 @@ class TokenServiceTest {
         tokenService.revokeRefreshToken("refresh-token");
 
         verify(redisTemplate).delete(anyString());
+    }
+
+    @Test
+    void revokeAllUserTokensDeletesIndexedRefreshKeysAndIndex() {
+        UUID userId = UUID.randomUUID();
+        String indexKey = "auth:refresh:user:" + userId;
+        String firstKey = "auth:refresh:first-hash";
+        String secondKey = "auth:refresh:second-hash";
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.members(indexKey)).thenReturn(Set.of(firstKey, secondKey));
+
+        tokenService.revokeAllUserTokens(userId);
+
+        ArgumentCaptor<List<String>> refreshKeys = ArgumentCaptor.captor();
+        var order = inOrder(setOperations, redisTemplate);
+        order.verify(redisTemplate).delete(refreshKeys.capture());
+        order.verify(redisTemplate).delete(indexKey);
+        assertThat(refreshKeys.getValue()).containsExactlyInAnyOrder(firstKey, secondKey);
+    }
+
+    @Test
+    void revokeAllUserTokensCanBeRepeatedWhenIndexIsMissing() {
+        UUID userId = UUID.randomUUID();
+        String indexKey = "auth:refresh:user:" + userId;
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.members(indexKey)).thenReturn(Set.of());
+
+        tokenService.revokeAllUserTokens(userId);
+        tokenService.revokeAllUserTokens(userId);
+
+        verify(redisTemplate, times(2)).delete(indexKey);
+    }
+
+    @Test
+    void revokeAllUserTokensIgnoresNullUserId() {
+        tokenService.revokeAllUserTokens(null);
+
+        verifyNoInteractions(redisTemplate);
+    }
+
+    @Test
+    void revokeAllUserTokensIgnoresRedisFailure() {
+        UUID userId = UUID.randomUUID();
+        String indexKey = "auth:refresh:user:" + userId;
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.members(indexKey)).thenThrow(new RuntimeException("redis down"));
+
+        tokenService.revokeAllUserTokens(userId);
+
+        verify(setOperations).members(indexKey);
     }
 
     @Test

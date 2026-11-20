@@ -1,6 +1,8 @@
 package com.rick1135.Valora.controller;
 
+import com.rick1135.Valora.dto.request.AssetImportRequestDTO;
 import com.rick1135.Valora.dto.request.AssetRequestDTO;
+import com.rick1135.Valora.dto.request.FixedIncomeAssetRequestDTO;
 import com.rick1135.Valora.dto.response.AssetResponseDTO;
 import com.rick1135.Valora.service.AssetService;
 import jakarta.validation.Valid;
@@ -27,6 +29,18 @@ public class AssetController {
     public ResponseEntity<AssetResponseDTO> registerAsset(@Valid @RequestBody AssetRequestDTO assetRequestDTO) {
         AssetResponseDTO response = assetService.createAsset(assetRequestDTO);
         return ResponseEntity.status(201).body(response);
+    }
+
+    @PostMapping("/import")
+    public ResponseEntity<AssetResponseDTO> importAsset(@Valid @RequestBody AssetImportRequestDTO request) {
+        return ResponseEntity.ok(assetService.importAssetFromBrapi(request));
+    }
+
+    @PostMapping("/fixed-income")
+    public ResponseEntity<AssetResponseDTO> registerFixedIncomeAsset(
+            @Valid @RequestBody FixedIncomeAssetRequestDTO request
+    ) {
+        return ResponseEntity.status(201).body(assetService.createFixedIncomeAsset(request));
     }
 
     @GetMapping

@@ -23,6 +23,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.web.servlet.HandlerExceptionResolver;
@@ -59,6 +61,9 @@ class AccessTokenSecurityTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @BeforeEach
     void setUp() {
@@ -113,6 +118,30 @@ class AccessTokenSecurityTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/metas.js"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void accountStaticFrontendShouldBePublic() throws Exception {
+        mockMvc.perform(get("/conta.html")).andExpect(status().isOk());
+        mockMvc.perform(get("/conta.js")).andExpect(status().isOk());
+        mockMvc.perform(get("/conta-page.css")).andExpect(status().isOk());
+    }
+
+    @Test
+    void accountProfileShouldReturnUnauthorizedWhenAuthenticationIsMissing() throws Exception {
+        assertGenericUnauthorized(mockMvc.perform(get("/account/me")), null);
+    }
+
+    @Test
+    void passwordEncoderSupportsLongPasswordsAndExistingBcryptHashes() {
+        String rawPassword = "a".repeat(127) + "b";
+        String encodedPassword = passwordEncoder.encode(rawPassword);
+        String existingHash = new BCryptPasswordEncoder().encode("existing-password");
+
+        assertThat(passwordEncoder.matches(rawPassword, encodedPassword)).isTrue();
+        assertThat(passwordEncoder.matches("a".repeat(127) + "c", encodedPassword)).isFalse();
+        assertThat(passwordEncoder.matches("existing-password", existingHash)).isTrue();
+        assertThat(passwordEncoder.encode("short-password")).startsWith("$2");
     }
 
     @Test
@@ -393,6 +422,9 @@ class AccessTokenSecurityTest {
                 "/lancamentos.html",
                 "/lancamentos.js",
                 "/lancamentos-page.css",
+                "/conta.html",
+                "/conta.js",
+                "/conta-page.css",
                 "/portfolio-ui.js",
                 "/portfolio-ui.css",
                 "/styles.css",
@@ -402,6 +434,10 @@ class AccessTokenSecurityTest {
                 "/metas.js"
         })
         void dashboardStaticFrontend() {
+        }
+
+        @GetMapping("/account/me")
+        void accountProfile() {
         }
 
         @GetMapping("/portfolios/{portfolioId}")

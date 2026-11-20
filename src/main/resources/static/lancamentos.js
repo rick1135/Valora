@@ -22,6 +22,102 @@
   const next = document.querySelector("#history-next");
   const pageInfo = document.querySelector("#history-page-info");
   const logout = document.querySelector("#logout-btn");
+  const importButton = document.querySelector("#import-csv-btn");
+  const importModal = document.querySelector("#csv-import-modal");
+  const importBackdrop = document.querySelector("#csv-import-backdrop");
+  const importForm = document.querySelector("#csv-import-form");
+  const fileInput = document.querySelector("#csv-file-input");
+  const preview = document.querySelector("#csv-preview");
+  const importStatus = document.querySelector("#csv-import-status");
+  const confirmImport = document.querySelector("#csv-confirm-btn");
+  let importFormData = null;
+
+  function setImportStatus(message, tone = "error") {
+    importStatus.textContent = message;
+    importStatus.hidden = !message;
+    importStatus.dataset.tone = tone;
+  }
+
+  function closeImport() {
+    importModal.hidden = true;
+    importBackdrop.hidden = true;
+    importFormData = null;
+    confirmImport.disabled = true;
+  }
+
+  function appendImportList(parent, title, values, renderValue = (value) => String(value)) {
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    const list = document.createElement("ul");
+    values.forEach((value) => {
+      const item = document.createElement("li");
+      item.textContent = renderValue(value);
+      list.append(item);
+    });
+    parent.append(heading, list);
+  }
+
+  function renderImportPreview(result) {
+    preview.replaceChildren();
+    preview.hidden = false;
+    const counts = document.createElement("p");
+    counts.textContent = `Linhas: ${result.totalRows ?? 0} · Válidas: ${result.validCount ?? 0} · Com erros: ${result.errorCount ?? 0}`;
+    preview.append(counts);
+    const missing = Array.isArray(result.missingTickers) ? result.missingTickers : [];
+    if (missing.length) {
+      const warning = document.createElement("p");
+      warning.textContent = "Estes ativos precisam ser cadastrados ou importados antes da importação.";
+      preview.append(warning);
+      appendImportList(preview, "Ativos ausentes", missing);
+    }
+    const errors = Array.isArray(result.errors) ? result.errors : [];
+    if (errors.length) appendImportList(preview, "Erros encontrados", errors, (item) => `Linha ${item.lineNumber ?? item.line ?? item.row ?? "?"}: ${item.message || "Erro de validação"}`);
+    const samples = Array.isArray(result.validRows) ? result.validRows.slice(0, 10) : (Array.isArray(result.sample) ? result.sample.slice(0, 10) : []);
+    if (samples.length) appendImportList(preview, "Amostra de linhas válidas", samples, (item) => `${item.ticker || item.assetTicker || ""} ${item.type || ""} ${item.quantity ?? ""} @ ${item.unitPrice ?? ""} (${item.date || item.transactionDate || ""})`);
+    confirmImport.disabled = !(result.validCount > 0 && result.errorCount === 0 && missing.length === 0);
+  }
+
+  importButton.addEventListener("click", () => {
+    importModal.hidden = false;
+    importBackdrop.hidden = false;
+    setImportStatus("");
+    preview.hidden = true;
+    confirmImport.disabled = true;
+    fileInput.focus();
+  });
+  document.querySelector("#csv-import-close").addEventListener("click", closeImport);
+  importBackdrop.addEventListener("click", closeImport);
+  importForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const file = fileInput.files?.[0];
+    if (!file) { setImportStatus("Selecione um arquivo CSV."); return; }
+    if (file.size > 2 * 1024 * 1024) { setImportStatus("O arquivo deve ter no máximo 2 MB."); return; }
+    importFormData = new FormData();
+    importFormData.append("file", file);
+    const analyze = document.querySelector("#csv-analyze-btn");
+    analyze.disabled = true;
+    setImportStatus("Analisando arquivo...", "info");
+    try {
+      if (!activePortfolioId) activePortfolioId = (await api.getPortfolio())?.id;
+      if (!activePortfolioId) throw new Error("Nenhuma carteira ativa encontrada.");
+      const result = await api.request(`/transactions/import/preview?portfolioId=${encodeURIComponent(activePortfolioId)}`, { method: "POST", body: importFormData });
+      renderImportPreview(result);
+      setImportStatus("Prévia pronta.", "success");
+    } catch (error) { setImportStatus(error.message); }
+    finally { analyze.disabled = false; }
+  });
+  confirmImport.addEventListener("click", async () => {
+    if (!importFormData || confirmImport.disabled || !activePortfolioId) return;
+    confirmImport.disabled = true;
+    setImportStatus("Importando operações...", "info");
+    try {
+      const result = await api.request(`/transactions/import?portfolioId=${encodeURIComponent(activePortfolioId)}`, { method: "POST", body: importFormData });
+      setImportStatus(`Importação concluída: ${result.importedCount ?? 0} importadas; ${result.skippedDuplicatesCount ?? 0} duplicatas ignoradas.`, "success");
+      await loadHistory(0);
+      window.setTimeout(closeImport, 1400);
+    } catch (error) { setImportStatus(error.message); confirmImport.disabled = false; }
+  });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !importModal.hidden) closeImport(); });
 
   let filters = {};
   let page = 0;

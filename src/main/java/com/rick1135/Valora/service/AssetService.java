@@ -1,22 +1,34 @@
 package com.rick1135.Valora.service;
 
+import com.rick1135.Valora.client.BrapiClient;
+import com.rick1135.Valora.dto.brapi.BrapiResponseDTO;
+import com.rick1135.Valora.dto.brapi.BrapiResultDTO;
+import com.rick1135.Valora.dto.request.AssetImportRequestDTO;
 import com.rick1135.Valora.dto.request.AssetRequestDTO;
+import com.rick1135.Valora.dto.request.FixedIncomeAssetRequestDTO;
 import com.rick1135.Valora.dto.response.AssetResponseDTO;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.entity.FixedIncomeIndexer;
 import com.rick1135.Valora.entity.FixedIncomeRateType;
 import com.rick1135.Valora.exception.AssetAlreadyExistsException;
+import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.mapper.AssetMapper;
 import com.rick1135.Valora.repository.AssetRepository;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.util.List;
 import java.util.Locale;
@@ -29,16 +41,67 @@ public class AssetService {
     private final AssetRepository assetRepository;
     private final AssetMapper assetMapper;
     private final MarketCalendar marketCalendar;
+    private final BrapiClient brapiClient;
+    private final String brapiToken;
 
     @Autowired
-    public AssetService(AssetRepository assetRepository, AssetMapper assetMapper, MarketCalendar marketCalendar) {
+    public AssetService(AssetRepository assetRepository, AssetMapper assetMapper, MarketCalendar marketCalendar,
+                        @Nullable BrapiClient brapiClient, @Value("${api.brapi.token:}") String brapiToken) {
         this.assetRepository = assetRepository;
         this.assetMapper = assetMapper;
         this.marketCalendar = marketCalendar != null ? marketCalendar : new MarketCalendar(Clock.systemDefaultZone());
+        this.brapiClient = brapiClient;
+        this.brapiToken = brapiToken;
+    }
+
+    public AssetService(AssetRepository assetRepository, AssetMapper assetMapper, MarketCalendar marketCalendar) {
+        this(assetRepository, assetMapper, marketCalendar, null, "");
     }
 
     public AssetService(AssetRepository assetRepository, AssetMapper assetMapper) {
         this(assetRepository, assetMapper, new MarketCalendar(Clock.systemDefaultZone()));
+    }
+
+    public AssetResponseDTO importAssetFromBrapi(AssetImportRequestDTO request) {
+        String ticker = normalizeTicker(request.ticker());
+        if (request.category() == AssetCategory.RENDA_FIXA) {
+            throw new IllegalArgumentException("Para cadastrar renda fixa, use /assets/fixed-income.");
+        }
+
+        var existing = assetRepository.findByTickerIgnoreCase(ticker);
+        if (existing.isPresent()) {
+            return assetMapper.toResponse(existing.get());
+        }
+
+        BrapiResultDTO quote = findBrapiQuote(ticker);
+        String name = ticker;
+        if (StringUtils.hasText(quote.longName())) {
+            name = quote.longName().strip();
+        } else if (StringUtils.hasText(quote.shortName())) {
+            name = quote.shortName().strip();
+        }
+        AssetCategory category = request.category() != null ? request.category() : inferCategory(ticker, name);
+        Asset asset = new Asset();
+        asset.setTicker(ticker);
+        asset.setName(name);
+        asset.setCategory(category);
+
+        try {
+            asset = assetRepository.saveAndFlush(asset);
+        } catch (DataIntegrityViolationException exception) {
+            // saveAndFlush runs in its own repository transaction before the retry.
+            if (!isUniqueViolation(exception)) {
+                throw exception;
+            }
+            asset = assetRepository.findByTickerIgnoreCase(ticker).orElseThrow(() -> exception);
+        }
+        return assetMapper.toResponse(asset);
+    }
+
+    public AssetResponseDTO createFixedIncomeAsset(FixedIncomeAssetRequestDTO request) {
+        return createAsset(new AssetRequestDTO(request.ticker(), request.name(), AssetCategory.RENDA_FIXA,
+                request.indexer(), request.annualRate(), request.issuer(), request.expirationDate(),
+                request.rateType(), request.spreadRate()));
     }
 
     public AssetResponseDTO createAsset(AssetRequestDTO request) {
@@ -78,11 +141,8 @@ public class AssetService {
             return assetMapper.toResponse(savedAsset);
         } catch (DataIntegrityViolationException exception) {
             Throwable rootCause = exception.getMostSpecificCause();
-            if (rootCause instanceof java.sql.SQLException sqlException) {
-                String sqlState = sqlException.getSQLState();
-                if ("23505".equals(sqlState)) {
-                    throw new AssetAlreadyExistsException("Ativo com ticker '" + normalizedTicker + "' ja cadastrado.");
-                }
+            if (isUniqueViolation(exception)) {
+                throw new AssetAlreadyExistsException("Ativo com ticker '" + normalizedTicker + "' ja cadastrado.");
             }
             throw new IllegalArgumentException("Erro de integridade de dados ao salvar o ativo: " + (rootCause != null ? rootCause.getMessage() : ""));
         }
@@ -106,6 +166,45 @@ public class AssetService {
                 .stream()
                 .map(assetMapper::toResponse)
                 .toList();
+    }
+
+    private BrapiResultDTO findBrapiQuote(String ticker) {
+        if (brapiClient == null || !StringUtils.hasText(brapiToken)) {
+            throw new IllegalArgumentException("Cliente ou token da BRAPI indisponivel para importar ativos.");
+        }
+        String notFoundMessage = "Ativo '" + ticker + "' nao encontrado na BRAPI.";
+        BrapiResponseDTO response;
+        try {
+            response = brapiClient.getQuote(ticker, brapiToken);
+        } catch (RestClientException exception) {
+            if (exception instanceof RestClientResponseException httpException
+                    && httpException.getStatusCode().value() == 404) {
+                throw new AssetNotFoundException(notFoundMessage);
+            }
+            throw new IllegalArgumentException("Nao foi possivel consultar o ativo '" + ticker + "' na BRAPI.", exception);
+        }
+        if (response == null || response.results() == null || response.results().isEmpty()
+                || response.results().getFirst() == null) {
+            throw new AssetNotFoundException(notFoundMessage);
+        }
+        return response.results().getFirst();
+    }
+
+    private AssetCategory inferCategory(String ticker, String name) {
+        String normalizedName = name.toUpperCase(Locale.ROOT);
+        if (ticker.endsWith("11")
+                && (normalizedName.contains("FII") || normalizedName.contains("FUNDO") || normalizedName.contains("IMOB"))) {
+            return AssetCategory.FII;
+        }
+        if (normalizedName.contains("ETF") || normalizedName.contains("ISHARES") || normalizedName.contains("INDEX")) {
+            return AssetCategory.ETF;
+        }
+        return AssetCategory.ACOES;
+    }
+
+    private boolean isUniqueViolation(DataIntegrityViolationException exception) {
+        return exception.getMostSpecificCause() instanceof SQLException sqlException
+                && "23505".equals(sqlException.getSQLState());
     }
 
     private void validateRates(AssetRequestDTO request, FixedIncomeRateType rateType) {

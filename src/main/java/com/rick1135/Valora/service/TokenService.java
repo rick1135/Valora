@@ -10,6 +10,7 @@ import com.rick1135.Valora.exception.InvalidTokenException;
 import com.rick1135.Valora.exception.TokenGenerationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -19,11 +20,13 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class TokenService {
     private static final String REFRESH_TOKEN_PREFIX = "auth:refresh:";
+    private static final String USER_REFRESH_TOKEN_PREFIX = "auth:refresh:user:";
 
     @Value("${security.jwt.secret}")
     private String secret;
@@ -75,11 +78,15 @@ public class TokenService {
             if (user.getId() == null) {
                 throw new IllegalArgumentException("User id is required to generate refresh token.");
             }
-            redisTemplate.opsForValue().set(
-                    buildRefreshKey(refreshToken),
-                    user.getId().toString(),
-                    Duration.ofDays(refreshExpirationDays)
-            );
+            String refreshKey = buildRefreshKey(refreshToken);
+            Duration ttl = Duration.ofDays(refreshExpirationDays);
+            redisTemplate.opsForValue().set(refreshKey, user.getId().toString(), ttl);
+            SetOperations<String, Object> setOps = redisTemplate.opsForSet();
+            if (setOps != null) {
+                String indexKey = USER_REFRESH_TOKEN_PREFIX + user.getId();
+                setOps.add(indexKey, refreshKey);
+                redisTemplate.expire(indexKey, ttl);
+            }
             return refreshToken;
         } catch (Exception exception) {
             throw new TokenGenerationException("Erro ao gerar refresh token.", exception);
@@ -91,9 +98,11 @@ public class TokenService {
             throw new InvalidTokenException(GlobalExceptionHandler.GENERIC_REFRESH_TOKEN_MESSAGE);
         }
 
+        String refreshKey;
         Object storedValue;
         try {
-            storedValue = redisTemplate.opsForValue().getAndDelete(buildRefreshKey(refreshToken));
+            refreshKey = buildRefreshKey(refreshToken);
+            storedValue = redisTemplate.opsForValue().getAndDelete(refreshKey);
         } catch (Exception exception) {
             throw new InvalidTokenException(GlobalExceptionHandler.GENERIC_REFRESH_TOKEN_MESSAGE);
         }
@@ -102,11 +111,22 @@ public class TokenService {
             throw new InvalidTokenException(GlobalExceptionHandler.GENERIC_REFRESH_TOKEN_MESSAGE);
         }
 
+        UUID id;
         try {
-            return UUID.fromString(userId);
+            id = UUID.fromString(userId);
         } catch (IllegalArgumentException exception) {
             throw new InvalidTokenException(GlobalExceptionHandler.GENERIC_REFRESH_TOKEN_MESSAGE);
         }
+
+        try {
+            SetOperations<String, Object> setOps = redisTemplate.opsForSet();
+            if (setOps != null) {
+                setOps.remove(USER_REFRESH_TOKEN_PREFIX + id, refreshKey);
+            }
+        } catch (Exception ignored) {
+            // Index cleanup must not prevent consumption of a valid token.
+        }
+        return id;
     }
 
     public void revokeRefreshToken(String refreshToken) {
@@ -116,6 +136,33 @@ public class TokenService {
 
         try {
             redisTemplate.delete(buildRefreshKey(refreshToken));
+        } catch (Exception ignored) {
+            // Revocation is intentionally idempotent and must not expose storage details.
+        }
+    }
+
+    public void revokeAllUserTokens(UUID userId) {
+        if (userId == null) {
+            return;
+        }
+
+        try {
+            String indexKey = USER_REFRESH_TOKEN_PREFIX + userId;
+            SetOperations<String, Object> setOps = redisTemplate.opsForSet();
+            if (setOps != null) {
+                Set<Object> members = setOps.members(indexKey);
+                if (members != null) {
+                    var refreshKeys = members.stream()
+                            .filter(String.class::isInstance)
+                            .map(String.class::cast)
+                            .filter(key -> key.startsWith(REFRESH_TOKEN_PREFIX))
+                            .toList();
+                    if (!refreshKeys.isEmpty()) {
+                        redisTemplate.delete(refreshKeys);
+                    }
+                }
+            }
+            redisTemplate.delete(indexKey);
         } catch (Exception ignored) {
             // Revocation is intentionally idempotent and must not expose storage details.
         }

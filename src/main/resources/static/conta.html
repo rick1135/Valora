@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Valora | Conta</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="portfolio-ui.css">
+    <link rel="stylesheet" href="conta-page.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar__inner">
+        <a class="brand" href="/" aria-label="Valora">Valora</a>
+        <a class="button button--ghost account-back" href="/dashboard.html">Voltar ao Dashboard</a>
+        <button class="button button--ghost topbar__logout" id="logout-btn" type="button">Sair</button>
+      </div>
+    </header>
+    <main class="shell account-page">
+      <section class="summary"><h1>Configura&ccedil;&otilde;es da conta</h1><p>Gerencie seus dados de acesso e perfil.</p></section>
+      <p class="account-banner" id="account-error" role="alert" hidden></p>
+      <p class="account-banner account-banner--success" id="account-success" role="status" hidden></p>
+      <section class="panel account-panel" aria-labelledby="profile-title">
+        <h2 id="profile-title">Perfil</h2>
+        <dl class="account-readonly"><div><dt>E-mail</dt><dd id="account-email">Carregando...</dd></div><div><dt>Data de cria&ccedil;&atilde;o</dt><dd id="account-created">Carregando...</dd></div></dl>
+        <form id="profile-form" class="account-form">
+          <label for="account-name">Nome</label><input class="portfolio-control" id="account-name" name="name" type="text" maxlength="120" required>
+          <button class="button button--primary" type="submit">Salvar perfil</button>
+        </form>
+      </section>
+      <section class="panel account-panel" aria-labelledby="password-title">
+        <h2 id="password-title">Seguran&ccedil;a / Alterar senha</h2>
+        <form id="password-form" class="account-form">
+          <label for="current-password">Senha atual</label><input class="portfolio-control" id="current-password" name="currentPassword" type="password" autocomplete="current-password" required>
+          <label for="new-password">Nova senha</label><input class="portfolio-control" id="new-password" name="newPassword" type="password" autocomplete="new-password" required>
+          <label for="confirm-password">Confirmar nova senha</label><input class="portfolio-control" id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" required>
+          <button class="button button--primary" type="submit">Alterar senha</button>
+        </form>
+      </section>
+      <section class="panel account-panel account-danger" aria-labelledby="delete-title">
+        <h2 id="delete-title">Zona de perigo / Excluir conta</h2>
+        <p>Esta a&ccedil;&atilde;o exclui sua conta permanentemente.</p>
+        <form id="delete-form" class="account-form">
+          <label for="delete-password">Senha atual</label><input class="portfolio-control" id="delete-password" name="currentPassword" type="password" autocomplete="current-password" required>
+          <label class="account-confirm"><input id="delete-confirm" type="checkbox" required> Confirmo que desejo excluir minha conta permanentemente.</label>
+          <button class="button button--danger" type="submit">Excluir conta</button>
+        </form>
+      </section>
+    </main>
+    <script src="api.js"></script>
+    <script src="conta.js"></script>
+  </body>
+</html>

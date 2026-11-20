@@ -14,14 +14,18 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.crypto.password.Pbkdf2PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 @Configuration
 @EnableWebSecurity
@@ -74,6 +78,9 @@ public class SecurityConfigurations {
                                 "/lancamentos.html",
                                 "/lancamentos.js",
                                 "/lancamentos-page.css",
+                                "/conta.html",
+                                "/conta.js",
+                                "/conta-page.css",
                                 "/portfolio-ui.js",
                                 "/portfolio-ui.css",
                                 "/styles.css",
@@ -122,6 +129,25 @@ public class SecurityConfigurations {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        PasswordEncoder bcrypt = new BCryptPasswordEncoder();
+        String pbkdf2Id = "pbkdf2@SpringSecurity_v5_8";
+        var encoder = new DelegatingPasswordEncoder(pbkdf2Id,
+                Map.of(pbkdf2Id, Pbkdf2PasswordEncoder.defaultsForSpringSecurity_v5_8()));
+        encoder.setDefaultPasswordEncoderForMatches(bcrypt);
+
+        return new PasswordEncoder() {
+            @Override
+            public String encode(CharSequence rawPassword) {
+                if (rawPassword.toString().getBytes(StandardCharsets.UTF_8).length <= 72) {
+                    return bcrypt.encode(rawPassword);
+                }
+                return encoder.encode(rawPassword);
+            }
+
+            @Override
+            public boolean matches(CharSequence rawPassword, String encodedPassword) {
+                return encoder.matches(rawPassword, encodedPassword);
+            }
+        };
     }
 }
