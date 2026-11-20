@@ -2,8 +2,10 @@ package com.rick1135.Valora.service;
 
 import com.rick1135.Valora.client.BrapiClient;
 import com.rick1135.Valora.dto.brapi.BrapiListedAssetDTO;
+import com.rick1135.Valora.dto.brapi.BrapiQuoteListResponseDTO;
 import com.rick1135.Valora.dto.response.AssetCatalogSyncResultDTO;
 import com.rick1135.Valora.entity.Asset;
+import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.repository.AssetRepository;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -18,9 +20,10 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClientException;
 
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -60,10 +63,10 @@ public class AssetCatalogSyncService {
     public AssetCatalogSyncResultDTO syncB3Catalog() {
         if (brapiClient == null || !StringUtils.hasText(brapiToken)) {
             log.warn("Sincronizacao do catalogo indisponivel sem cliente e token da BRAPI.");
-            return new AssetCatalogSyncResultDTO(0, 0, 0);
+            return new AssetCatalogSyncResultDTO(0, 0, 0, false, "SKIPPED_NO_TOKEN");
         }
         if (!syncing.compareAndSet(false, true)) {
-            return new AssetCatalogSyncResultDTO(0, 0, 0);
+            return new AssetCatalogSyncResultDTO(0, 0, 0, false, "ALREADY_RUNNING");
         }
         try {
             return syncPages(brapiClient);
@@ -73,43 +76,80 @@ public class AssetCatalogSyncService {
     }
 
     private AssetCatalogSyncResultDTO syncPages(BrapiClient client) {
-        Set<String> existing = new HashSet<>(assetRepository.findAllGlobalTickers());
         int fetched = 0;
         int inserted = 0;
         for (int page = 1; page <= MAX_PAGES; page++) {
-            var response = client.listQuotes(null, PAGE_SIZE, page, brapiToken);
-            if (response == null || response.stocks() == null) {
-                throw new RestClientException("Resposta da BRAPI sem lista de ativos na pagina " + page + ".");
-            }
-            List<BrapiListedAssetDTO> stocks = response.stocks();
-            if (stocks.isEmpty()) {
-                break;
-            }
-            fetched += stocks.size();
-            List<Asset> batch = new ArrayList<>();
-            for (BrapiListedAssetDTO item : stocks) {
-                if (item == null || !StringUtils.hasText(item.stock())) {
-                    continue;
+            BrapiQuoteListResponseDTO response;
+            try {
+                response = client.listQuotes(null, PAGE_SIZE, page, "name", "asc", brapiToken);
+                if (response == null || response.stocks() == null || response.hasNextPage() == null) {
+                    throw new RestClientException("Resposta incompleta da BRAPI na pagina " + page + ".");
                 }
-                String ticker = AssetService.normalizeTicker(item.stock());
-                if (assetService.isValidCatalogTicker(ticker) && existing.add(ticker)) {
-                    String name = AssetService.catalogName(ticker, item.name());
-                    Asset asset = new Asset();
-                    asset.setTicker(ticker);
-                    asset.setName(name);
-                    asset.setCategory(assetService.inferCategoryForCatalog(ticker, name, item.type()));
-                    batch.add(asset);
+            } catch (RestClientException exception) {
+                if (page == 1) {
+                    throw exception;
                 }
+                log.warn("Falha ao buscar pagina {} do catalogo da BRAPI ({}).",
+                        page, exception.getClass().getSimpleName());
+                return new AssetCatalogSyncResultDTO(fetched, inserted, fetched - inserted, false, "PARTIAL");
             }
-            inserted += saveBatch(batch);
-            if (!Boolean.TRUE.equals(response.hasNextPage())) {
-                break;
-            }
-            if (page == MAX_PAGES) {
-                log.warn("Sincronizacao do catalogo atingiu o limite de {} paginas da BRAPI.", MAX_PAGES);
+            fetched += response.stocks().size();
+            inserted += syncPage(response.stocks());
+            if (!response.hasNextPage()) {
+                return new AssetCatalogSyncResultDTO(fetched, inserted, fetched - inserted);
             }
         }
-        return new AssetCatalogSyncResultDTO(fetched, inserted, fetched - inserted);
+        log.warn("Sincronizacao do catalogo atingiu o limite de {} paginas da BRAPI.", MAX_PAGES);
+        return new AssetCatalogSyncResultDTO(fetched, inserted, fetched - inserted, false, "PARTIAL");
+    }
+
+    private int syncPage(List<BrapiListedAssetDTO> stocks) {
+        Map<String, BrapiListedAssetDTO> listedByTicker = new LinkedHashMap<>();
+        for (BrapiListedAssetDTO item : stocks) {
+            if (item == null || !StringUtils.hasText(item.stock())) {
+                continue;
+            }
+            String ticker = AssetService.normalizeTicker(item.stock());
+            if (assetService.isValidCatalogTicker(ticker)) {
+                listedByTicker.merge(ticker, item, (first, duplicate) ->
+                        AssetService.categoryFromBrapiSubType(first.subType()) == null
+                                && AssetService.categoryFromBrapiSubType(duplicate.subType()) != null
+                                ? duplicate : first);
+            }
+        }
+        if (listedByTicker.isEmpty()) {
+            return 0;
+        }
+
+        Map<String, Asset> existingByTicker = new HashMap<>();
+        for (Asset asset : assetRepository.findByOwnerUserIsNullAndTickerNormalizedIn(listedByTicker.keySet())) {
+            existingByTicker.put(asset.getTickerNormalized(), asset);
+        }
+        List<Asset> additions = new ArrayList<>();
+        List<Asset> corrections = new ArrayList<>();
+        for (var entry : listedByTicker.entrySet()) {
+            String ticker = entry.getKey();
+            BrapiListedAssetDTO item = entry.getValue();
+            Asset asset = existingByTicker.get(ticker);
+            if (asset == null) {
+                String name = AssetService.catalogName(ticker, item.name());
+                asset = new Asset();
+                asset.setTicker(ticker);
+                asset.setName(name);
+                asset.setCategory(assetService.inferCategoryForCatalog(ticker, name, item.type(), item.subType()));
+                additions.add(asset);
+            } else {
+                AssetCategory category = AssetService.categoryFromBrapiSubType(item.subType());
+                if (category != null && asset.getCategory() != category) {
+                    asset.setCategory(category);
+                    corrections.add(asset);
+                }
+            }
+        }
+        if (!corrections.isEmpty()) {
+            assetRepository.saveAll(corrections);
+        }
+        return saveBatch(additions);
     }
 
     private int saveBatch(List<Asset> batch) {

@@ -37,6 +37,7 @@
     isSaving: false,
     searchTimer: null,
     searchSeq: 0,
+    importSeq: 0,
   };
   let loadId = 0;
   let simulationId = 0;
@@ -377,16 +378,23 @@
         btn.classList.add("metas-suggestion-item--import");
       }
       btn.addEventListener("click", async () => {
+        state.importSeq += 1;
+        const importing = asset.persisted === false || !asset.id;
+        const seq = importing ? ++state.importSeq : state.importSeq;
+        const targetPortfolioId = state.portfolioId;
         btn.disabled = true;
         try {
-          const selectedAsset = asset.persisted === false || !asset.id
-            ? await apiRequest("/assets/import", { method: "POST", body: { ticker: asset.ticker } })
-            : asset;
+          let selectedAsset = asset;
+          if (importing) {
+            selectedAsset = await apiRequest("/assets/import", { method: "POST", body: { ticker: asset.ticker } });
+            if (seq !== state.importSeq || state.portfolioId !== targetPortfolioId) return;
+          }
           addAssetTarget(selectedAsset);
           input.value = "";
           hideAssetSuggestions();
           setPageError("");
         } catch (error) {
+          if (importing && (seq !== state.importSeq || state.portfolioId !== targetPortfolioId)) return;
           btn.disabled = false;
           const message = error instanceof Error ? error.message : "Não foi possível importar o ativo da B3.";
           setPageError(`Não foi possível adicionar o ativo: ${message}`);
@@ -405,6 +413,7 @@
     if (!input) return;
 
     input.addEventListener("input", () => {
+      state.importSeq += 1;
       const query = input.value.trim();
       window.clearTimeout(state.searchTimer);
       if (query.length < 2) {
@@ -594,6 +603,7 @@
   }
 
   async function loadMetasPage(options = {}) {
+    state.importSeq += 1;
     const currentLoad = ++loadId;
     simulationId += 1;
     state.portfolioId = null;

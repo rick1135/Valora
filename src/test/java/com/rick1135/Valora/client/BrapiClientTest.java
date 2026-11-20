@@ -23,20 +23,20 @@ class BrapiClientTest {
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         BrapiClient client = new BrapiClient(builder);
 
-        server.expect(requestTo("https://brapi.dev/api/quote/list?limit=100&page=2"))
+        server.expect(requestTo("https://brapi.dev/api/quote/list?limit=100&page=2&sortBy=name&sortOrder=asc"))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer token-ok"))
                 .andRespond(withSuccess("""
                         {"stocks":[{"stock":"ITSA4","name":"Itausa","type":"stock","close":10},
-                                   {"stock":"SPXB11","name":"S&P 500","type":"fund"}],
+                                   {"stock":"BOVV11","name":"BOVV11","type":"fund","subType":"etf"}],
                          "currentPage":2,"totalPages":3,"hasNextPage":true,"indexes":[]}
                         """, MediaType.APPLICATION_JSON));
 
-        var response = client.listQuotes(null, 100, 2, "token-ok");
+        var response = client.listQuotes(null, 100, 2, "name", "asc", "token-ok");
 
         assertThat(response.stocks()).containsExactly(
                 new BrapiListedAssetDTO("ITSA4", "Itausa", "stock"),
-                new BrapiListedAssetDTO("SPXB11", "S&P 500", "fund"));
+                new BrapiListedAssetDTO("BOVV11", "BOVV11", "fund", "etf"));
         assertThat(response.currentPage()).isEqualTo(2);
         assertThat(response.totalPages()).isEqualTo(3);
         assertThat(response.hasNextPage()).isTrue();

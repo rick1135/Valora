@@ -34,11 +34,19 @@ public class BrapiClient {
 
     public BrapiQuoteListResponseDTO listQuotes(@Nullable String search, @Nullable Integer limit,
                                                @Nullable Integer page, String token) {
+        return listQuotes(search, limit, page, null, null, token);
+    }
+
+    public BrapiQuoteListResponseDTO listQuotes(@Nullable String search, @Nullable Integer limit,
+                                               @Nullable Integer page, @Nullable String sortBy,
+                                               @Nullable String sortOrder, String token) {
         return restClient.get()
                 .uri(uriBuilder -> {
                     var builder = uriBuilder.path("/quote/list")
                             .queryParamIfPresent("limit", Optional.ofNullable(limit))
-                            .queryParamIfPresent("page", Optional.ofNullable(page));
+                            .queryParamIfPresent("page", Optional.ofNullable(page))
+                            .queryParamIfPresent("sortBy", Optional.ofNullable(sortBy))
+                            .queryParamIfPresent("sortOrder", Optional.ofNullable(sortOrder));
                     if (search != null) {
                         return builder.queryParam("search", "{search}").build(search);
                     }

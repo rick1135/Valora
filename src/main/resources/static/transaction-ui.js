@@ -20,6 +20,7 @@
     activeIndex: -1,
     searchTimer: null,
     searchSeq: 0,
+    selectionSeq: 0,
     isSubmitting: false,
     lastTrigger: null,
     editing: null,
@@ -156,6 +157,7 @@
   }
 
   function selectAsset(asset) {
+    state.selectionSeq += 1;
     renewIdempotencyKey();
     window.clearTimeout(state.searchTimer);
     state.searchSeq += 1;
@@ -167,16 +169,20 @@
   }
 
   async function chooseAsset(asset) {
+    state.selectionSeq += 1;
     if (asset.persisted === false || !asset.id) {
+      const seq = ++state.selectionSeq;
       setStatus(`Importando ${asset.ticker} da B3...`, "info");
       try {
         const importedAsset = await getApi().request("/assets/import", {
           method: "POST",
           body: { ticker: asset.ticker },
         });
+        if (seq !== state.selectionSeq || !state.elements || state.elements.modal.hidden) return;
         selectAsset(importedAsset);
         setStatus("Ativo importado da B3 com sucesso.", "success");
       } catch (error) {
+        if (seq !== state.selectionSeq || !state.elements || state.elements.modal.hidden) return;
         setStatus(extractErrorMessage(error), "error");
       }
       return;
@@ -185,6 +191,7 @@
   }
 
   function clearSelectedAsset(clearInput = false) {
+    state.selectionSeq += 1;
     state.selectedAsset = null;
     updateSelectedAssetView();
     if (clearInput) {
@@ -386,6 +393,7 @@
   }
 
   function handleAssetInput() {
+    state.selectionSeq += 1;
     const query = state.elements.assetInput.value.trim();
     if (state.selectedAsset && query.toUpperCase() !== String(state.selectedAsset.ticker).toUpperCase()) {
       clearSelectedAsset(false);
@@ -742,6 +750,7 @@
   }
 
   function openModal(trigger, transaction = null) {
+    state.selectionSeq += 1;
     if (state.isSubmitting) return;
     const elements = ensureModal();
     state.lastTrigger = trigger instanceof HTMLElement ? trigger : document.activeElement;
@@ -766,6 +775,7 @@
   }
 
   function closeModal() {
+    state.selectionSeq += 1;
     if (state.isSubmitting || !state.elements || state.elements.modal.hidden) {
       return;
     }

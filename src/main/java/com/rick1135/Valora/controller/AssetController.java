@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -52,7 +53,7 @@ public class AssetController {
     @PostMapping("/sync")
     public ResponseEntity<AssetCatalogSyncResultDTO> syncAssets() {
         AssetCatalogSyncResultDTO result = assetCatalogSyncService == null
-                ? new AssetCatalogSyncResultDTO(0, 0, 0)
+                ? new AssetCatalogSyncResultDTO(0, 0, 0, false, "SKIPPED_NO_TOKEN")
                 : assetCatalogSyncService.syncB3Catalog();
         return ResponseEntity.ok(result);
     }
@@ -79,7 +80,8 @@ public class AssetController {
     @GetMapping("/search")
     public ResponseEntity<List<AssetResponseDTO>> searchAssets(
             @AuthenticationPrincipal User user,
-            @RequestParam @NotBlank(message = "ticker e obrigatorio.") String ticker,
+            @RequestParam @NotBlank(message = "ticker e obrigatorio.")
+            @Size(max = 80, message = "ticker deve ter no maximo 80 caracteres.") String ticker,
             @RequestParam(defaultValue = "true") boolean includeExternal
     ) {
         return ResponseEntity.ok(assetService.searchAssets(user, ticker, includeExternal));

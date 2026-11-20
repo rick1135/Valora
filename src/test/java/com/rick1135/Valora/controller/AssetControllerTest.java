@@ -12,10 +12,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
+import org.springframework.validation.beanvalidation.MethodValidationInterceptor;
 
 import java.util.List;
 import java.util.UUID;
@@ -45,11 +47,32 @@ class AssetControllerTest {
         validator.afterPropertiesSet();
 
         AssetController controller = new AssetController(assetService, assetCatalogSyncService);
+        ProxyFactory proxyFactory = new ProxyFactory(controller);
+        proxyFactory.setProxyTargetClass(true);
+        proxyFactory.addAdvice(new MethodValidationInterceptor(validator.getValidator()));
 
-        mockMvc = MockMvcBuilders.standaloneSetup(controller)
+        mockMvc = MockMvcBuilders.standaloneSetup(proxyFactory.getProxy())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(validator)
                 .build();
+    }
+
+    @Test
+    void searchAssetsRejectsTickerLongerThan80Characters() throws Exception {
+        mockMvc.perform(get("/assets/search").param("ticker", "A".repeat(81)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("ticker deve ter no maximo 80 caracteres."));
+        verifyNoInteractions(assetService);
+    }
+
+    @Test
+    void searchAssetsAcceptsTickerWith80Characters() throws Exception {
+        String ticker = "A".repeat(80);
+        when(assetService.searchAssets(any(), eq(ticker), eq(true))).thenReturn(List.of());
+
+        mockMvc.perform(get("/assets/search").param("ticker", ticker))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
     }
 
     @Test
@@ -140,7 +163,9 @@ class AssetControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fetched").value(5))
                 .andExpect(jsonPath("$.inserted").value(3))
-                .andExpect(jsonPath("$.skipped").value(2));
+                .andExpect(jsonPath("$.skipped").value(2))
+                .andExpect(jsonPath("$.complete").value(true))
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
     }
 
     @Test

@@ -42,6 +42,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
@@ -57,6 +59,7 @@ public class AssetService {
     private static final Set<String> KNOWN_ETF_TICKERS = Set.of("SPXB11", "BOVA11", "IVVB11", "SMAL11");
     private static final long SEARCH_CACHE_TTL_NANOS = Duration.ofMinutes(15).toNanos();
     private static final int SEARCH_CACHE_CAPACITY = 256;
+    private static final PageRequest LOCAL_SEARCH_PAGE = PageRequest.of(0, 25);
 
     private final AssetRepository assetRepository;
     private final AssetMapper assetMapper;
@@ -64,6 +67,8 @@ public class AssetService {
     private final @Nullable BrapiClient brapiClient;
     private final String brapiToken;
     private final ConcurrentHashMap<String, CachedSuggestions> externalSearchCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CompletableFuture<List<BrapiListedAssetDTO>>> inFlightExternalSearches =
+            new ConcurrentHashMap<>();
 
     private record CachedSuggestions(List<BrapiListedAssetDTO> stocks, long fetchedAt) {
         boolean isExpired(long now) {
@@ -113,7 +118,9 @@ public class AssetService {
         } else if (StringUtils.hasText(quote.shortName())) {
             name = quote.shortName().strip();
         }
-        AssetCategory category = inferCategory(ticker, name);
+        BrapiListedAssetDTO metadata = findCatalogMetadata(ticker);
+        AssetCategory category = inferCategoryForCatalog(ticker, name,
+                metadata == null ? null : metadata.type(), metadata == null ? null : metadata.subType());
         Asset asset = new Asset();
         asset.setTicker(ticker);
         asset.setName(name);
@@ -206,21 +213,20 @@ public class AssetService {
                 .toList();
     }
 
-    @Transactional(readOnly = true)
     public List<AssetResponseDTO> searchAssets(String ticker) {
         return searchAssets(null, ticker);
     }
 
-    @Transactional(readOnly = true)
     public List<AssetResponseDTO> searchAssets(@Nullable User user, String ticker) {
         return searchAssets(user, ticker, true);
     }
 
-    @Transactional(readOnly = true)
     public List<AssetResponseDTO> searchAssets(@Nullable User user, String query, boolean includeExternal) {
         String normalizedQuery = normalizeTicker(query);
-        var assets = user == null ? assetRepository.findByTickerContainingIgnoreCase(normalizedQuery)
-                : assetRepository.searchVisibleToUser(user, normalizedQuery);
+        String prefixPattern = normalizedQuery.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        var assets = user == null ? assetRepository.findByTickerContainingIgnoreCase(normalizedQuery, LOCAL_SEARCH_PAGE)
+                : assetRepository.searchVisibleToUser(user, normalizedQuery, prefixPattern, "%" + prefixPattern,
+                        LOCAL_SEARCH_PAGE);
         List<AssetResponseDTO> localResults = assets.stream().map(assetMapper::toResponse).toList();
         if (!includeExternal || query.trim().length() < 2 || brapiClient == null || !StringUtils.hasText(brapiToken)) {
             return localResults;
@@ -248,7 +254,7 @@ public class AssetService {
             String ticker = normalizeTicker(item.stock());
             if (isValidCatalogTicker(ticker) && seen.add(ticker)) {
                 String name = catalogName(ticker, item.name());
-                AssetCategory category = inferCategoryForCatalog(ticker, name, item.type());
+                AssetCategory category = inferCategoryForCatalog(ticker, name, item.type(), item.subType());
                 results.add(new AssetResponseDTO(null, ticker, name, category, null, null, null, null, null, null, false));
             }
         }
@@ -260,6 +266,34 @@ public class AssetService {
         if (cached != null && !cached.isExpired(System.nanoTime())) {
             return cached.stocks();
         }
+        var pending = new CompletableFuture<List<BrapiListedAssetDTO>>();
+        var inFlight = inFlightExternalSearches.putIfAbsent(query, pending);
+        if (inFlight != null) {
+            try {
+                return inFlight.join();
+            } catch (CompletionException exception) {
+                if (exception.getCause() instanceof RestClientException requestFailure) {
+                    throw requestFailure;
+                }
+                throw exception;
+            }
+        }
+        try {
+            // Another request may have filled the cache before this one claimed the key.
+            cached = externalSearchCache.get(query);
+            List<BrapiListedAssetDTO> stocks = cached != null && !cached.isExpired(System.nanoTime())
+                    ? cached.stocks() : fetchExternalSuggestions(client, query);
+            pending.complete(stocks);
+            return stocks;
+        } catch (RuntimeException | Error exception) {
+            pending.completeExceptionally(exception);
+            throw exception;
+        } finally {
+            inFlightExternalSearches.remove(query, pending);
+        }
+    }
+
+    private List<BrapiListedAssetDTO> fetchExternalSuggestions(BrapiClient client, String query) {
         var response = client.listQuotes(query, 15, 1, brapiToken);
         if (response == null || response.stocks() == null) {
             throw new RestClientException("Resposta da BRAPI sem lista de ativos.");
@@ -300,8 +334,22 @@ public class AssetService {
         return response.results().getFirst();
     }
 
-    private AssetCategory inferCategory(String ticker, String name) {
-        return inferCategory(ticker, name, null);
+    private @Nullable BrapiListedAssetDTO findCatalogMetadata(String ticker) {
+        if (brapiClient == null) {
+            return null;
+        }
+        try {
+            var response = brapiClient.listQuotes(ticker, 5, 1, null, null, brapiToken);
+            if (response == null || response.stocks() == null) {
+                return null;
+            }
+            return response.stocks().stream()
+                    .filter(item -> item != null && ticker.equalsIgnoreCase(item.stock()))
+                    .findFirst().orElse(null);
+        } catch (RestClientException exception) {
+            log.warn("Falha ao buscar metadados de listagem na BRAPI ({}).", exception.getClass().getSimpleName());
+            return null;
+        }
     }
 
     boolean isValidCatalogTicker(String ticker) {
@@ -310,7 +358,28 @@ public class AssetService {
     }
 
     AssetCategory inferCategoryForCatalog(String ticker, String name, @Nullable String brapiType) {
-        return inferCategory(ticker, name, brapiType);
+        return inferCategoryForCatalog(ticker, name, brapiType, null);
+    }
+
+    AssetCategory inferCategoryForCatalog(String ticker, String name, @Nullable String brapiType,
+                                          @Nullable String brapiSubType) {
+        if (!StringUtils.hasText(brapiSubType)) {
+            return inferCategory(ticker, name, brapiType);
+        }
+        AssetCategory structuredCategory = categoryFromBrapiSubType(brapiSubType);
+        return structuredCategory == null ? AssetCategory.ACOES : structuredCategory;
+    }
+
+    static @Nullable AssetCategory categoryFromBrapiSubType(@Nullable String brapiSubType) {
+        if (brapiSubType == null) {
+            return null;
+        }
+        return switch (brapiSubType.toLowerCase(Locale.ROOT)) {
+            case "etf" -> AssetCategory.ETF;
+            case "fii" -> AssetCategory.FII;
+            case "unit", "stock", "bdr" -> AssetCategory.ACOES;
+            default -> null;
+        };
     }
 
     private AssetCategory inferCategory(String ticker, String name, @Nullable String brapiType) {
