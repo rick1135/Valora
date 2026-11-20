@@ -25,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
@@ -51,8 +52,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -83,15 +86,16 @@ class PortfolioSnapshotServiceTest {
                 benchmarkValues, calendar, brapi, new PortfolioTwrCalculator(), transactionManager, "test-token");
     }
 
-    @Test
-    void returnsOneMonthUsingTheSnapshotImmediatelyBeforeTheRange() {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void usesThePriorSnapshotAndItsPricingQualityForTheRange(boolean priorPricingComplete) {
         LocalDate start = TODAY.minusMonths(1);
         PortfolioDailySnapshot first = snapshot(start, "1.10", true);
-        PortfolioDailySnapshot last = snapshot(TODAY, "1.21", false);
+        PortfolioDailySnapshot last = snapshot(TODAY, "1.21", true);
         ownedPortfolio();
         when(snapshots.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio)).thenReturn(Optional.of(last));
         when(snapshots.findFirstByPortfolioAndSnapshotDateLessThanOrderBySnapshotDateDesc(portfolio, start))
-                .thenReturn(Optional.of(snapshot(calendar.previousBusinessDay(start), "1", true)));
+                .thenReturn(Optional.of(snapshot(calendar.previousBusinessDay(start), "1", priorPricingComplete)));
         when(snapshots.findByPortfolioAndSnapshotDateBetweenOrderBySnapshotDateAsc(portfolio, start, TODAY))
                 .thenReturn(List.of(first, last));
 
@@ -103,7 +107,8 @@ class PortfolioSnapshotServiceTest {
         assertThat(history.points()).extracting(HistoryPointDTO::twrPercentage)
                 .containsExactly(new BigDecimal("10.0000"), new BigDecimal("21.0000"));
         assertThat(history.twrPercentage()).isEqualTo(new BigDecimal("21.0000"));
-        assertThat(history.pricingComplete()).isFalse();
+        assertThat(history.points()).allMatch(HistoryPointDTO::pricingComplete);
+        assertThat(history.pricingComplete()).isEqualTo(priorPricingComplete);
         verifyNoInteractions(brapi, transactionManager);
     }
 
@@ -148,21 +153,91 @@ class PortfolioSnapshotServiceTest {
         assertThat(history.twrPercentage()).isEqualByComparingTo("10");
     }
 
-    @Test
-    void usesTheInitialQuotaForARangeAfterTotalLoss() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void measuresARangeStartingAtOrAfterReentry(boolean afterReentry) {
         LocalDate start = TODAY.minusMonths(1);
-        var latest = snapshot(TODAY, "1", true);
+        var latest = snapshot(TODAY, "1", true, 2);
         ownedPortfolio();
         when(snapshots.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio)).thenReturn(Optional.of(latest));
         when(snapshots.findByPortfolioAndSnapshotDateBetweenOrderBySnapshotDateAsc(portfolio, start, TODAY))
-                .thenReturn(List.of(snapshot(start, "0.50", true), latest));
+                .thenReturn(List.of(snapshot(start, "0.50", true, 2), latest));
+        var prior = afterReentry
+                ? snapshot(calendar.previousBusinessDay(start), "0.25", true, 2)
+                : snapshot(calendar.previousBusinessDay(start), "0", false, 1);
+        when(snapshots.findFirstByPortfolioAndSnapshotDateLessThanOrderBySnapshotDateDesc(portfolio, start))
+                .thenReturn(Optional.of(prior));
+
+        var history = service.getPortfolioHistory(user, portfolio.getId(), "1M");
+
+        assertThat(history.points()).extracting(HistoryPointDTO::twrSegment).containsExactly(2, 2);
+        assertThat(history.points().getFirst().twrPercentage()).isEqualByComparingTo(afterReentry ? "100" : "-50");
+        assertThat(history.twrPercentage()).isEqualByComparingTo(afterReentry ? "300" : "0");
+        assertThat(history.pricingComplete()).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void doesNotCombineTheTwoSegmentsAcrossTotalLoss(boolean allHistory) {
+        LocalDate lossDate = TODAY.minusMonths(1);
+        var gain = snapshot(calendar.previousBusinessDay(lossDate), "2", true, 1);
+        var loss = snapshot(lossDate, "0", true, 1);
+        var reentry = snapshot(TODAY, "1", true, 2);
+        ownedPortfolio();
+        when(snapshots.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio)).thenReturn(Optional.of(reentry));
+        if (allHistory) {
+            when(snapshots.findByPortfolioOrderBySnapshotDateAsc(portfolio)).thenReturn(List.of(gain, loss, reentry));
+        } else {
+            when(snapshots.findFirstByPortfolioAndSnapshotDateLessThanOrderBySnapshotDateDesc(portfolio, lossDate))
+                    .thenReturn(Optional.of(gain));
+            when(snapshots.findByPortfolioAndSnapshotDateBetweenOrderBySnapshotDateAsc(portfolio, lossDate, TODAY))
+                    .thenReturn(List.of(loss, reentry));
+        }
+
+        var history = service.getPortfolioHistory(user, portfolio.getId(), allHistory ? "ALL" : "1M");
+
+        assertThat(history.twrPercentage()).isNull();
+        assertThat(history.points().get(history.points().size() - 2).twrPercentage()).isEqualByComparingTo("-100");
+        assertThat(history.points().getLast().twrPercentage()).isNull();
+        assertThat(history.points().getLast().twrSegment()).isEqualTo(2);
+        assertThat(service.getPortfolioTwrSummary(portfolio))
+                .contains(new PortfolioSnapshotService.PortfolioTwrSummary(null, false, TODAY, true));
+    }
+
+    @Test
+    void doesNotRebaseAZeroQuotaWhileStillInTheSameSegment() {
+        LocalDate start = TODAY.minusMonths(1);
+        var latest = snapshot(TODAY, "0", true);
+        ownedPortfolio();
+        when(snapshots.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio)).thenReturn(Optional.of(latest));
+        when(snapshots.findByPortfolioAndSnapshotDateBetweenOrderBySnapshotDateAsc(portfolio, start, TODAY))
+                .thenReturn(List.of(snapshot(start, "0", true), latest));
         when(snapshots.findFirstByPortfolioAndSnapshotDateLessThanOrderBySnapshotDateDesc(portfolio, start))
                 .thenReturn(Optional.of(snapshot(calendar.previousBusinessDay(start), "0", true)));
 
         var history = service.getPortfolioHistory(user, portfolio.getId(), "1M");
 
-        assertThat(history.points().getFirst().twrPercentage()).isEqualByComparingTo("-50");
-        assertThat(history.twrPercentage()).isEqualByComparingTo("0");
+        assertThat(history.twrPercentage()).isNull();
+        assertThat(history.points()).allMatch(point -> point.twrPercentage() == null && point.twrSegment() == 1);
+    }
+
+    @Test
+    void persistsTheNewSegmentWhenCapturingASuffixAfterTotalLoss() {
+        var prior = snapshot(TODAY.minusDays(1), "0", true, 2);
+        prior.setTotalPatrimony(BigDecimal.ZERO);
+        ownedPortfolio();
+        captureTransaction();
+        when(snapshots.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio)).thenReturn(Optional.of(prior));
+        stubTrades(List.of(trade(TODAY, UUID.randomUUID(), "TEST3", AssetCategory.ACOES,
+                TransactionType.BUY, "1", "100")));
+        when(brapi.getHistoricalQuote("TEST3", "1y", "test-token")).thenReturn(quotes(price(TODAY, "100")));
+
+        service.getPortfolioHistory(user, portfolio.getId(), "ALL");
+
+        verify(snapshots).saveAll(savedSnapshots.capture());
+        var reentry = savedSnapshots.getValue().getFirst();
+        assertThat(reentry.getTwrQuotaValue()).isEqualByComparingTo("1");
+        assertThat(reentry.getTwrSegment()).isEqualTo(3);
     }
 
     @Test
@@ -191,12 +266,43 @@ class PortfolioSnapshotServiceTest {
         when(snapshots.existsByPortfolioAndPricingCompleteFalse(portfolio)).thenReturn(true);
 
         assertThat(service.getPortfolioTwrSummary(portfolio))
-                .contains(new PortfolioSnapshotService.PortfolioTwrSummary(new BigDecimal("10.0000"), false));
+                .contains(new PortfolioSnapshotService.PortfolioTwrSummary(new BigDecimal("10.0000"), false, TODAY, true));
 
         verify(snapshots).findFirstByPortfolioOrderBySnapshotDateDesc(portfolio);
         verify(snapshots).existsByPortfolioAndPricingCompleteFalse(portfolio);
         verifyNoMoreInteractions(snapshots);
         verifyNoInteractions(brapi, transactionManager, portfolios, benchmarks, benchmarkValues);
+    }
+
+    @Test
+    void datesAStaleSummaryAndMarksItUnreliableEvenWithCompletePrices() {
+        LocalDate valuedThrough = LocalDate.of(2026, 2, 2);
+        when(snapshots.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio))
+                .thenReturn(Optional.of(snapshot(valuedThrough, "1.10", true)));
+
+        assertThat(service.getPortfolioTwrSummary(portfolio))
+                .contains(new PortfolioSnapshotService.PortfolioTwrSummary(
+                        new BigDecimal("10.0000"), false, valuedThrough, false));
+        verifyNoInteractions(brapi, transactionManager);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "2026-02-21T01:29:59Z, 2026-02-19, true",
+            "2026-02-21T01:30:00Z, 2026-02-19, false",
+            "2026-02-21T01:30:00Z, 2026-02-20, true",
+            "2026-02-22T01:30:00Z, 2026-02-20, true"
+    })
+    void usesTheSaoPauloCaptureCutoffAndBusinessDays(String now, LocalDate valuedThrough, boolean upToDate) {
+        var evaluationCalendar = new MarketCalendar(Clock.fixed(Instant.parse(now), ZoneOffset.UTC));
+        service = new PortfolioSnapshotService(portfolios, snapshots, benchmarks,
+                benchmarkValues, evaluationCalendar, brapi, new PortfolioTwrCalculator(), transactionManager, "test-token");
+        when(snapshots.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio))
+                .thenReturn(Optional.of(snapshot(valuedThrough, "1.10", true)));
+
+        assertThat(service.getPortfolioTwrSummary(portfolio))
+                .contains(new PortfolioSnapshotService.PortfolioTwrSummary(
+                        new BigDecimal("10.0000"), upToDate, valuedThrough, upToDate));
     }
 
     @Test
@@ -303,7 +409,7 @@ class PortfolioSnapshotServiceTest {
 
         var history = service.getPortfolioHistory(user, portfolio.getId(), "ALL");
 
-        assertThat(history.benchmarksComplete()).containsEntry("IPCA", dayOfMonth == 1);
+        assertThat(history.benchmarksComplete()).containsEntry("IPCA", false);
         var januaryClose = LocalDate.of(2026, 1, 31);
         if (dayOfMonth == 1) {
             assertThat(history.benchmarks().get("IPCA")).containsExactly(
@@ -315,23 +421,77 @@ class PortfolioSnapshotServiceTest {
         }
     }
 
-    @Test
-    void flagsAnUnpublishedClosedIpcaMonth() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void requiresPublishedIpcaWhenTheRangeEndsOnTheLastDayOfTheMonth(boolean published) {
         LocalDate december = LocalDate.of(2025, 12, 1);
-        var last = snapshot(TODAY, "1", true);
+        LocalDate end = december.withDayOfMonth(31);
+        var monthEndCalendar = new MarketCalendar(Clock.fixed(instant(end), ZoneOffset.UTC));
+        service = new PortfolioSnapshotService(portfolios, snapshots, benchmarks,
+                benchmarkValues, monthEndCalendar, brapi, new PortfolioTwrCalculator(), transactionManager, "test-token");
+        var last = snapshot(end, "1", true);
         ownedPortfolio();
         when(snapshots.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio)).thenReturn(Optional.of(last));
         when(snapshots.findByPortfolioOrderBySnapshotDateAsc(portfolio))
                 .thenReturn(List.of(snapshot(december, "1", true), last));
         Benchmark ipca = benchmark("IPCA", BenchmarkType.INFLATION);
-        when(benchmarkValues.findByBenchmarkInRange(ipca, december, TODAY))
-                .thenReturn(List.of(value(ipca, december, "0.50")));
+        when(benchmarkValues.findByBenchmarkInRange(ipca, december, end))
+                .thenReturn(published ? List.of(value(ipca, december, "0.50")) : List.of());
 
         var history = service.getPortfolioHistory(user, portfolio.getId(), "ALL");
 
-        assertThat(history.benchmarksComplete()).containsEntry("IPCA", false);
-        assertThat(history.benchmarks().get("IPCA")).containsExactly(
-                new BenchmarkPointDTO(LocalDate.of(2025, 12, 31), new BigDecimal("0.5000")));
+        assertThat(history.benchmarksComplete()).containsEntry("IPCA", published);
+        assertThat(history.benchmarks().get("IPCA")).isEqualTo(
+                published ? List.of(new BenchmarkPointDTO(end, new BigDecimal("0.5000"))) : List.of());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void keepsFixedIncomeAndMixedSnapshotsWithoutRepeatingCapture(boolean mixed) {
+        var stored = new AtomicReference<List<PortfolioDailySnapshot>>(List.of());
+        ownedPortfolio();
+        captureTransaction();
+        var fixedIncome = trade(TODAY, UUID.randomUUID(), "CDB-1", AssetCategory.RENDA_FIXA,
+                TransactionType.BUY, "1", "100");
+        if (mixed) {
+            var stock = trade(TODAY, UUID.randomUUID(), "TEST3", AssetCategory.ACOES,
+                    TransactionType.BUY, "1", "50");
+            stubTrades(List.of(fixedIncome, stock));
+            when(brapi.getHistoricalQuote("TEST3", "1y", "test-token")).thenReturn(quotes(price(TODAY, "55")));
+        } else {
+            stubTrades(List.of(fixedIncome));
+        }
+        when(snapshots.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio)).thenAnswer(call -> {
+            var captured = stored.get();
+            return captured.isEmpty() ? Optional.empty() : Optional.of(captured.getLast());
+        });
+        when(snapshots.findFirstByPortfolioAndRecoverablePricingGapTrueOrderBySnapshotDateAsc(portfolio))
+                .thenAnswer(call -> stored.get().stream().filter(PortfolioDailySnapshot::isRecoverablePricingGap).findFirst());
+        when(snapshots.findByPortfolioOrderBySnapshotDateAsc(portfolio)).thenAnswer(call -> stored.get());
+        when(snapshots.saveAll(any())).thenAnswer(call -> {
+            List<PortfolioDailySnapshot> captured = call.getArgument(0);
+            stored.set(captured);
+            return captured;
+        });
+
+        var initial = service.getPortfolioHistory(user, portfolio.getId(), "ALL");
+        var repeated = service.getPortfolioHistory(user, portfolio.getId(), "ALL");
+
+        assertThat(initial.pricingComplete()).isFalse();
+        assertThat(repeated).isEqualTo(initial);
+        assertThat(stored.get()).singleElement().satisfies(snapshot -> {
+            assertThat(snapshot.isPricingComplete()).isFalse();
+            assertThat(snapshot.isRecoverablePricingGap()).isFalse();
+        });
+        verify(snapshots).saveAll(any());
+        verify(snapshots, times(2)).findSnapshotTrades(portfolio, calendar.endOfMarketDay(TODAY).plusNanos(1));
+        verify(snapshots, never()).deleteByPortfolioAndSnapshotDateGreaterThanEqual(any(), any());
+        if (mixed) {
+            verify(brapi).getHistoricalQuote("TEST3", "1y", "test-token");
+            verifyNoMoreInteractions(brapi);
+        } else {
+            verifyNoInteractions(brapi);
+        }
     }
 
     @Test
@@ -375,6 +535,7 @@ class PortfolioSnapshotServiceTest {
         assertThat(suffix.get(1).getProventsReceived()).isEqualByComparingTo("0");
         assertThat(suffix.getLast().getTotalPatrimony()).isEqualByComparingTo("230");
         assertThat(suffix).extracting(PortfolioDailySnapshot::isPricingComplete).containsExactly(false, true, false);
+        assertThat(suffix).extracting(PortfolioDailySnapshot::isRecoverablePricingGap).containsExactly(true, false, true);
         assertThat(suffix.getLast().getTwrQuotaValue()).isEqualByComparingTo("1.210909090909");
         verify(brapi).getHistoricalQuote("TEST3", "1y", "test-token");
     }
@@ -392,11 +553,11 @@ class PortfolioSnapshotServiceTest {
         when(snapshots.findByPortfolioOrderBySnapshotDateAsc(portfolio)).thenAnswer(call -> stored.get());
         when(snapshots.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio))
                 .thenAnswer(call -> Optional.of(stored.get().getLast()));
-        when(snapshots.findFirstByPortfolioAndPricingCompleteFalseOrderBySnapshotDateAsc(portfolio))
-                .thenAnswer(call -> stored.get().stream().filter(snapshot -> !snapshot.isPricingComplete()).findFirst());
-        when(snapshots.findFirstByPortfolioAndSnapshotDateLessThanOrderBySnapshotDateDesc(portfolio, tradeDate))
+        when(snapshots.findFirstByPortfolioAndRecoverablePricingGapTrueOrderBySnapshotDateAsc(portfolio))
+                .thenAnswer(call -> stored.get().stream().filter(PortfolioDailySnapshot::isRecoverablePricingGap).findFirst());
+        lenient().when(snapshots.findFirstByPortfolioAndSnapshotDateLessThanOrderBySnapshotDateDesc(portfolio, tradeDate))
                 .thenReturn(Optional.empty());
-        when(snapshots.findFirstByPortfolioAndSnapshotDateLessThanOrderBySnapshotDateDesc(portfolio, incompleteDate))
+        lenient().when(snapshots.findFirstByPortfolioAndSnapshotDateLessThanOrderBySnapshotDateDesc(portfolio, incompleteDate))
                 .thenReturn(Optional.of(prior));
         when(snapshots.saveAll(any())).thenAnswer(call -> {
             List<PortfolioDailySnapshot> suffix = call.getArgument(0);
@@ -494,6 +655,7 @@ class PortfolioSnapshotServiceTest {
         assertThat(savedSnapshots.getValue()).allSatisfy(snapshot -> {
             assertThat(snapshot.getTotalPatrimony()).isEqualByComparingTo("120");
             assertThat(snapshot.isPricingComplete()).isFalse();
+            assertThat(snapshot.isRecoverablePricingGap()).isTrue();
         });
         verifyNoInteractions(brapi);
     }
@@ -547,13 +709,17 @@ class PortfolioSnapshotServiceTest {
     }
 
     private PortfolioDailySnapshot snapshot(LocalDate date, String quota, boolean pricingComplete) {
+        return snapshot(date, quota, pricingComplete, 1);
+    }
+
+    private PortfolioDailySnapshot snapshot(LocalDate date, String quota, boolean pricingComplete, int segment) {
         return new PortfolioDailySnapshot(null, portfolio, date, new BigDecimal("100"), new BigDecimal("100"),
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ONE, new BigDecimal(quota), pricingComplete);
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ONE, new BigDecimal(quota), pricingComplete, segment, false);
     }
 
     private Benchmark benchmark(String ticker, BenchmarkType type) {
         Benchmark benchmark = new Benchmark(UUID.randomUUID(), ticker, ticker, type, null, instant(TODAY));
-        org.mockito.Mockito.lenient().when(benchmarks.findByTicker(ticker)).thenReturn(Optional.of(benchmark));
+        lenient().when(benchmarks.findByTicker(ticker)).thenReturn(Optional.of(benchmark));
         return benchmark;
     }
 

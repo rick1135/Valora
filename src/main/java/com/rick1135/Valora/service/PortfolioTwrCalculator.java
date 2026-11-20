@@ -21,10 +21,17 @@ public class PortfolioTwrCalculator {
             BigDecimal inflows,
             BigDecimal outflows,
             BigDecimal proventsReceived,
-            boolean pricingComplete
-    ) {}
+            boolean pricingComplete,
+            boolean recoverablePricingGap
+    ) {
+        public DailyObservation(LocalDate date, BigDecimal totalPatrimony, BigDecimal totalInvested,
+                                BigDecimal inflows, BigDecimal outflows, BigDecimal proventsReceived,
+                                boolean pricingComplete) {
+            this(date, totalPatrimony, totalInvested, inflows, outflows, proventsReceived, pricingComplete, false);
+        }
+    }
 
-    public record DailyResult(DailyObservation observation, BigDecimal dailyReturnFactor, BigDecimal quota) {}
+    public record DailyResult(DailyObservation observation, BigDecimal dailyReturnFactor, BigDecimal quota, int segment) {}
 
     public List<DailyResult> calculate(List<DailyObservation> observations) {
         return calculate(observations, BigDecimal.ZERO, ONE);
@@ -33,14 +40,24 @@ public class PortfolioTwrCalculator {
     public List<DailyResult> calculate(
             List<DailyObservation> observations, BigDecimal previousPatrimony, BigDecimal previousQuota
     ) {
+        return calculate(observations, previousPatrimony, previousQuota, 1);
+    }
+
+    public List<DailyResult> calculate(
+            List<DailyObservation> observations, BigDecimal previousPatrimony, BigDecimal previousQuota, int previousSegment
+    ) {
         List<DailyResult> results = new ArrayList<>(observations.size());
+        int segment = previousSegment;
         for (DailyObservation observation : observations) {
             BigDecimal factor = calculateFactor(observation, previousPatrimony);
             boolean reentry = previousQuota.signum() == 0 && previousPatrimony.signum() <= 0
                     && observation.inflows().signum() > 0;
-            BigDecimal quota = reentry ? factor : previousQuota.multiply(factor)
-                    .setScale(FACTOR_SCALE, FinancialConstants.DEFAULT_ROUNDING);
-            results.add(new DailyResult(observation, factor, quota));
+            if (reentry) {
+                segment++;
+                previousQuota = ONE;
+            }
+            BigDecimal quota = previousQuota.multiply(factor).setScale(FACTOR_SCALE, FinancialConstants.DEFAULT_ROUNDING);
+            results.add(new DailyResult(observation, factor, quota, segment));
             previousPatrimony = observation.totalPatrimony();
             previousQuota = quota;
         }
@@ -53,6 +70,12 @@ public class PortfolioTwrCalculator {
         }
         return endQuota.subtract(startQuota).movePointRight(2)
                 .divide(startQuota, FinancialConstants.PERCENTAGE_SCALE, FinancialConstants.DEFAULT_ROUNDING);
+    }
+
+    public BigDecimal calculatePeriodTwrPercentage(
+            BigDecimal startQuota, BigDecimal endQuota, int baseSegment, int targetSegment
+    ) {
+        return baseSegment == targetSegment ? calculatePeriodTwrPercentage(startQuota, endQuota) : null;
     }
 
     private BigDecimal calculateFactor(DailyObservation observation, BigDecimal previousPatrimony) {

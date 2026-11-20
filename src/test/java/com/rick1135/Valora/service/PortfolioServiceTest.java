@@ -28,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -271,7 +272,8 @@ class PortfolioServiceTest {
         when(transactionRepository.findByPortfolioOrderByTransactionDateAscIdAsc(portfolio))
                 .thenReturn(List.of(buy, sell));
         when(portfolioSnapshotService.getPortfolioTwrSummary(portfolio))
-                .thenReturn(Optional.of(new PortfolioTwrSummary(new BigDecimal("8.5000"), true)));
+                .thenReturn(Optional.of(new PortfolioTwrSummary(
+                        new BigDecimal("8.5000"), true, LocalDate.of(2026, 2, 20), true)));
 
         PortfolioSummaryDTO summary = portfolioService.getPortfolioSummary(user, portfolio.getId());
 
@@ -283,6 +285,8 @@ class PortfolioServiceTest {
         assertThat(summary.profitability().totalPercentage()).isNull();
         assertThat(summary.profitability().twrPercentage()).isEqualByComparingTo("8.5000");
         assertThat(summary.profitability().twrReliable()).isTrue();
+        assertThat(summary.profitability().twrValuedThrough()).isEqualTo(LocalDate.of(2026, 2, 20));
+        assertThat(summary.profitability().twrUpToDate()).isTrue();
     }
 
     @Test
@@ -307,7 +311,8 @@ class PortfolioServiceTest {
         when(positionRepository.findByPortfolioAndQuantityGreaterThan(portfolio, BigDecimal.ZERO))
                 .thenReturn(List.of(cdbPosition));
         when(portfolioSnapshotService.getPortfolioTwrSummary(portfolio))
-                .thenReturn(Optional.of(new PortfolioTwrSummary(new BigDecimal("1.2500"), false)));
+                .thenReturn(Optional.of(new PortfolioTwrSummary(
+                        new BigDecimal("1.2500"), false, LocalDate.of(2026, 2, 2), false)));
         when(proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID))
                 .thenReturn(BigDecimal.ZERO);
         when(transactionRepository.findByPortfolioOrderByTransactionDateAscIdAsc(portfolio))
@@ -321,6 +326,8 @@ class PortfolioServiceTest {
         assertThat(summary.fallbackTickers()).containsExactly("CDB-CDI");
         assertThat(summary.profitability().twrPercentage()).isEqualByComparingTo("1.2500");
         assertThat(summary.profitability().twrReliable()).isFalse();
+        assertThat(summary.profitability().twrValuedThrough()).isEqualTo(LocalDate.of(2026, 2, 2));
+        assertThat(summary.profitability().twrUpToDate()).isFalse();
         assertThat(summary.allocations().getFirst().marketPriceReliable()).isFalse();
         assertThat(summary.positions().getFirst().marketPriceReliable()).isFalse();
         verify(quoteService, never()).getCurrentQuotes(any());

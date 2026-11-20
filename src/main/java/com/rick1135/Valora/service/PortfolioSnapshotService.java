@@ -34,7 +34,9 @@ import org.springframework.web.client.RestClientException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.ConcurrentModificationException;
@@ -53,6 +55,8 @@ public class PortfolioSnapshotService {
     private static final Logger logger = LoggerFactory.getLogger(PortfolioSnapshotService.class);
     private static final List<String> BENCHMARK_TICKERS = List.of("CDI", "SELIC", "^BVSP", "IPCA");
     private static final int CAPTURE_ATTEMPTS = 3;
+    private static final ZoneId MARKET_ZONE = ZoneId.of("America/Sao_Paulo");
+    private static final LocalTime DAILY_CAPTURE_TIME = LocalTime.of(22, 30);
     private static final BigDecimal ZERO_PERCENTAGE = BigDecimal.ZERO.setScale(FinancialConstants.PERCENTAGE_SCALE);
 
     // Match the position timeline's ordering for transactions with the same timestamp.
@@ -115,35 +119,56 @@ public class PortfolioSnapshotService {
             return new PortfolioHistoryResponseDTO(historyRange.label, start, end, ZERO_PERCENTAGE, true, List.of(), Map.of());
         }
 
-        LocalDate firstPointDate = snapshots.getFirst().getSnapshotDate();
+        PortfolioDailySnapshot firstSnapshot = snapshots.getFirst();
+        LocalDate firstPointDate = firstSnapshot.getSnapshotDate();
+        int firstSegment = firstSnapshot.getTwrSegment();
         var previous = snapshotRepository.findFirstByPortfolioAndSnapshotDateLessThanOrderBySnapshotDateDesc(
                 portfolio, firstPointDate);
-        BigDecimal startQuota = previous.map(PortfolioDailySnapshot::getTwrQuotaValue)
-                .filter(quota -> quota.signum() > 0).orElse(BigDecimal.ONE);
+        var priorInSegment = previous.filter(snapshot -> snapshot.getTwrSegment() == firstSegment);
+        // Full history retains its original baseline. A range starting at reentry gets a new baseline.
+        int baseSegment = historyRange == HistoryRange.ALL ? 1 : firstSegment;
+        BigDecimal startQuota = priorInSegment.map(PortfolioDailySnapshot::getTwrQuotaValue).orElse(BigDecimal.ONE);
         LocalDate baseDate = previous.map(PortfolioDailySnapshot::getSnapshotDate)
                 .orElseGet(() -> marketCalendar.previousBusinessDay(firstPointDate));
         List<HistoryPointDTO> points = snapshots.stream()
                 .map(snapshot -> new HistoryPointDTO(
                         snapshot.getSnapshotDate(), snapshot.getTotalPatrimony(), snapshot.getTotalInvested(),
-                        twrCalculator.calculatePeriodTwrPercentage(startQuota, snapshot.getTwrQuotaValue()),
-                        snapshot.isPricingComplete()))
+                        twrCalculator.calculatePeriodTwrPercentage(
+                                startQuota, snapshot.getTwrQuotaValue(), baseSegment, snapshot.getTwrSegment()),
+                        snapshot.isPricingComplete(), snapshot.getTwrSegment()))
                 .toList();
+        boolean periodPricingComplete = priorInSegment.map(PortfolioDailySnapshot::isPricingComplete).orElse(true)
+                && points.stream().allMatch(HistoryPointDTO::pricingComplete);
         var benchmarks = loadBenchmarks(baseDate, firstPointDate, end);
         return new PortfolioHistoryResponseDTO(
                 historyRange.label, firstPointDate, end, points.getLast().twrPercentage(),
-                points.stream().allMatch(HistoryPointDTO::pricingComplete), points,
+                periodPricingComplete, points,
                 benchmarks.points(), benchmarks.complete()
         );
     }
 
-    public record PortfolioTwrSummary(BigDecimal twrPercentage, boolean reliable) {}
+    public record PortfolioTwrSummary(BigDecimal twrPercentage, boolean reliable, LocalDate valuedThrough,
+                                      boolean upToDate) {
+        public PortfolioTwrSummary(BigDecimal twrPercentage, boolean reliable) {
+            this(twrPercentage, reliable, null, false);
+        }
+    }
 
     @Transactional(readOnly = true)
     public Optional<PortfolioTwrSummary> getPortfolioTwrSummary(Portfolio portfolio) {
         return snapshotRepository.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio)
-                .map(snapshot -> new PortfolioTwrSummary(
-                        twrCalculator.calculatePeriodTwrPercentage(BigDecimal.ONE, snapshot.getTwrQuotaValue()),
-                        !snapshotRepository.existsByPortfolioAndPricingCompleteFalse(portfolio)));
+                .map(snapshot -> {
+                    var marketNow = marketCalendar.now().atZone(MARKET_ZONE);
+                    LocalDate today = marketNow.toLocalDate();
+                    LocalDate expectedClose = !marketNow.toLocalTime().isBefore(DAILY_CAPTURE_TIME)
+                            && marketCalendar.isBusinessDay(today) ? today : marketCalendar.previousBusinessDay(today);
+                    boolean upToDate = !snapshot.getSnapshotDate().isBefore(expectedClose);
+                    BigDecimal twrPercentage = twrCalculator.calculatePeriodTwrPercentage(
+                            BigDecimal.ONE, snapshot.getTwrQuotaValue(), 1, snapshot.getTwrSegment());
+                    boolean reliable = upToDate && twrPercentage != null
+                            && !snapshotRepository.existsByPortfolioAndPricingCompleteFalse(portfolio);
+                    return new PortfolioTwrSummary(twrPercentage, reliable, snapshot.getSnapshotDate(), upToDate);
+                });
     }
 
     @Transactional(readOnly = true)
@@ -211,7 +236,7 @@ public class PortfolioSnapshotService {
 
     private SnapshotBoundary findBoundary(Portfolio portfolio, LocalDate end, boolean refreshEnd) {
         LocalDate replaceFrom = snapshotRepository
-                .findFirstByPortfolioAndPricingCompleteFalseOrderBySnapshotDateAsc(portfolio)
+                .findFirstByPortfolioAndRecoverablePricingGapTrueOrderBySnapshotDateAsc(portfolio)
                 .map(PortfolioDailySnapshot::getSnapshotDate)
                 .filter(date -> !date.isAfter(end))
                 .orElse(null);
@@ -297,16 +322,17 @@ public class PortfolioSnapshotService {
 
         BigDecimal previousPatrimony = previous == null ? BigDecimal.ZERO : previous.patrimony();
         BigDecimal previousQuota = previous == null ? BigDecimal.ONE : previous.quota();
-        return twrCalculator.calculate(observations, previousPatrimony, previousQuota)
+        int previousSegment = previous == null ? 1 : previous.segment();
+        return twrCalculator.calculate(observations, previousPatrimony, previousQuota, previousSegment)
                 .stream().map(result -> toSnapshot(portfolio, result)).toList();
     }
 
     private record SnapshotBoundary(LocalDate replaceFrom, SnapshotAnchor previous, SnapshotAnchor latest) {}
 
-    private record SnapshotAnchor(Long id, LocalDate date, BigDecimal patrimony, BigDecimal quota) {
+    private record SnapshotAnchor(Long id, LocalDate date, BigDecimal patrimony, BigDecimal quota, int segment) {
         private static SnapshotAnchor from(PortfolioDailySnapshot snapshot) {
             return new SnapshotAnchor(snapshot.getId(), snapshot.getSnapshotDate(),
-                    snapshot.getTotalPatrimony(), snapshot.getTwrQuotaValue());
+                    snapshot.getTotalPatrimony(), snapshot.getTwrQuotaValue(), snapshot.getTwrSegment());
         }
     }
 
@@ -334,6 +360,7 @@ public class PortfolioSnapshotService {
         BigDecimal totalPatrimony = BigDecimal.ZERO;
         BigDecimal totalInvested = BigDecimal.ZERO;
         boolean pricingComplete = true;
+        boolean recoverablePricingGap = false;
         for (var entry : holdings.entrySet()) {
             SnapshotAsset asset = entry.getKey();
             Holding holding = entry.getValue();
@@ -342,20 +369,25 @@ public class PortfolioSnapshotService {
             }
             BigDecimal cost = holding.quantity.multiply(holding.averagePrice);
             totalInvested = totalInvested.add(cost);
-            Map.Entry<LocalDate, BigDecimal> close = asset.category() == AssetCategory.RENDA_FIXA
-                    ? null
-                    : historicalPrices.computeIfAbsent(asset.ticker(), ticker -> loadHistoricalPrices(ticker, start))
-                            .floorEntry(date);
-            if (close == null) {
+            if (asset.category() == AssetCategory.RENDA_FIXA) {
                 pricingComplete = false;
                 totalPatrimony = totalPatrimony.add(cost);
+                continue;
+            }
+            var close = historicalPrices.computeIfAbsent(asset.ticker(), ticker -> loadHistoricalPrices(ticker, start))
+                    .floorEntry(date);
+            if (close == null || !close.getKey().equals(date)) {
+                pricingComplete = false;
+                recoverablePricingGap = true;
+            }
+            if (close == null) {
+                totalPatrimony = totalPatrimony.add(cost);
             } else {
-                pricingComplete &= close.getKey().equals(date);
                 totalPatrimony = totalPatrimony.add(holding.quantity.multiply(close.getValue()));
             }
         }
         return new DailyObservation(date, money(totalPatrimony), money(totalInvested), inflows, outflows,
-                money(provents), pricingComplete);
+                money(provents), pricingComplete, recoverablePricingGap);
     }
 
     private NavigableMap<LocalDate, BigDecimal> loadHistoricalPrices(String ticker, LocalDate start) {
@@ -446,8 +478,9 @@ public class PortfolioSnapshotService {
             }
         }
 
-        boolean complete = start.equals(firstReferenceDate);
-        YearMonth month = YearMonth.from(complete ? start : start.plusMonths(1));
+        boolean startsAtMonthBoundary = start.equals(firstReferenceDate);
+        boolean complete = startsAtMonthBoundary && end.equals(YearMonth.from(end).atEndOfMonth());
+        YearMonth month = YearMonth.from(startsAtMonthBoundary ? start : start.plusMonths(1));
         NavigableMap<LocalDate, BigDecimal> closedMonthRates = new TreeMap<>();
         while (!month.atEndOfMonth().isAfter(end)) {
             BigDecimal rate = ratesByMonth.get(month);
@@ -486,7 +519,8 @@ public class PortfolioSnapshotService {
         return new PortfolioDailySnapshot(null, portfolio, observation.date(), observation.totalPatrimony(),
                 observation.totalInvested(), money(observation.inflows().subtract(observation.outflows())),
                 observation.proventsReceived(),
-                result.dailyReturnFactor(), result.quota(), observation.pricingComplete());
+                result.dailyReturnFactor(), result.quota(), observation.pricingComplete(), result.segment(),
+                observation.recoverablePricingGap());
     }
 
     private static PortfolioNotFoundException portfolioNotFound() {

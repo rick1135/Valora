@@ -29,7 +29,7 @@ public interface PortfolioDailySnapshotRepository extends JpaRepository<Portfoli
             Portfolio portfolio, LocalDate date
     );
 
-    Optional<PortfolioDailySnapshot> findFirstByPortfolioAndPricingCompleteFalseOrderBySnapshotDateAsc(Portfolio portfolio);
+    Optional<PortfolioDailySnapshot> findFirstByPortfolioAndRecoverablePricingGapTrueOrderBySnapshotDateAsc(Portfolio portfolio);
 
     boolean existsByPortfolioAndPricingCompleteFalse(Portfolio portfolio);
 

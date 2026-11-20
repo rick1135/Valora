@@ -27,8 +27,14 @@ public record PortfolioHistoryResponseDTO(
             BigDecimal totalPatrimony,
             BigDecimal totalInvested,
             BigDecimal twrPercentage,
-            boolean pricingComplete
-    ) {}
+            boolean pricingComplete,
+            int twrSegment
+    ) {
+        public HistoryPointDTO(LocalDate date, BigDecimal totalPatrimony, BigDecimal totalInvested,
+                               BigDecimal twrPercentage, boolean pricingComplete) {
+            this(date, totalPatrimony, totalInvested, twrPercentage, pricingComplete, 1);
+        }
+    }
 
     public record BenchmarkPointDTO(
             LocalDate date,

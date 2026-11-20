@@ -69,6 +69,7 @@ class PortfolioTwrCalculatorTest {
         List<DailyResult> results = calculator.calculate(observations);
 
         assertThat(results.get(2).dailyReturnFactor()).isEqualTo(new BigDecimal("1.000000000000"));
+        assertThat(results).extracting(DailyResult::segment).containsOnly(1);
         assertThat(results.getLast().quota()).isEqualTo(new BigDecimal("1.320000000000"));
         assertThat(percentage(results)).isEqualTo(new BigDecimal("32.0000"));
 
@@ -93,9 +94,30 @@ class PortfolioTwrCalculatorTest {
         assertThat(results.get(2).dailyReturnFactor()).isEqualByComparingTo("1");
         assertThat(results.get(2).quota()).isEqualByComparingTo("0");
         assertThat(results.get(3).quota()).isEqualByComparingTo("0.5");
+        assertThat(results).extracting(DailyResult::segment).containsExactly(1, 1, 1, 2, 2);
         assertThat(calculator.calculatePeriodTwrPercentage(BigDecimal.ONE, results.get(1).quota()))
                 .isEqualByComparingTo("-100");
-        assertThat(percentage(results)).isEqualByComparingTo("0");
+        assertThat(calculator.calculatePeriodTwrPercentage(
+                BigDecimal.ONE, results.getLast().quota(), 1, results.getLast().segment())).isNull();
+        assertThat(calculator.calculatePeriodTwrPercentage(
+                BigDecimal.ONE, results.getLast().quota(), 2, results.getLast().segment())).isEqualByComparingTo("0");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"200, 2", "50, 0.5"})
+    void tracksTheLossAndReentryRegardlessOfThePriorReturn(String patrimony, String quota) {
+        var results = calculator.calculate(List.of(
+                day(0, patrimony, "100", "0"),
+                day(1, "0", "0", "0"),
+                day(2, "100", "100", "0")
+        ));
+
+        assertThat(results).extracting(DailyResult::segment).containsExactly(1, 1, 2);
+        assertThat(results.getFirst().quota()).isEqualByComparingTo(quota);
+        assertThat(results.get(1).quota()).isEqualByComparingTo("0");
+        assertThat(results.getLast().quota()).isEqualByComparingTo("1");
+        assertThat(calculator.calculatePeriodTwrPercentage(
+                results.getFirst().quota(), results.getLast().quota(), 1, 2)).isNull();
     }
 
     @Test
@@ -104,6 +126,7 @@ class PortfolioTwrCalculatorTest {
                 BigDecimal.ZERO, BigDecimal.ZERO);
 
         assertThat(percentage(results)).isEqualByComparingTo("-25");
+        assertThat(results).extracting(DailyResult::segment).containsOnly(2);
     }
 
     @ParameterizedTest

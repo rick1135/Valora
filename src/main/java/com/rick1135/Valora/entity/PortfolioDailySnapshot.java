@@ -56,4 +56,17 @@ public class PortfolioDailySnapshot {
 
     @Column(name = "pricing_complete", nullable = false)
     private boolean pricingComplete = true;
+
+    @Column(name = "twr_segment", nullable = false)
+    private int twrSegment = 1;
+
+    @Column(name = "recoverable_pricing_gap", nullable = false)
+    private boolean recoverablePricingGap;
+
+    public PortfolioDailySnapshot(Long id, Portfolio portfolio, LocalDate snapshotDate, BigDecimal totalPatrimony,
+                                  BigDecimal totalInvested, BigDecimal netCashFlow, BigDecimal proventsReceived,
+                                  BigDecimal dailyReturnFactor, BigDecimal twrQuotaValue, boolean pricingComplete) {
+        this(id, portfolio, snapshotDate, totalPatrimony, totalInvested, netCashFlow, proventsReceived,
+                dailyReturnFactor, twrQuotaValue, pricingComplete, 1, false);
+    }
 }

@@ -102,6 +102,24 @@ public class PortfolioPerformanceCalculator {
             BigDecimal twrPercentage,
             boolean twrReliable
     ) {
+        return calculate(
+                positions, currentQuotes, totalProvents, realizedProfit, benchmarkComparisons, fixedIncomeValuations,
+                twrPercentage, twrReliable, null, false
+        );
+    }
+
+    public PortfolioSummaryDTO calculate(
+            List<Position> positions,
+            Map<String, QuoteDTO> currentQuotes,
+            BigDecimal totalProvents,
+            BigDecimal realizedProfit,
+            List<PortfolioSummaryDTO.BenchmarkComparisonDTO> benchmarkComparisons,
+            Map<Position, FixedIncomeValuationService.FixedIncomeValuationResult> fixedIncomeValuations,
+            BigDecimal twrPercentage,
+            boolean twrReliable,
+            LocalDate twrValuedThrough,
+            boolean twrUpToDate
+    ) {
         List<PositionSummaryLine> positionLines = positions.stream()
                 .map(position -> buildPositionSummaryLine(position, currentQuotes, fixedIncomeValuations))
                 .toList();
@@ -166,7 +184,9 @@ public class PortfolioPerformanceCalculator {
                         dayChangeAvailable,
                         benchmarkComparisons,
                         twrPercentage,
-                        twrReliable
+                        twrReliable,
+                        twrValuedThrough,
+                        twrUpToDate
                 ),
                 allocations,
                 positionSummaries,

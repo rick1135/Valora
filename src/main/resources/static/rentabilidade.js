@@ -33,6 +33,13 @@
       Number.isFinite(Number(value))
     );
   }
+  function formatTwrValuedThrough(value) {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const date = new Date(`${value}T00:00:00Z`);
+    return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC",
+    }).format(date);
+  }
 
   function toNumber(value) {
     if (!isFiniteNumber(value)) {
@@ -165,17 +172,26 @@
     const hasTwr = isFiniteNumber(twr);
     const twrReliable = hasPeriodTwr ? history.pricingComplete !== false : prof.twrReliable === true;
     const twrEstimated = hasTwr && !twrReliable;
+    let twrBadge = twrEstimated ? { text: hasPeriodTwr ? "Estimado" : "Parcial" } : null;
     let twrNote = "O TWR isola o efeito de aportes e resgates.";
     if (hasPeriodTwr) {
       twrNote = twrReliable
         ? "Retorno no período selecionado. Isola o efeito de aportes e resgates."
         : "Retorno estimado: há cotações incompletas ou renda fixa a custo no período.";
+    } else if (history && history.twrPercentage === null) {
+      twrNote = "Período descontínuo ou sem base contínua para TWR.";
     } else if (hasTwr) {
-      twrNote = twrReliable
-        ? "Retorno consolidado da carteira. Isola o efeito de aportes e resgates."
-        : "Retorno estimado: histórico com cotações incompletas ou renda fixa a custo.";
+      const valuedThrough = formatTwrValuedThrough(prof.twrValuedThrough);
+      if (prof.twrUpToDate === false) {
+        twrBadge = { text: "Desatualizado" };
+        twrNote = `Retorno consolidado da carteira. ${valuedThrough ? `Atualizado até ${valuedThrough} ` : ""}(desatualizado em relação ao último fechamento).`;
+      } else {
+        twrNote = twrReliable
+          ? "Retorno consolidado da carteira. Isola o efeito de aportes e resgates."
+          : "Retorno estimado: histórico com cotações incompletas ou renda fixa a custo.";
+        if (valuedThrough) twrNote = `Atualizado até ${valuedThrough}. ${twrNote}`;
+      }
     }
-
     const cards = [
       {
         label: "Lucro absoluto",
@@ -198,7 +214,7 @@
         value: hasTwr ? formatPercent(twr, true) : "Indisponível",
         tone: hasTwr ? valueTone(twr) : "neutral",
         highlight: true,
-        badge: twrEstimated ? { text: hasPeriodTwr ? "Estimado" : "Parcial" } : null,
+        badge: twrBadge,
         note: twrNote,
       },
       {

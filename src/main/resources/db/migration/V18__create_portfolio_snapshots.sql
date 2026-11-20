@@ -9,6 +9,8 @@ CREATE TABLE portfolio_daily_snapshots (
     daily_return_factor DECIMAL(19, 12) NOT NULL CHECK (daily_return_factor >= 0),
     twr_quota_value DECIMAL(19, 12) NOT NULL CHECK (twr_quota_value >= 0),
     pricing_complete BOOLEAN NOT NULL DEFAULT TRUE,
+    twr_segment INTEGER NOT NULL DEFAULT 1 CHECK (twr_segment >= 1),
+    recoverable_pricing_gap BOOLEAN NOT NULL DEFAULT FALSE,
     UNIQUE (portfolio_id, snapshot_date)
 );
 

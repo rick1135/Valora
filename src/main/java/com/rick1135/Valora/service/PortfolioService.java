@@ -146,7 +146,9 @@ public class PortfolioService {
                 benchmarkComparisons,
                 fixedIncomeValuations,
                 twrSummary == null ? null : twrSummary.twrPercentage(),
-                twrSummary != null && twrSummary.reliable()
+                twrSummary != null && twrSummary.reliable(),
+                twrSummary == null ? null : twrSummary.valuedThrough(),
+                twrSummary != null && twrSummary.upToDate()
         );
     }
 
