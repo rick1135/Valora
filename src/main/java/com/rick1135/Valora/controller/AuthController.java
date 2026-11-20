@@ -5,6 +5,8 @@ import com.rick1135.Valora.dto.request.RefreshTokenRequestDTO;
 import com.rick1135.Valora.dto.request.RegisterDTO;
 import com.rick1135.Valora.dto.response.LoginResponseDTO;
 import com.rick1135.Valora.entity.User;
+import com.rick1135.Valora.exception.GlobalExceptionHandler;
+import com.rick1135.Valora.exception.InvalidTokenException;
 import com.rick1135.Valora.service.TokenService;
 import com.rick1135.Valora.service.UserService;
 import jakarta.validation.Valid;
@@ -15,8 +17,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/auth")
@@ -51,8 +51,11 @@ public class AuthController {
 
     @PostMapping("/refresh")
     public ResponseEntity<LoginResponseDTO> refresh(@Valid @RequestBody RefreshTokenRequestDTO data) {
-        UUID userId = tokenService.consumeRefreshToken(data.refreshToken());
-        User user = userService.getById(userId);
+        var consumed = tokenService.consumeRefreshTokenWithVersion(data.refreshToken());
+        User user = userService.getById(consumed.userId());
+        if (user.getTokenVersion() != consumed.tokenVersion()) {
+            throw new InvalidTokenException(GlobalExceptionHandler.GENERIC_REFRESH_TOKEN_MESSAGE);
+        }
         return ResponseEntity.ok(buildLoginResponse(user));
     }
 

@@ -31,6 +31,9 @@
   const importStatus = document.querySelector("#csv-import-status");
   const confirmImport = document.querySelector("#csv-confirm-btn");
   let importFormData = null;
+  let previewPortfolioId = null;
+  let previewFileKey = null;
+  let previewSeq = 0;
 
   function setImportStatus(message, tone = "error") {
     importStatus.textContent = message;
@@ -38,11 +41,21 @@
     importStatus.dataset.tone = tone;
   }
 
+  function invalidatePreview(message = "") {
+    previewSeq += 1;
+    importFormData = null;
+    previewPortfolioId = null;
+    previewFileKey = null;
+    preview.hidden = true;
+    preview.replaceChildren();
+    confirmImport.disabled = true;
+    if (message) setImportStatus(message);
+  }
+
   function closeImport() {
     importModal.hidden = true;
     importBackdrop.hidden = true;
-    importFormData = null;
-    confirmImport.disabled = true;
+    invalidatePreview();
   }
 
   function appendImportList(parent, title, values, renderValue = (value) => String(value)) {
@@ -81,39 +94,54 @@
     importModal.hidden = false;
     importBackdrop.hidden = false;
     setImportStatus("");
-    preview.hidden = true;
-    confirmImport.disabled = true;
+    invalidatePreview();
     fileInput.focus();
   });
   document.querySelector("#csv-import-close").addEventListener("click", closeImport);
   importBackdrop.addEventListener("click", closeImport);
+  fileInput.addEventListener("change", () => invalidatePreview());
   importForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const file = fileInput.files?.[0];
     if (!file) { setImportStatus("Selecione um arquivo CSV."); return; }
     if (file.size > 2 * 1024 * 1024) { setImportStatus("O arquivo deve ter no máximo 2 MB."); return; }
-    importFormData = new FormData();
-    importFormData.append("file", file);
+    const seq = ++previewSeq;
+    const fileKey = `${file.name}:${file.size}:${file.lastModified}`;
+    const targetPortfolioId = activePortfolioId || (await api.getPortfolio())?.id;
+    if (!targetPortfolioId) { setImportStatus("Nenhuma carteira ativa encontrada."); return; }
+    const formData = new FormData();
+    formData.append("file", file);
     const analyze = document.querySelector("#csv-analyze-btn");
     analyze.disabled = true;
     setImportStatus("Analisando arquivo...", "info");
     try {
-      if (!activePortfolioId) activePortfolioId = (await api.getPortfolio())?.id;
-      if (!activePortfolioId) throw new Error("Nenhuma carteira ativa encontrada.");
-      const result = await api.request(`/transactions/import/preview?portfolioId=${encodeURIComponent(activePortfolioId)}`, { method: "POST", body: importFormData });
+      const result = await api.request(`/transactions/import/preview?portfolioId=${encodeURIComponent(targetPortfolioId)}`, { method: "POST", body: formData });
+      if (seq !== previewSeq || importModal.hidden) return;
+      previewPortfolioId = targetPortfolioId;
+      previewFileKey = fileKey;
+      importFormData = formData;
       renderImportPreview(result);
       setImportStatus("Prévia pronta.", "success");
-    } catch (error) { setImportStatus(error.message); }
+    } catch (error) {
+      if (seq === previewSeq && !importModal.hidden) setImportStatus(error.message);
+    }
     finally { analyze.disabled = false; }
   });
   confirmImport.addEventListener("click", async () => {
-    if (!importFormData || confirmImport.disabled || !activePortfolioId) return;
+    const file = fileInput.files?.[0];
+    const fileKey = file ? `${file.name}:${file.size}:${file.lastModified}` : null;
+    if (!importFormData || !previewPortfolioId || previewPortfolioId !== activePortfolioId || fileKey !== previewFileKey) {
+      invalidatePreview("Carteira ou arquivo alterado. Analise o arquivo novamente antes de confirmar.");
+      return;
+    }
+    if (confirmImport.disabled) return;
     confirmImport.disabled = true;
     setImportStatus("Importando operações...", "info");
     try {
-      const result = await api.request(`/transactions/import?portfolioId=${encodeURIComponent(activePortfolioId)}`, { method: "POST", body: importFormData });
+      const targetPortfolioId = previewPortfolioId;
+      const result = await api.request(`/transactions/import?portfolioId=${encodeURIComponent(targetPortfolioId)}`, { method: "POST", body: importFormData });
       setImportStatus(`Importação concluída: ${result.importedCount ?? 0} importadas; ${result.skippedDuplicatesCount ?? 0} duplicatas ignoradas.`, "success");
-      await loadHistory(0);
+      if (targetPortfolioId === activePortfolioId) await loadHistory(0);
       window.setTimeout(closeImport, 1400);
     } catch (error) { setImportStatus(error.message); confirmImport.disabled = false; }
   });
@@ -251,7 +279,11 @@
   });
   previous.addEventListener("click", () => loadHistory(page - 1));
   next.addEventListener("click", () => loadHistory(page + 1));
-  window.addEventListener("valora:portfolio-changed", (event) => loadHistory(0, event.detail.portfolio));
+  window.addEventListener("valora:portfolio-changed", (event) => {
+    const modalOpen = !importModal.hidden;
+    invalidatePreview(modalOpen ? "Carteira alterada. Analise o arquivo novamente antes de confirmar." : "");
+    loadHistory(0, event.detail.portfolio);
+  });
   document.addEventListener("valora:transaction-saved", (event) => {
     if (event.detail.portfolioId === activePortfolioId) loadHistory(page);
   });

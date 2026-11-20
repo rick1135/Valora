@@ -23,8 +23,12 @@ public class Asset {
     @Column(nullable = false, length = 20)
     private String ticker;
 
-    @Column(name = "ticker_normalized", unique = true, nullable = false, length = 20)
+    @Column(name = "ticker_normalized", nullable = false, length = 20)
     private String tickerNormalized;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_user_id")
+    private User ownerUser;
 
     @Column(nullable = false)
     private String name;

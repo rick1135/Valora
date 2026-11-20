@@ -14,6 +14,7 @@ import com.rick1135.Valora.exception.InvalidTokenException;
 import com.rick1135.Valora.repository.PortfolioRepository;
 import com.rick1135.Valora.repository.UserRepository;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -21,7 +22,10 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -91,33 +95,30 @@ public class UserService {
 
     @Transactional
     public AccountProfileResponseDTO updateProfile(User user, UpdateProfileRequestDTO request) {
-        User persisted = findAccount(user.getId());
+        User persisted = findAccountForUpdate(user.getId());
         persisted.setName(request.name().trim());
         return toProfile(userRepository.save(persisted));
     }
 
     @Transactional
     public void changePassword(User user, ChangePasswordRequestDTO request) {
-        User persisted = findAccount(user.getId());
+        User persisted = findAccountForUpdate(user.getId());
         verifyCurrentPassword(persisted, request.currentPassword());
         if (passwordEncoder.matches(request.newPassword(), persisted.getPasswordHash())) {
             throw new IllegalArgumentException("A nova senha deve ser diferente da senha atual.");
         }
 
         persisted.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        persisted.incrementTokenVersion();
         userRepository.save(persisted);
-        if (tokenService != null) {
-            tokenService.revokeAllUserTokens(persisted.getId());
-        }
+        revokeTokensAfterCommit(persisted.getId());
     }
 
     @Transactional
     public void deleteAccount(User user, DeleteAccountRequestDTO request) {
-        User persisted = findAccount(user.getId());
+        User persisted = findAccountForUpdate(user.getId());
         verifyCurrentPassword(persisted, request.currentPassword());
-        if (tokenService != null) {
-            tokenService.revokeAllUserTokens(persisted.getId());
-        }
+        persisted.incrementTokenVersion();
 
         var portfolios = portfolioRepository.findByUserOrderByCreatedAtAsc(persisted);
         if (entityManager != null && !portfolios.isEmpty()) {
@@ -131,7 +132,42 @@ public class UserService {
         }
         portfolioRepository.deleteAll(portfolios);
         portfolioRepository.flush();
+        if (entityManager != null) {
+            entityManager.createQuery("""
+                    delete from Provent p
+                    where p.asset in (select a from Asset a where a.ownerUser = :user)
+                    """)
+                    .setParameter("user", persisted).executeUpdate();
+            entityManager.createQuery("delete from Asset a where a.ownerUser = :user")
+                    .setParameter("user", persisted).executeUpdate();
+        }
         userRepository.delete(persisted);
+        userRepository.flush();
+        revokeTokensAfterCommit(persisted.getId());
+    }
+
+    private void revokeTokensAfterCommit(UUID userId) {
+        if (tokenService == null) {
+            return;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    tokenService.revokeAllUserTokens(userId);
+                }
+            });
+        } else {
+            tokenService.revokeAllUserTokens(userId);
+        }
+    }
+
+    private User findAccountForUpdate(UUID id) {
+        if (entityManager == null) {
+            return findAccount(id);
+        }
+        return Optional.ofNullable(entityManager.find(User.class, id, LockModeType.PESSIMISTIC_WRITE))
+                .orElseThrow(() -> new UsernameNotFoundException("Usuario nao encontrado."));
     }
 
     private User findAccount(UUID id) {

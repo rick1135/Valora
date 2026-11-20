@@ -36,11 +36,18 @@ public class User implements UserDetails {
     private UserRole role;
     private boolean emailVerified;
 
+    @Column(name = "token_version", nullable = false)
+    private long tokenVersion = 0L;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;
+
+    public void incrementTokenVersion() {
+        this.tokenVersion++;
+    }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {

@@ -11,6 +11,7 @@ import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.repository.AssetRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -52,6 +53,14 @@ public class TransactionImportService {
     private static final Pattern QUOTED_HEADER_FIELD = Pattern.compile("\"[^\"]*\"|'[^']*'");
     private static final Pattern BRAZILIAN_DECIMAL = Pattern.compile("(?:[0-9]++|[0-9]{1,3}(?:\\.[0-9]{3})++),[0-9]+");
     private static final Pattern INTERNATIONAL_DECIMAL = Pattern.compile("[0-9]+(?:\\.[0-9]+)?");
+    private static final BigDecimal MIN_DECIMAL = new BigDecimal("0.00000001");
+    private static final BigDecimal DECIMAL_UPPER_BOUND = new BigDecimal("100000000000");
+    private static final Comparator<TransactionDTO> TRANSACTION_ORDER = Comparator
+            .comparing(TransactionDTO::transactionDate)
+            .thenComparing(TransactionDTO::assetId)
+            .thenComparing(TransactionDTO::type)
+            .thenComparing(TransactionDTO::quantity)
+            .thenComparing(TransactionDTO::unitPrice);
 
     private final PortfolioService portfolioService;
     private final AssetRepository assetRepository;
@@ -60,14 +69,15 @@ public class TransactionImportService {
 
     public TransactionImportPreviewDTO preview(User user, UUID portfolioId, MultipartFile file) {
         portfolioService.resolveOwnedPortfolio(user, portfolioId);
-        ParsedCsv parsed = parse(portfolioId, file);
+        ParsedCsv parsed = parse(user, portfolioId, file);
         return new TransactionImportPreviewDTO(parsed.totalRows(), parsed.rows().size(), parsed.errors().size(),
                 parsed.missingTickers(), parsed.rows().stream().map(ParsedRow::preview).toList(), parsed.errors());
     }
 
+    @Transactional
     public TransactionImportResultDTO importCsv(User user, UUID portfolioId, MultipartFile file) {
         portfolioService.resolveOwnedPortfolio(user, portfolioId);
-        ParsedCsv parsed = parse(portfolioId, file);
+        ParsedCsv parsed = parse(user, portfolioId, file);
         if (!parsed.errors().isEmpty() || !parsed.missingTickers().isEmpty()) {
             RowError first = parsed.errors().getFirst();
             String message = "CSV invalido. %d linha(s) com erro. Linha %d: %s"
@@ -80,14 +90,19 @@ public class TransactionImportService {
             throw new IllegalArgumentException(message);
         }
 
-        List<ParsedRow> sortedRows = parsed.rows().stream()
-                .sorted(Comparator.comparing((ParsedRow row) -> row.transaction().transactionDate())
-                        .thenComparingInt(row -> row.preview().lineNumber()))
+        List<TransactionDTO> sortedTransactions = parsed.rows().stream()
+                .map(ParsedRow::transaction)
+                .sorted(TRANSACTION_ORDER)
                 .toList();
         int importedCount = 0;
         int skippedDuplicatesCount = 0;
-        for (ParsedRow row : sortedRows) {
-            var result = transactionService.processTransaction(user, row.transaction(), idempotencyKey(row));
+        TransactionDTO previous = null;
+        int occurrence = 0;
+        for (TransactionDTO transaction : sortedTransactions) {
+            occurrence = previous != null && TRANSACTION_ORDER.compare(previous, transaction) == 0 ? occurrence + 1 : 1;
+            previous = transaction;
+            var result = transactionService.processTransactionInCurrentTransaction(
+                    user, transaction, idempotencyKey(transaction, occurrence));
             if (result.replayed()) {
                 skippedDuplicatesCount++;
             } else {
@@ -97,7 +112,7 @@ public class TransactionImportService {
         return new TransactionImportResultDTO(parsed.totalRows(), importedCount, skippedDuplicatesCount);
     }
 
-    private ParsedCsv parse(UUID portfolioId, MultipartFile file) {
+    private ParsedCsv parse(User user, UUID portfolioId, MultipartFile file) {
         String content = readCsv(file);
         var lines = content.lines().iterator();
         String header = lines.next();
@@ -130,7 +145,7 @@ public class TransactionImportService {
                 }
                 Instant instant = parseDate(fields.get(columns.date()));
                 LocalDate date = instant.atZone(MARKET_ZONE).toLocalDate();
-                if (date.isAfter(today)) {
+                if (date.isAfter(today) || instant.isAfter(marketCalendar.now())) {
                     throw new IllegalArgumentException("Data da transacao nao pode ser futura.");
                 }
                 String ticker = fields.get(columns.ticker()).toUpperCase(Locale.ROOT);
@@ -140,7 +155,7 @@ public class TransactionImportService {
                 TransactionType type = parseType(fields.get(columns.type()));
                 BigDecimal quantity = parsePositiveDecimal(fields.get(columns.quantity()), "Quantidade");
                 BigDecimal price = parsePositiveDecimal(fields.get(columns.price()), "Preco unitario");
-                Optional<Asset> asset = findAsset(ticker, assetsByTicker);
+                Optional<Asset> asset = findAsset(user, ticker, assetsByTicker);
                 if (asset.isEmpty()) {
                     missingTickers.add(ticker);
                     errors.add(new RowError(lineNumber, "Ativo '" + ticker + "' nao cadastrado."));
@@ -253,26 +268,35 @@ public class TransactionImportService {
             throw new IllegalArgumentException(field + " deve ser um numero maior que zero.");
         }
         BigDecimal decimal = new BigDecimal(value);
-        if (decimal.signum() <= 0) {
-            throw new IllegalArgumentException(field + " deve ser um numero maior que zero.");
+        if (decimal.compareTo(MIN_DECIMAL) < 0) {
+            throw new IllegalArgumentException(field + " deve ser de pelo menos 0.00000001.");
+        }
+        if (decimal.compareTo(DECIMAL_UPPER_BOUND) >= 0 || decimal.stripTrailingZeros().scale() > 8) {
+            throw new IllegalArgumentException(field + " deve ter ate 11 digitos inteiros e 8 casas decimais.");
         }
         return decimal;
     }
 
-    private Optional<Asset> findAsset(String ticker, Map<String, Optional<Asset>> assetsByTicker) {
-        Optional<Asset> exact = assetsByTicker.computeIfAbsent(ticker, assetRepository::findByTickerIgnoreCase);
+    private Optional<Asset> findAsset(User user, String ticker, Map<String, Optional<Asset>> assetsByTicker) {
+        Optional<Asset> exact = assetsByTicker.computeIfAbsent(ticker, key -> findVisibleAsset(user, key));
         if (exact.isPresent() || ticker.length() == 1 || !ticker.endsWith("F")) {
             return exact;
         }
         String regularTicker = ticker.substring(0, ticker.length() - 1);
-        return assetsByTicker.computeIfAbsent(regularTicker, assetRepository::findByTickerIgnoreCase);
+        return assetsByTicker.computeIfAbsent(regularTicker, key -> findVisibleAsset(user, key));
     }
 
-    private String idempotencyKey(ParsedRow row) {
-        TransactionDTO dto = row.transaction();
-        String payload = dto.portfolioId() + "|" + row.preview().lineNumber() + "|" + dto.transactionDate()
+    private Optional<Asset> findVisibleAsset(User user, String ticker) {
+        if (user == null) {
+            return assetRepository.findByTickerIgnoreCase(ticker);
+        }
+        return assetRepository.findVisibleByTickerIgnoreCase(user, ticker).stream().findFirst();
+    }
+
+    private String idempotencyKey(TransactionDTO dto, int occurrence) {
+        String payload = dto.portfolioId() + "|" + dto.transactionDate()
                 + "|" + dto.assetId() + "|" + dto.type() + "|" + dto.quantity().stripTrailingZeros()
-                + "|" + dto.unitPrice().stripTrailingZeros();
+                + "|" + dto.unitPrice().stripTrailingZeros() + "|" + occurrence;
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256").digest(payload.getBytes(StandardCharsets.UTF_8));
             return "csv:" + HexFormat.of().formatHex(hash);

@@ -24,6 +24,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -148,8 +149,10 @@ class AuthControllerTest {
         User user = new User();
         user.setId(userId);
         user.setEmail("refresh@valora.dev");
+        user.incrementTokenVersion();
 
-        when(tokenService.consumeRefreshToken("refresh-token")).thenReturn(userId);
+        when(tokenService.consumeRefreshTokenWithVersion("refresh-token"))
+                .thenReturn(new TokenService.ConsumedRefreshToken(userId, user.getTokenVersion()));
         when(userService.getById(userId)).thenReturn(user);
         when(tokenService.generateToken(user)).thenReturn("jwt-refreshed");
         when(tokenService.generateRefreshToken(user)).thenReturn("refresh-rotated");
@@ -168,7 +171,7 @@ class AuthControllerTest {
 
     @Test
     void refreshReturnsUnauthorizedWhenRefreshTokenIsInvalid() throws Exception {
-        when(tokenService.consumeRefreshToken("refresh-token"))
+        when(tokenService.consumeRefreshTokenWithVersion("refresh-token"))
                 .thenThrow(new InvalidTokenException("Refresh token invalido ou expirado."));
 
         assertGenericRefreshUnauthorized(mockMvc.perform(post("/auth/refresh")
@@ -183,7 +186,7 @@ class AuthControllerTest {
     @Test
     void refreshReturnsUnauthorizedWhenRefreshTokenWasAlreadyReused() throws Exception {
         String reusedToken = "reused-refresh-token";
-        when(tokenService.consumeRefreshToken(reusedToken))
+        when(tokenService.consumeRefreshTokenWithVersion(reusedToken))
                 .thenThrow(new InvalidTokenException("Refresh token invalido ou expirado."));
 
         assertGenericRefreshUnauthorized(mockMvc.perform(post("/auth/refresh")
@@ -198,7 +201,7 @@ class AuthControllerTest {
     @Test
     void refreshReturnsUnauthorizedWhenRefreshTokenWasRevokedOrMissing() throws Exception {
         String revokedToken = "revoked-refresh-token";
-        when(tokenService.consumeRefreshToken(revokedToken))
+        when(tokenService.consumeRefreshTokenWithVersion(revokedToken))
                 .thenThrow(new InvalidTokenException("Refresh token invalido ou expirado."));
 
         assertGenericRefreshUnauthorized(mockMvc.perform(post("/auth/refresh")
@@ -213,7 +216,8 @@ class AuthControllerTest {
     @Test
     void refreshReturnsUnauthorizedWhenStoredUserIdIsStale() throws Exception {
         UUID staleUserId = UUID.randomUUID();
-        when(tokenService.consumeRefreshToken("refresh-token")).thenReturn(staleUserId);
+        when(tokenService.consumeRefreshTokenWithVersion("refresh-token"))
+                .thenReturn(new TokenService.ConsumedRefreshToken(staleUserId, 0L));
         when(userService.getById(staleUserId))
                 .thenThrow(new InvalidTokenException("Refresh token invalido ou expirado."));
 
@@ -227,8 +231,28 @@ class AuthControllerTest {
     }
 
     @Test
+    void refreshRejectsPreviousTokenVersionWithoutIssuingNewTokens() throws Exception {
+        UUID userId = UUID.randomUUID();
+        User user = new User();
+        user.setId(userId);
+        user.incrementTokenVersion();
+        when(tokenService.consumeRefreshTokenWithVersion("refresh-token"))
+                .thenReturn(new TokenService.ConsumedRefreshToken(userId, 0L));
+        when(userService.getById(userId)).thenReturn(user);
+
+        assertGenericRefreshUnauthorized(mockMvc.perform(post("/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"refreshToken": "refresh-token"}
+                                """)), "refresh-token");
+
+        verify(tokenService, never()).generateToken(any());
+        verify(tokenService, never()).generateRefreshToken(any());
+    }
+
+    @Test
     void refreshReturnsUnauthorizedWhenRefreshTokenIsBlank() throws Exception {
-        when(tokenService.consumeRefreshToken("   "))
+        when(tokenService.consumeRefreshTokenWithVersion("   "))
                 .thenThrow(new InvalidTokenException("Refresh token invalido ou expirado."));
 
         assertGenericRefreshUnauthorized(mockMvc.perform(post("/auth/refresh")

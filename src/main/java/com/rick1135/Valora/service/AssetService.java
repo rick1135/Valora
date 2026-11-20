@@ -11,6 +11,7 @@ import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.entity.FixedIncomeIndexer;
 import com.rick1135.Valora.entity.FixedIncomeRateType;
+import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.AssetAlreadyExistsException;
 import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.mapper.AssetMapper;
@@ -29,14 +30,18 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
+import java.text.Normalizer;
 import java.time.Clock;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.regex.Pattern;
 
 @Service
 public class AssetService {
     private static final String REQUIRED_FIXED_INCOME_FIELDS =
             "Indexador, taxa anual, emissor e data de vencimento sao obrigatorios para ativos de renda fixa.";
+    private static final Pattern BRAPI_TICKER = Pattern.compile("^[A-Z0-9]{4,12}$", Pattern.CASE_INSENSITIVE);
 
     private final AssetRepository assetRepository;
     private final AssetMapper assetMapper;
@@ -46,7 +51,7 @@ public class AssetService {
 
     @Autowired
     public AssetService(AssetRepository assetRepository, AssetMapper assetMapper, MarketCalendar marketCalendar,
-                        @Nullable BrapiClient brapiClient, @Value("${api.brapi.token:}") String brapiToken) {
+                        @Nullable BrapiClient brapiClient, @Value("${brapi.token:}") String brapiToken) {
         this.assetRepository = assetRepository;
         this.assetMapper = assetMapper;
         this.marketCalendar = marketCalendar != null ? marketCalendar : new MarketCalendar(Clock.systemDefaultZone());
@@ -63,17 +68,23 @@ public class AssetService {
     }
 
     public AssetResponseDTO importAssetFromBrapi(AssetImportRequestDTO request) {
-        String ticker = normalizeTicker(request.ticker());
         if (request.category() == AssetCategory.RENDA_FIXA) {
             throw new IllegalArgumentException("Para cadastrar renda fixa, use /assets/fixed-income.");
         }
+        if (request.ticker() == null || !BRAPI_TICKER.matcher(request.ticker()).matches()) {
+            throw new IllegalArgumentException("Ticker invalido. Use entre 4 e 12 caracteres alfanumericos.");
+        }
+        String ticker = normalizeTicker(request.ticker());
 
-        var existing = assetRepository.findByTickerIgnoreCase(ticker);
+        var existing = assetRepository.findByTickerIgnoreCaseAndOwnerUserIsNull(ticker);
         if (existing.isPresent()) {
             return assetMapper.toResponse(existing.get());
         }
 
         BrapiResultDTO quote = findBrapiQuote(ticker);
+        if (quote.symbol() == null || !normalizeTicker(quote.symbol()).equals(ticker)) {
+            throw new AssetNotFoundException("Ativo '" + ticker + "' nao encontrado na BRAPI.");
+        }
         String name = ticker;
         if (StringUtils.hasText(quote.longName())) {
             name = quote.longName().strip();
@@ -93,18 +104,23 @@ public class AssetService {
             if (!isUniqueViolation(exception)) {
                 throw exception;
             }
-            asset = assetRepository.findByTickerIgnoreCase(ticker).orElseThrow(() -> exception);
+            asset = assetRepository.findByTickerIgnoreCaseAndOwnerUserIsNull(ticker).orElseThrow(() -> exception);
         }
         return assetMapper.toResponse(asset);
     }
 
-    public AssetResponseDTO createFixedIncomeAsset(FixedIncomeAssetRequestDTO request) {
+    public AssetResponseDTO createFixedIncomeAsset(User user, FixedIncomeAssetRequestDTO request) {
+        Objects.requireNonNull(user, "Usuario autenticado e obrigatorio.");
         return createAsset(new AssetRequestDTO(request.ticker(), request.name(), AssetCategory.RENDA_FIXA,
                 request.indexer(), request.annualRate(), request.issuer(), request.expirationDate(),
-                request.rateType(), request.spreadRate()));
+                request.rateType(), request.spreadRate()), user);
     }
 
     public AssetResponseDTO createAsset(AssetRequestDTO request) {
+        return createAsset(request, null);
+    }
+
+    private AssetResponseDTO createAsset(AssetRequestDTO request, @Nullable User ownerUser) {
         FixedIncomeRateType rateType = request.rateType();
         if (request.category() == AssetCategory.RENDA_FIXA) {
             if (request.indexer() == null || request.issuer() == null || request.expirationDate() == null) {
@@ -126,11 +142,14 @@ public class AssetService {
 
         String normalizedTicker = normalizeTicker(request.ticker());
 
-        if (assetRepository.findByTickerIgnoreCase(normalizedTicker).isPresent()) {
+        if (assetRepository.findByTickerIgnoreCaseAndOwnerUserIsNull(normalizedTicker).isPresent()
+                || (ownerUser != null
+                    && assetRepository.findByTickerIgnoreCaseAndOwnerUser(normalizedTicker, ownerUser).isPresent())) {
             throw new AssetAlreadyExistsException("Ativo com ticker '" + normalizedTicker + "' ja cadastrado.");
         }
 
         Asset asset = assetMapper.toEntity(request);
+        asset.setOwnerUser(ownerUser);
         asset.setTicker(normalizedTicker);
         asset.setName(request.name().trim());
         asset.setRateType(rateType);
@@ -150,10 +169,16 @@ public class AssetService {
 
     @Transactional(readOnly = true)
     public List<AssetResponseDTO> getAllAssets(int page, int size, String sort, String direction) {
+        return getAllAssets(null, page, size, sort, direction);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AssetResponseDTO> getAllAssets(@Nullable User user, int page, int size, String sort, String direction) {
         Sort.Direction sortDirection = "desc".equalsIgnoreCase(direction) ? Sort.Direction.DESC : Sort.Direction.ASC;
         String safeSortField = isSortableField(sort) ? sort : "ticker";
         PageRequest pageable = PageRequest.of(page, size, Sort.by(sortDirection, safeSortField));
-        return assetRepository.findAll(pageable)
+        var assets = user == null ? assetRepository.findAll(pageable) : assetRepository.findVisibleToUser(user, pageable);
+        return assets
                 .stream()
                 .map(assetMapper::toResponse)
                 .toList();
@@ -161,8 +186,15 @@ public class AssetService {
 
     @Transactional(readOnly = true)
     public List<AssetResponseDTO> searchAssets(String ticker) {
+        return searchAssets(null, ticker);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AssetResponseDTO> searchAssets(@Nullable User user, String ticker) {
         String normalizedTicker = normalizeTicker(ticker);
-        return assetRepository.findByTickerContainingIgnoreCase(normalizedTicker)
+        var assets = user == null ? assetRepository.findByTickerContainingIgnoreCase(normalizedTicker)
+                : assetRepository.searchVisibleToUser(user, normalizedTicker);
+        return assets
                 .stream()
                 .map(assetMapper::toResponse)
                 .toList();
@@ -191,13 +223,14 @@ public class AssetService {
     }
 
     private AssetCategory inferCategory(String ticker, String name) {
-        String normalizedName = name.toUpperCase(Locale.ROOT);
-        if (ticker.endsWith("11")
-                && (normalizedName.contains("FII") || normalizedName.contains("FUNDO") || normalizedName.contains("IMOB"))) {
-            return AssetCategory.FII;
-        }
-        if (normalizedName.contains("ETF") || normalizedName.contains("ISHARES") || normalizedName.contains("INDEX")) {
+        String normalizedName = Normalizer.normalize(name, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "").toUpperCase(Locale.ROOT);
+        if (normalizedName.contains("ETF") || normalizedName.contains("ISHARES") || normalizedName.contains("INDEX")
+                || normalizedName.contains("INDICE")) {
             return AssetCategory.ETF;
+        }
+        if (ticker.endsWith("11") && (normalizedName.contains("FII") || normalizedName.contains("IMOB"))) {
+            return AssetCategory.FII;
         }
         return AssetCategory.ACOES;
     }

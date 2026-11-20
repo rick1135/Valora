@@ -11,10 +11,12 @@ import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.entity.FixedIncomeIndexer;
 import com.rick1135.Valora.entity.FixedIncomeRateType;
+import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.AssetAlreadyExistsException;
 import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.mapper.AssetMapper;
 import com.rick1135.Valora.repository.AssetRepository;
+import jakarta.validation.Validation;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -26,6 +28,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -37,9 +41,11 @@ import org.springframework.web.client.RestClientException;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -70,23 +76,29 @@ class AssetServiceTest {
     @CsvSource({
             "HGLG11, ' Fundo Imobiliario ', HGLG, , Fundo Imobiliario, FII",
             "IVVB11, ' ', iShares S&P 500, , iShares S&P 500, ETF",
+            "BOVA11, ISHARES IBOVESPA FUNDO DE INDICE, , , ISHARES IBOVESPA FUNDO DE INDICE, ETF",
+            "TEST11, FUNDO DE ÍNDICE IMOBILIÁRIO, , , FUNDO DE ÍNDICE IMOBILIÁRIO, ETF",
+            "KNRI11, KINEA RENDA IMOBILIARIA FII, , , KINEA RENDA IMOBILIARIA FII, FII",
             "PETR4, , ' ', , PETR4, ACOES",
             "IVVB11, iShares, , ACOES, iShares, ACOES"
     })
     void importsNewAssetWithResolvedNameAndCategory(String ticker, String longName, String shortName,
                                                     AssetCategory requestedCategory, String expectedName,
                                                     AssetCategory expectedCategory) {
-        when(brapiClient.getQuote(ticker, "token")).thenReturn(new BrapiResponseDTO(List.of(
-                new BrapiResultDTO(ticker, BigDecimal.TEN, null, null, null, null, null, null, null, shortName, longName))));
+        when(brapiClient.getQuote(ticker, "token")).thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO(
+                " " + ticker.toLowerCase(Locale.ROOT) + " ", BigDecimal.TEN,
+                null, null, null, null, null, null, null, shortName, longName))));
         when(assetRepository.saveAndFlush(any(Asset.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         AssetResponseDTO response = configuredBrapiService()
-                .importAssetFromBrapi(new AssetImportRequestDTO(" " + ticker.toLowerCase(Locale.ROOT) + " ",
-                        requestedCategory));
+                .importAssetFromBrapi(new AssetImportRequestDTO(ticker.toLowerCase(Locale.ROOT), requestedCategory));
 
         assertThat(response.ticker()).isEqualTo(ticker);
         assertThat(response.name()).isEqualTo(expectedName);
         assertThat(response.category()).isEqualTo(expectedCategory);
+        ArgumentCaptor<Asset> saved = ArgumentCaptor.forClass(Asset.class);
+        verify(assetRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getOwnerUser()).isNull();
     }
 
     @Test
@@ -94,10 +106,10 @@ class AssetServiceTest {
         Asset existing = new Asset();
         AssetResponseDTO response = new AssetResponseDTO(UUID.randomUUID(), "PETR4", "Petrobras",
                 AssetCategory.ACOES, null, null, null, null);
-        when(assetRepository.findByTickerIgnoreCase("PETR4")).thenReturn(Optional.of(existing));
+        when(assetRepository.findByTickerIgnoreCaseAndOwnerUserIsNull("PETR4")).thenReturn(Optional.of(existing));
         when(assetMapper.toResponse(existing)).thenReturn(response);
 
-        assertThat(assetService.importAssetFromBrapi(new AssetImportRequestDTO(" petr4 ", null))).isSameAs(response);
+        assertThat(assetService.importAssetFromBrapi(new AssetImportRequestDTO("petr4", null))).isSameAs(response);
 
         verifyNoInteractions(brapiClient);
         verify(assetRepository, never()).saveAndFlush(any(Asset.class));
@@ -110,7 +122,8 @@ class AssetServiceTest {
         existing.setName("Petrobras");
         existing.setCategory(AssetCategory.ACOES);
         existing.setId(UUID.randomUUID());
-        when(assetRepository.findByTickerIgnoreCase("PETR4")).thenReturn(Optional.empty(), Optional.of(existing));
+        when(assetRepository.findByTickerIgnoreCaseAndOwnerUserIsNull("PETR4"))
+                .thenReturn(Optional.empty(), Optional.of(existing));
         when(brapiClient.getQuote("PETR4", "token"))
                 .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO("PETR4", BigDecimal.TEN))));
         when(assetRepository.saveAndFlush(any(Asset.class)))
@@ -132,6 +145,51 @@ class AssetServiceTest {
                 .isInstanceOf(AssetNotFoundException.class).hasMessageContaining("PETR4");
         assertThatThrownBy(() -> service.importAssetFromBrapi(request))
                 .isInstanceOf(AssetNotFoundException.class).hasMessageContaining("PETR4");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"PETR4,VALE3", " PETR4 ", "PET R4", "PETR4/VALE3", "PETR4?x=y", "ABC", "ABCDEFGHIJKL1"})
+    void rejectsInvalidTickerInDtoAndService(String ticker) {
+        AssetImportRequestDTO request = new AssetImportRequestDTO(ticker, null);
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(request))
+                    .anySatisfy(violation -> assertThat(violation.getPropertyPath().toString()).isEqualTo("ticker"));
+        }
+        assertThatThrownBy(() -> configuredBrapiService().importAssetFromBrapi(request))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Ticker invalido");
+        verifyNoInteractions(assetRepository, brapiClient);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = "VALE3")
+    void rejectsMissingOrMismatchedBrapiSymbol(String symbol) {
+        when(brapiClient.getQuote("PETR4", "token"))
+                .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO(symbol, BigDecimal.TEN))));
+
+        assertThatThrownBy(() -> configuredBrapiService().importAssetFromBrapi(new AssetImportRequestDTO("PETR4", null)))
+                .isInstanceOf(AssetNotFoundException.class).hasMessageContaining("PETR4");
+        verify(assetRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void injectsBrapiTokenFromEnvironment() {
+        when(brapiClient.getQuote("PETR4", "configured-token"))
+                .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO("PETR4", BigDecimal.TEN))));
+        when(assetRepository.saveAndFlush(any(Asset.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        new ApplicationContextRunner()
+                .withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                        new SystemEnvironmentPropertySource("test-env", Map.of("BRAPI_TOKEN", "configured-token"))))
+                .withBean(AssetRepository.class, () -> assetRepository)
+                .withBean(AssetMapper.class, () -> Mappers.getMapper(AssetMapper.class))
+                .withBean(MarketCalendar.class, () -> new MarketCalendar(Clock.systemUTC()))
+                .withBean(BrapiClient.class, () -> brapiClient)
+                .withUserConfiguration(AssetService.class)
+                .run(context -> assertThat(context.getBean(AssetService.class)
+                        .importAssetFromBrapi(new AssetImportRequestDTO("PETR4", null)).ticker()).isEqualTo("PETR4"));
+
+        verify(brapiClient).getQuote("PETR4", "configured-token");
     }
 
     @Test
@@ -166,9 +224,15 @@ class AssetServiceTest {
                 FixedIncomeIndexer.IPCA, FixedIncomeRateType.SPREAD, null, spread, "Tesouro Nacional", expiration);
         AssetService service = new AssetService(assetRepository, Mappers.getMapper(AssetMapper.class));
         when(assetRepository.saveAndFlush(any(Asset.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        User owner = new User();
+        owner.setId(UUID.randomUUID());
 
-        AssetResponseDTO result = service.createFixedIncomeAsset(request);
+        AssetResponseDTO result = service.createFixedIncomeAsset(owner, request);
 
+        ArgumentCaptor<Asset> saved = ArgumentCaptor.forClass(Asset.class);
+        verify(assetRepository).findByTickerIgnoreCaseAndOwnerUser("RF1", owner);
+        verify(assetRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getOwnerUser()).isSameAs(owner);
         assertThat(result.ticker()).isEqualTo("RF1");
         assertThat(result.name()).isEqualTo("Tesouro IPCA");
         assertThat(result.category()).isEqualTo(AssetCategory.RENDA_FIXA);
@@ -177,6 +241,28 @@ class AssetServiceTest {
         assertThat(result.spreadRate()).isEqualTo(spread);
         assertThat(result.issuer()).isEqualTo("Tesouro Nacional");
         assertThat(result.expirationDate()).isEqualTo(expiration);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void rejectsFixedIncomeTickerAlreadyInGlobalCatalogOrOwnedByUser(boolean global) {
+        User owner = new User();
+        owner.setId(UUID.randomUUID());
+        FixedIncomeAssetRequestDTO request = new FixedIncomeAssetRequestDTO("RF01", "Renda fixa",
+                FixedIncomeIndexer.PRE, FixedIncomeRateType.FIXED, BigDecimal.TEN, null,
+                "Emissor", LocalDate.now().plusDays(30));
+        Asset existing = new Asset();
+        existing.setTicker("RF01");
+        if (global) {
+            when(assetRepository.findByTickerIgnoreCaseAndOwnerUserIsNull("RF01")).thenReturn(Optional.of(existing));
+        } else {
+            existing.setOwnerUser(owner);
+            when(assetRepository.findByTickerIgnoreCaseAndOwnerUser("RF01", owner)).thenReturn(Optional.of(existing));
+        }
+
+        assertThatThrownBy(() -> assetService.createFixedIncomeAsset(owner, request))
+                .isInstanceOf(AssetAlreadyExistsException.class).hasMessageContaining("RF01");
+        verify(assetRepository, never()).saveAndFlush(any());
     }
 
     private AssetService configuredBrapiService() {
@@ -188,7 +274,7 @@ class AssetServiceTest {
     @ValueSource(strings = "  ")
     void createAssetNormalizesTickerAndSaves(String issuer) {
         AssetRequestDTO request = new AssetRequestDTO(" petr4 ", "Petrobras", AssetCategory.ACOES, null, null, issuer, null);
-        when(assetRepository.findByTickerIgnoreCase("PETR4")).thenReturn(Optional.empty());
+        when(assetRepository.findByTickerIgnoreCaseAndOwnerUserIsNull("PETR4")).thenReturn(Optional.empty());
 
         Asset mappedAsset = new Asset();
         mappedAsset.setCategory(AssetCategory.ACOES);
@@ -209,13 +295,14 @@ class AssetServiceTest {
         Asset persisted = captor.getValue();
 
         assertThat(persisted.getTicker()).isEqualTo("PETR4");
+        assertThat(persisted.getOwnerUser()).isNull();
         assertThat(response.ticker()).isEqualTo("PETR4");
     }
 
     @Test
     void createAssetThrowsConflictWhenTickerExists() {
         AssetRequestDTO request = new AssetRequestDTO("PETR4", "Petrobras", AssetCategory.ACOES, null, null, null, null);
-        when(assetRepository.findByTickerIgnoreCase("PETR4")).thenReturn(Optional.of(new Asset()));
+        when(assetRepository.findByTickerIgnoreCaseAndOwnerUserIsNull("PETR4")).thenReturn(Optional.of(new Asset()));
 
         assertThatThrownBy(() -> assetService.createAsset(request))
                 .isInstanceOf(AssetAlreadyExistsException.class)
@@ -226,7 +313,7 @@ class AssetServiceTest {
     void createAssetConvertsDataIntegrityViolationToDomainConflict() {
         AssetRequestDTO request = new AssetRequestDTO("PETR4", "Petrobras", AssetCategory.ACOES, null, null, null, null);
         Asset mappedAsset = new Asset();
-        when(assetRepository.findByTickerIgnoreCase("PETR4")).thenReturn(Optional.empty());
+        when(assetRepository.findByTickerIgnoreCaseAndOwnerUserIsNull("PETR4")).thenReturn(Optional.empty());
         when(assetMapper.toEntity(request)).thenReturn(mappedAsset);
         when(assetRepository.saveAndFlush(any(Asset.class))).thenThrow(new DataIntegrityViolationException("duplicate", new java.sql.SQLException("duplicate key value violates unique constraint", "23505")));
 
@@ -250,6 +337,24 @@ class AssetServiceTest {
         var result = assetService.getAllAssets(0, 20, "name", "desc");
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().ticker()).isEqualTo("ITSA4");
+    }
+
+    @Test
+    void listsAndSearchesOnlyAssetsVisibleToTheUser() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        Asset privateAsset = new Asset();
+        privateAsset.setId(UUID.randomUUID());
+        privateAsset.setOwnerUser(user);
+        AssetResponseDTO response = new AssetResponseDTO(privateAsset.getId(), "RF01", "Renda fixa",
+                AssetCategory.RENDA_FIXA, null, null, null, null);
+        when(assetRepository.findVisibleToUser(user, PageRequest.of(0, 20, Sort.by("ticker"))))
+                .thenReturn(new PageImpl<>(List.of(privateAsset)));
+        when(assetRepository.searchVisibleToUser(user, "RF")).thenReturn(List.of(privateAsset));
+        when(assetMapper.toResponse(privateAsset)).thenReturn(response);
+
+        assertThat(assetService.getAllAssets(user, 0, 20, "ticker", "asc")).containsExactly(response);
+        assertThat(assetService.searchAssets(user, " rf ")).containsExactly(response);
     }
 
     @Test
@@ -291,7 +396,7 @@ class AssetServiceTest {
         java.time.LocalDate expiration = java.time.LocalDate.now().plusDays(365);
         AssetRequestDTO request = new AssetRequestDTO("CDB", "CDB BMG", AssetCategory.RENDA_FIXA, com.rick1135.Valora.entity.FixedIncomeIndexer.CDI, rate, "Banco BMG", expiration);
         
-        when(assetRepository.findByTickerIgnoreCase("CDB")).thenReturn(Optional.empty());
+        when(assetRepository.findByTickerIgnoreCaseAndOwnerUserIsNull("CDB")).thenReturn(Optional.empty());
 
         Asset mappedAsset = new Asset();
         mappedAsset.setCategory(AssetCategory.RENDA_FIXA);

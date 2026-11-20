@@ -12,6 +12,7 @@ import com.rick1135.Valora.exception.EmailAlreadyRegisteredException;
 import com.rick1135.Valora.repository.PortfolioRepository;
 import com.rick1135.Valora.repository.UserRepository;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.persistence.Query;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronizationUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -65,6 +69,12 @@ class UserServiceTest {
 
     @Mock
     private Query deleteProventProvisions;
+
+    @Mock
+    private Query deleteProvents;
+
+    @Mock
+    private Query deleteAssets;
 
     private UserService userService;
 
@@ -118,6 +128,7 @@ class UserServiceTest {
     @Test
     void getProfileReturnsPersistedAccountDetails() {
         User persisted = persistedAccount();
+        when(userRepository.findById(persisted.getId())).thenReturn(Optional.of(persisted));
         User principal = new User();
         principal.setId(persisted.getId());
 
@@ -128,7 +139,7 @@ class UserServiceTest {
 
     @Test
     void updateProfileTrimsAndSavesName() {
-        User persisted = persistedAccount();
+        User persisted = persistedAccountForUpdate();
         when(userRepository.save(persisted)).thenReturn(persisted);
 
         var profile = userService.updateProfile(persisted, new UpdateProfileRequestDTO("  Nome Atualizado  "));
@@ -140,21 +151,43 @@ class UserServiceTest {
 
     @Test
     void changePasswordSavesNewHashBeforeRevokingTokens() {
-        User persisted = persistedAccount();
+        User persisted = persistedAccountForUpdate();
+        persisted.setTokenVersion(8L);
         when(passwordEncoder.matches("current-password", "old-hash")).thenReturn(true);
         when(passwordEncoder.encode("new-password")).thenReturn("new-hash");
 
         userService.changePassword(persisted, new ChangePasswordRequestDTO("current-password", "new-password"));
 
         assertThat(persisted.getPasswordHash()).isEqualTo("new-hash");
+        assertThat(persisted.getTokenVersion()).isEqualTo(9L);
         var order = inOrder(userRepository, tokenService);
         order.verify(userRepository).save(same(persisted));
         order.verify(tokenService).revokeAllUserTokens(persisted.getId());
     }
 
     @Test
+    void changePasswordDoesNotRevokeTokensOnRollback() {
+        User persisted = persistedAccountForUpdate();
+        when(passwordEncoder.matches("current-password", "old-hash")).thenReturn(true);
+        when(passwordEncoder.encode("new-password")).thenReturn("new-hash");
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            userService.changePassword(persisted, new ChangePasswordRequestDTO("current-password", "new-password"));
+
+            verify(userRepository).save(same(persisted));
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+            verifyNoInteractions(tokenService);
+            TransactionSynchronizationUtils.triggerAfterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+            verifyNoInteractions(tokenService);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
     void changePasswordRejectsInvalidCurrentPassword() {
-        User persisted = persistedAccount();
+        User persisted = persistedAccountForUpdate();
 
         assertThatThrownBy(() -> userService.changePassword(
                 persisted, new ChangePasswordRequestDTO("wrong-password", "new-password")))
@@ -164,12 +197,13 @@ class UserServiceTest {
         verify(passwordEncoder).matches("wrong-password", "old-hash");
         verify(passwordEncoder, never()).encode(anyString());
         verify(userRepository, never()).save(any());
+        assertThat(persisted.getTokenVersion()).isZero();
         verifyNoInteractions(tokenService);
     }
 
     @Test
     void changePasswordRejectsPasswordMatchingExistingHash() {
-        User persisted = persistedAccount();
+        User persisted = persistedAccountForUpdate();
         when(passwordEncoder.matches("current-password", "old-hash")).thenReturn(true);
 
         assertThatThrownBy(() -> userService.changePassword(
@@ -183,8 +217,8 @@ class UserServiceTest {
     }
 
     @Test
-    void deleteAccountRevokesTokensAndDeletesFinancialRecordsAndPortfoliosBeforeUser() {
-        User persisted = persistedAccount();
+    void deleteAccountDeletesPrivateAssetsBeforeUserAndRevokesTokensAfterCommit() {
+        User persisted = persistedAccountForUpdate();
         Portfolio portfolio = new Portfolio();
         portfolio.setId(UUID.randomUUID());
         portfolio.setUser(persisted);
@@ -197,26 +231,45 @@ class UserServiceTest {
                 .thenReturn(deletePositions);
         when(entityManager.createQuery("delete from ProventProvision p where p.portfolio in :portfolios"))
                 .thenReturn(deleteProventProvisions);
+        when(entityManager.createQuery("""
+                delete from Provent p
+                where p.asset in (select a from Asset a where a.ownerUser = :user)
+                """)).thenReturn(deleteProvents);
+        when(entityManager.createQuery("delete from Asset a where a.ownerUser = :user")).thenReturn(deleteAssets);
         when(deleteTransactions.setParameter("portfolios", portfolios)).thenReturn(deleteTransactions);
         when(deletePositions.setParameter("portfolios", portfolios)).thenReturn(deletePositions);
         when(deleteProventProvisions.setParameter("portfolios", portfolios)).thenReturn(deleteProventProvisions);
+        when(deleteProvents.setParameter("user", persisted)).thenReturn(deleteProvents);
+        when(deleteAssets.setParameter("user", persisted)).thenReturn(deleteAssets);
 
-        userService.deleteAccount(persisted, new DeleteAccountRequestDTO("current-password"));
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            userService.deleteAccount(persisted, new DeleteAccountRequestDTO("current-password"));
 
-        var order = inOrder(tokenService, deleteTransactions, deletePositions, deleteProventProvisions,
-                portfolioRepository, userRepository);
-        order.verify(tokenService).revokeAllUserTokens(persisted.getId());
-        order.verify(deleteTransactions).executeUpdate();
-        order.verify(deletePositions).executeUpdate();
-        order.verify(deleteProventProvisions).executeUpdate();
-        order.verify(portfolioRepository).deleteAll(portfolios);
-        order.verify(portfolioRepository).flush();
-        order.verify(userRepository).delete(same(persisted));
+            assertThat(persisted.getTokenVersion()).isEqualTo(1L);
+            var order = inOrder(deleteTransactions, deletePositions, deleteProventProvisions,
+                    portfolioRepository, deleteProvents, deleteAssets, userRepository, tokenService);
+            order.verify(deleteTransactions).executeUpdate();
+            order.verify(deletePositions).executeUpdate();
+            order.verify(deleteProventProvisions).executeUpdate();
+            order.verify(portfolioRepository).deleteAll(portfolios);
+            order.verify(portfolioRepository).flush();
+            order.verify(deleteProvents).executeUpdate();
+            order.verify(deleteAssets).executeUpdate();
+            order.verify(userRepository).delete(same(persisted));
+            order.verify(userRepository).flush();
+            verifyNoInteractions(tokenService);
+
+            TransactionSynchronizationUtils.triggerAfterCommit();
+            order.verify(tokenService).revokeAllUserTokens(persisted.getId());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
     void deleteAccountRejectsInvalidCurrentPassword() {
-        User persisted = persistedAccount();
+        User persisted = persistedAccountForUpdate();
 
         assertThatThrownBy(() -> userService.deleteAccount(persisted, new DeleteAccountRequestDTO("wrong-password")))
                 .isInstanceOf(BadCredentialsException.class)
@@ -224,7 +277,15 @@ class UserServiceTest {
 
         verify(passwordEncoder).matches("wrong-password", "old-hash");
         verify(userRepository, never()).delete(any());
-        verifyNoInteractions(tokenService, portfolioRepository, entityManager);
+        assertThat(persisted.getTokenVersion()).isZero();
+        verifyNoInteractions(tokenService, portfolioRepository);
+        verify(entityManager, never()).createQuery(anyString());
+    }
+
+    private User persistedAccountForUpdate() {
+        User user = persistedAccount();
+        when(entityManager.find(User.class, user.getId(), LockModeType.PESSIMISTIC_WRITE)).thenReturn(user);
+        return user;
     }
 
     private User persistedAccount() {
@@ -235,7 +296,6 @@ class UserServiceTest {
         user.setPasswordHash("old-hash");
         user.setRole(UserRole.USER);
         user.setCreatedAt(LocalDateTime.of(2026, 1, 1, 12, 0));
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
         return user;
     }
 }
