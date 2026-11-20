@@ -1,6 +1,12 @@
 HELP.md
 AGENTS.md
 GEMINI.md
+REVISAO_TECNICA_*.md
+RELATORIO_ESTADO_DO_PROJETO.md
+ANALISE_MICROSSERVICOS.md
+ROTEIRO_FINALIZACAO_MVP.md
+logs/
+.agents/skills/alethe/
 *.toml
 .planning/
 target/
