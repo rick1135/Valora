@@ -23,6 +23,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -80,6 +81,11 @@ public class TransactionService {
         }
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
+    public TransactionResult processTransactionInCurrentTransaction(User user, TransactionDTO dto, String idempotencyKey) {
+        return createOrReplayTransaction(user, dto, normalizeIdempotencyKey(idempotencyKey));
+    }
+
     private TransactionResult createOrReplayTransaction(User user, TransactionDTO dto, String key) {
         Portfolio portfolio = lockOwnedPortfolio(user, dto.portfolioId());
         if (key != null) {
@@ -89,7 +95,7 @@ public class TransactionService {
             }
         }
 
-        Asset asset = findAsset(dto.assetId());
+        Asset asset = findAsset(user, dto.assetId());
         Transaction transaction = transactionMapper.toEntity(dto);
         transaction.setPortfolio(portfolio);
         transaction.setAsset(asset);
@@ -134,7 +140,7 @@ public class TransactionService {
         Instant oldDate = transaction.getTransactionDate();
 
         Portfolio portfolio = portfolioService.resolveOwnedPortfolio(user, dto.portfolioId());
-        Asset asset = findAsset(dto.assetId());
+        Asset asset = findAsset(user, dto.assetId());
         boolean portfolioChanged = !oldPortfolio.getId().equals(portfolio.getId());
         boolean pairChanged = portfolioChanged || !oldAsset.getId().equals(asset.getId());
         String key = transaction.getIdempotencyKey();
@@ -234,8 +240,9 @@ public class TransactionService {
                 .orElseThrow(() -> new TransactionNotFoundException("Transacao nao encontrada."));
     }
 
-    private Asset findAsset(UUID assetId) {
+    private Asset findAsset(User user, UUID assetId) {
         return assetRepository.findById(assetId)
+                .filter(asset -> asset.getOwnerUser() == null || asset.getOwnerUser().getId().equals(user.getId()))
                 .orElseThrow(() -> new AssetNotFoundException("Ativo nao encontrado"));
     }
 

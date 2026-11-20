@@ -20,6 +20,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -65,7 +66,7 @@ class SecurityFilterTest {
         securityFilter.doFilter(request, response, filterChain);
 
         verify(filterChain).doFilter(request, response);
-        verify(tokenService, never()).validateToken(any());
+        verify(tokenService, never()).validateAccessToken(any());
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
@@ -92,7 +93,7 @@ class SecurityFilterTest {
     @Test
     void invalidTokenFromTokenServiceShouldResolveGenericInvalidToken() throws Exception {
         MockHttpServletRequest request = requestWithAuthorization("Bearer invalid-token");
-        when(tokenService.validateToken("invalid-token"))
+        when(tokenService.validateAccessToken("invalid-token"))
                 .thenThrow(new InvalidTokenException("Token invalido ou expirado."));
 
         securityFilter.doFilter(request, response, filterChain);
@@ -104,8 +105,10 @@ class SecurityFilterTest {
     @Test
     void validTokenWithMissingUserShouldResolveGenericInvalidToken() throws Exception {
         MockHttpServletRequest request = requestWithAuthorization("Bearer valid-token");
-        when(tokenService.validateToken("valid-token")).thenReturn("missing@valora.dev");
-        when(userRepository.findByEmail("missing@valora.dev")).thenReturn(Optional.empty());
+        UUID missingId = UUID.randomUUID();
+        when(tokenService.validateAccessToken("valid-token"))
+                .thenReturn(new TokenService.VerifiedAccessToken(missingId, 0L));
+        when(userRepository.findById(missingId)).thenReturn(Optional.empty());
 
         securityFilter.doFilter(request, response, filterChain);
 
@@ -115,11 +118,28 @@ class SecurityFilterTest {
     }
 
     @Test
+    void validTokenWithOutdatedTokenVersionShouldResolveGenericInvalidToken() throws Exception {
+        MockHttpServletRequest request = requestWithAuthorization("Bearer stale-token");
+        User user = user("user@valora.dev", UserRole.USER);
+        user.setTokenVersion(2L);
+        when(tokenService.validateAccessToken("stale-token"))
+                .thenReturn(new TokenService.VerifiedAccessToken(user.getId(), 1L));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        securityFilter.doFilter(request, response, filterChain);
+
+        assertInvalidTokenResolved(request, "Token invalido ou expirado.", "stale-token");
+        verify(filterChain, never()).doFilter(any(), any());
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
     void validTokenWithExistingUserShouldAuthenticateAndContinue() throws Exception {
         MockHttpServletRequest request = requestWithAuthorization("Bearer valid-token");
         User user = user("user@valora.dev", UserRole.USER);
-        when(tokenService.validateToken("valid-token")).thenReturn("user@valora.dev");
-        when(userRepository.findByEmail("user@valora.dev")).thenReturn(Optional.of(user));
+        when(tokenService.validateAccessToken("valid-token"))
+                .thenReturn(new TokenService.VerifiedAccessToken(user.getId(), 0L));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
 
         securityFilter.doFilter(request, response, filterChain);
 
@@ -162,6 +182,7 @@ class SecurityFilterTest {
 
     private User user(String email, UserRole role) {
         User user = new User();
+        user.setId(UUID.randomUUID());
         user.setEmail(email);
         user.setPasswordHash("hash");
         user.setName("User");

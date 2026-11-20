@@ -9,7 +9,6 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -56,9 +55,12 @@ public class SecurityFilter extends OncePerRequestFilter {
         try {
             var token = recoverToken(request);
             if(token != null){
-                String email = tokenService.validateToken(token);
-                var user = userRepository.findByEmail(email)
+                TokenService.VerifiedAccessToken verified = tokenService.validateAccessToken(token);
+                var user = userRepository.findById(verified.userId())
                         .orElseThrow(() -> new InvalidTokenException(GlobalExceptionHandler.GENERIC_UNAUTHORIZED_MESSAGE));
+                if (user.getTokenVersion() != verified.tokenVersion()) {
+                    throw new InvalidTokenException(GlobalExceptionHandler.GENERIC_UNAUTHORIZED_MESSAGE);
+                }
                 var authentication = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }

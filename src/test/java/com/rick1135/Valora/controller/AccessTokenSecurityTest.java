@@ -2,8 +2,9 @@ package com.rick1135.Valora.controller;
 
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
+import com.rick1135.Valora.entity.User;
+import com.rick1135.Valora.entity.UserRole;
 import com.rick1135.Valora.exception.GlobalExceptionHandler;
-import com.rick1135.Valora.exception.InvalidTokenException;
 import com.rick1135.Valora.repository.UserRepository;
 import com.rick1135.Valora.security.SecurityConfigurations;
 import com.rick1135.Valora.security.SecurityFilter;
@@ -21,8 +22,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.web.servlet.HandlerExceptionResolver;
@@ -34,6 +38,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -47,7 +52,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(properties = "security.jwt.secret=access-token-test-secret")
 @AutoConfigureMockMvc
 class AccessTokenSecurityTest {
 
@@ -60,9 +65,12 @@ class AccessTokenSecurityTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     @BeforeEach
     void setUp() {
-        reset(tokenService, userRepository);
+        reset(userRepository);
         SecurityContextHolder.clearContext();
     }
 
@@ -116,6 +124,30 @@ class AccessTokenSecurityTest {
     }
 
     @Test
+    void accountStaticFrontendShouldBePublic() throws Exception {
+        mockMvc.perform(get("/conta.html")).andExpect(status().isOk());
+        mockMvc.perform(get("/conta.js")).andExpect(status().isOk());
+        mockMvc.perform(get("/conta-page.css")).andExpect(status().isOk());
+    }
+
+    @Test
+    void accountProfileShouldReturnUnauthorizedWhenAuthenticationIsMissing() throws Exception {
+        assertGenericUnauthorized(mockMvc.perform(get("/account/me")), null);
+    }
+
+    @Test
+    void passwordEncoderSupportsLongPasswordsAndExistingBcryptHashes() {
+        String rawPassword = "a".repeat(127) + "b";
+        String encodedPassword = passwordEncoder.encode(rawPassword);
+        String existingHash = new BCryptPasswordEncoder().encode("existing-password");
+
+        assertThat(passwordEncoder.matches(rawPassword, encodedPassword)).isTrue();
+        assertThat(passwordEncoder.matches("a".repeat(127) + "c", encodedPassword)).isFalse();
+        assertThat(passwordEncoder.matches("existing-password", existingHash)).isTrue();
+        assertThat(passwordEncoder.encode("short-password")).startsWith("$2");
+    }
+
+    @Test
     void swaggerAndLogoutEndpointsShouldBePublic() throws Exception {
         mockMvc.perform(get("/swagger-ui.html"))
                 .andExpect(status().isOk());
@@ -155,8 +187,6 @@ class AccessTokenSecurityTest {
     @Test
     void globalAssetReadShouldReturnUnauthorizedWithGenericBodyForInvalidToken() throws Exception {
         String token = "not-a-jwt";
-        when(tokenService.validateToken(token))
-                .thenThrow(new InvalidTokenException("Token invalido ou expirado."));
 
         assertGenericUnauthorized(
                 mockMvc.perform(get("/assets").header("Authorization", "Bearer " + token)),
@@ -166,9 +196,7 @@ class AccessTokenSecurityTest {
 
     @Test
     void globalAssetReadShouldReturnUnauthorizedWithGenericBodyForUnknownUserToken() throws Exception {
-        String token = "valid-missing-user-token";
-        when(tokenService.validateToken(token)).thenReturn("missing@valora.dev");
-        when(userRepository.findByEmail("missing@valora.dev")).thenReturn(Optional.empty());
+        String token = tokenService.generateToken(account("missing@valora.dev"));
 
         assertGenericUnauthorized(
                 mockMvc.perform(get("/assets").header("Authorization", "Bearer " + token)),
@@ -178,7 +206,39 @@ class AccessTokenSecurityTest {
 
     @Test
     void globalAssetReadShouldReturnOkForExistingUserToken() throws Exception {
-        mockMvc.perform(get("/assets").with(user("user@valora.dev").roles("USER")))
+        User existing = account("user@valora.dev");
+        when(userRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+
+        mockMvc.perform(get("/assets").header("Authorization", "Bearer " + tokenService.generateToken(existing)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void previousAccessTokenIsRejectedAfterPasswordChange() throws Exception {
+        User existing = account("user@valora.dev");
+        when(userRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        String oldToken = tokenService.generateToken(existing);
+
+        existing.incrementTokenVersion();
+
+        assertGenericUnauthorized(mockMvc.perform(get("/assets").header("Authorization", "Bearer " + oldToken)),
+                oldToken);
+        mockMvc.perform(get("/assets").header("Authorization", "Bearer " + tokenService.generateToken(existing)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void deletedAccountTokenCannotAuthenticateRecreatedAccountWithSameEmail() throws Exception {
+        User deleted = account("reused@valora.dev");
+        String oldToken = tokenService.generateToken(deleted);
+        User recreated = account(deleted.getEmail());
+        when(userRepository.findById(deleted.getId())).thenReturn(Optional.empty());
+        when(userRepository.findById(recreated.getId())).thenReturn(Optional.of(recreated));
+        when(userRepository.findByEmail(recreated.getEmail())).thenReturn(Optional.of(recreated));
+
+        assertGenericUnauthorized(mockMvc.perform(get("/assets").header("Authorization", "Bearer " + oldToken)),
+                oldToken);
+        mockMvc.perform(get("/assets").header("Authorization", "Bearer " + tokenService.generateToken(recreated)))
                 .andExpect(status().isOk());
     }
 
@@ -190,8 +250,6 @@ class AccessTokenSecurityTest {
     @Test
     void ownerPortfolioReadShouldReturnUnauthorizedWithGenericBodyForInvalidToken() throws Exception {
         String token = "not-a-jwt";
-        when(tokenService.validateToken(token))
-                .thenThrow(new InvalidTokenException("Token invalido ou expirado."));
 
         assertGenericUnauthorized(
                 mockMvc.perform(get("/portfolios/{portfolioId}", UUID.randomUUID())
@@ -202,9 +260,7 @@ class AccessTokenSecurityTest {
 
     @Test
     void ownerPortfolioReadShouldReturnUnauthorizedWithGenericBodyForUnknownUserToken() throws Exception {
-        String token = "valid-missing-user-token";
-        when(tokenService.validateToken(token)).thenReturn("missing@valora.dev");
-        when(userRepository.findByEmail("missing@valora.dev")).thenReturn(Optional.empty());
+        String token = tokenService.generateToken(account("missing@valora.dev"));
 
         assertGenericUnauthorized(
                 mockMvc.perform(get("/portfolios/{portfolioId}", UUID.randomUUID())
@@ -235,8 +291,6 @@ class AccessTokenSecurityTest {
     @Test
     void adminAssetMutationShouldReturnUnauthorizedWithGenericBodyForInvalidToken() throws Exception {
         String token = "not-a-jwt";
-        when(tokenService.validateToken(token))
-                .thenThrow(new InvalidTokenException("Token invalido ou expirado."));
 
         assertGenericUnauthorized(
                 mockMvc.perform(post("/assets")
@@ -249,9 +303,7 @@ class AccessTokenSecurityTest {
 
     @Test
     void adminAssetMutationShouldReturnUnauthorizedWithGenericBodyForUnknownUserToken() throws Exception {
-        String token = "valid-missing-admin-token";
-        when(tokenService.validateToken(token)).thenReturn("missing-admin@valora.dev");
-        when(userRepository.findByEmail("missing-admin@valora.dev")).thenReturn(Optional.empty());
+        String token = tokenService.generateToken(account("missing-admin@valora.dev"));
 
         assertGenericUnauthorized(
                 mockMvc.perform(post("/assets")
@@ -304,6 +356,14 @@ class AccessTokenSecurityTest {
                 });
     }
 
+    private User account(String email) {
+        User account = new User();
+        account.setId(UUID.randomUUID());
+        account.setEmail(email);
+        account.setRole(UserRole.USER);
+        return account;
+    }
+
     private String validAssetRequestBody() {
         return """
                 {
@@ -328,9 +388,14 @@ class AccessTokenSecurityTest {
     @Configuration(proxyBeanMethods = false)
     static class TestBeans {
         @Bean
-        @Primary
-        TokenService tokenService() {
-            return Mockito.mock(TokenService.class);
+        TokenService tokenService(RedisTemplate<String, Object> redisTemplate) {
+            return new TokenService(Clock.systemUTC(), redisTemplate);
+        }
+
+        @Bean
+        @SuppressWarnings("unchecked")
+        RedisTemplate<String, Object> redisTemplate() {
+            return Mockito.mock(RedisTemplate.class);
         }
 
         @Bean
@@ -364,7 +429,7 @@ class AccessTokenSecurityTest {
         @Bean
         FilterRegistrationBean<SecurityFilter> securityFilterRegistration(SecurityFilter securityFilter) {
             FilterRegistrationBean<SecurityFilter> registration = new FilterRegistrationBean<>(securityFilter);
-            registration.setOrder(-100);
+            registration.setEnabled(false);
             return registration;
         }
     }
@@ -393,6 +458,9 @@ class AccessTokenSecurityTest {
                 "/lancamentos.html",
                 "/lancamentos.js",
                 "/lancamentos-page.css",
+                "/conta.html",
+                "/conta.js",
+                "/conta-page.css",
                 "/portfolio-ui.js",
                 "/portfolio-ui.css",
                 "/styles.css",
@@ -402,6 +470,10 @@ class AccessTokenSecurityTest {
                 "/metas.js"
         })
         void dashboardStaticFrontend() {
+        }
+
+        @GetMapping("/account/me")
+        void accountProfile() {
         }
 
         @GetMapping("/portfolios/{portfolioId}")

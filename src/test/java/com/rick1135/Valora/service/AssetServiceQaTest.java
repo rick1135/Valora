@@ -36,7 +36,7 @@ public class AssetServiceQaTest {
         String longIssuer = "A".repeat(300);
         AssetRequestDTO request = new AssetRequestDTO("CDB1", "CDB", AssetCategory.RENDA_FIXA, FixedIncomeIndexer.CDI, new BigDecimal("10.0"), longIssuer, LocalDate.now());
         
-        when(assetRepository.findByTickerIgnoreCase(any())).thenReturn(Optional.empty());
+        when(assetRepository.findByTickerIgnoreCaseAndOwnerUserIsNull(any())).thenReturn(Optional.empty());
         when(assetMapper.toEntity(any())).thenReturn(new com.rick1135.Valora.entity.Asset());
         when(assetRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("Value too long for column 'issuer'", new java.sql.SQLException("Value too long for column 'issuer'", "22001")));
         

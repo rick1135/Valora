@@ -192,6 +192,31 @@
         emptyMessage || "Nenhum ativo encontrado."
       );
       suggestionsList.append(emptyItem);
+      const query = assetInput.value.trim();
+      if (query.length >= 2 && !emptyMessage) {
+        const actions = createEl("li", "valora-tx-quick-actions");
+        const importButton = createEl("button", "valora-tx-quick-action", `Importar "${query.toUpperCase()}" da B3`);
+        importButton.type = "button";
+        importButton.addEventListener("mousedown", (event) => event.preventDefault());
+        importButton.addEventListener("click", async () => {
+          importButton.disabled = true;
+          setStatus("Importando ativo da B3...", "info");
+          try {
+            const created = await getApi().request("/assets/import", { method: "POST", body: { ticker: query.toUpperCase() } });
+            setStatus("Ativo importado com sucesso.", "success");
+            selectAsset(created);
+          } catch (error) {
+            importButton.disabled = false;
+            setStatus(extractErrorMessage(error), "error");
+          }
+        });
+        const fixedButton = createEl("button", "valora-tx-quick-action", "Cadastrar Renda Fixa");
+        fixedButton.type = "button";
+        fixedButton.addEventListener("mousedown", (event) => event.preventDefault());
+        fixedButton.addEventListener("click", () => openFixedIncomeForm(query));
+        actions.append(importButton, fixedButton);
+        suggestionsList.append(actions);
+      }
       suggestionsList.hidden = false;
       assetInput.setAttribute("aria-expanded", "true");
       return;
@@ -224,6 +249,81 @@
 
     suggestionsList.hidden = false;
     assetInput.setAttribute("aria-expanded", "true");
+  }
+
+  function labeledControl(container, labelText, control) {
+    const label = createEl("label", "valora-tx-fixed-field", labelText);
+    label.append(control);
+    container.append(label);
+    return control;
+  }
+
+  function openFixedIncomeForm(query) {
+    const { fixedIncomePanel, assetInput } = state.elements;
+    fixedIncomePanel.replaceChildren();
+    fixedIncomePanel.hidden = false;
+    const heading = createEl("h3", "valora-tx-fixed-title", "Novo ativo de renda fixa");
+    const form = createEl("form", "valora-tx-fixed-form");
+    const control = (name, label, type = "text") => {
+      const input = createEl("input", "valora-tx-input");
+      input.name = name;
+      input.type = type;
+      input.required = !["issuer"].includes(name);
+      if (name === "ticker") input.value = query.toUpperCase();
+      return labeledControl(form, label, input);
+    };
+    const ticker = control("ticker", "Ticker");
+    const name = control("name", "Nome");
+    const indexer = document.createElement("select");
+    indexer.className = "valora-tx-input";
+    ["PRE", "CDI", "SELIC", "IPCA"].forEach((value) => { const option = createEl("option", "", value); option.value = value; indexer.append(option); });
+    labeledControl(form, "Indexador", indexer);
+    const rateType = document.createElement("select");
+    rateType.className = "valora-tx-input";
+    [["FIXED", "Taxa fixa"], ["PERCENTAGE_OF_INDEX", "% do indexador"], ["SPREAD", "Spread sobre o indexador"]].forEach(([value, label]) => { const option = createEl("option", "", label); option.value = value; rateType.append(option); });
+    labeledControl(form, "Tipo de taxa", rateType);
+    const annualRate = control("annualRate", "Taxa anual (%)", "number");
+    annualRate.step = "any";
+    const spreadRate = control("spreadRate", "Spread (%)", "number");
+    spreadRate.step = "any";
+    const issuer = control("issuer", "Emissor");
+    const expirationDate = control("expirationDate", "Vencimento", "date");
+    const updateRateFields = () => {
+      annualRate.closest("label").hidden = rateType.value === "SPREAD";
+      spreadRate.closest("label").hidden = rateType.value !== "SPREAD";
+      annualRate.required = rateType.value !== "SPREAD";
+      spreadRate.required = rateType.value === "SPREAD";
+    };
+    rateType.addEventListener("change", updateRateFields);
+    updateRateFields();
+    const actions = createEl("div", "valora-tx-fixed-actions");
+    const cancel = createEl("button", "valora-tx-btn valora-tx-btn--ghost", "Cancelar");
+    cancel.type = "button";
+    cancel.addEventListener("click", () => { fixedIncomePanel.hidden = true; assetInput.focus(); });
+    const save = createEl("button", "valora-tx-btn valora-tx-btn--primary", "Salvar ativo");
+    save.type = "submit";
+    actions.append(cancel, save);
+    form.append(actions);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      save.disabled = true;
+      const payload = { ticker: ticker.value.trim().toUpperCase(), name: name.value.trim(), indexer: indexer.value, rateType: rateType.value, issuer: issuer.value.trim(), expirationDate: expirationDate.value };
+      if (rateType.value === "SPREAD") payload.spreadRate = Number(spreadRate.value);
+      else payload.annualRate = Number(annualRate.value);
+      try {
+        const created = await getApi().request("/assets/fixed-income", { method: "POST", body: payload });
+        fixedIncomePanel.hidden = true;
+        setStatus("Ativo de renda fixa cadastrado.", "success");
+        selectAsset(created);
+      } catch (error) { save.disabled = false; setStatus(extractErrorMessage(error), "error"); }
+    });
+    fixedIncomePanel.append(heading, form);
+    state.suggestions = [];
+    state.activeIndex = -1;
+    state.elements.suggestionsList.hidden = true;
+    assetInput.setAttribute("aria-expanded", "false");
+    assetInput.removeAttribute("aria-activedescendant");
+    ticker.focus();
   }
 
   function highlightSuggestion(nextIndex) {
@@ -467,7 +567,10 @@
     suggestionsList.setAttribute("role", "listbox");
     suggestionsList.hidden = true;
 
-    autocomplete.append(assetInput, suggestionsList);
+    const fixedIncomePanel = createEl("div", "valora-tx-fixed-panel");
+    fixedIncomePanel.hidden = true;
+
+    autocomplete.append(assetInput, suggestionsList, fixedIncomePanel);
 
     const selectedAssetBox = createEl("div", "valora-tx-selected-asset");
     selectedAssetBox.hidden = true;
@@ -571,7 +674,9 @@
 
     quantityInput.addEventListener("input", updateEstimatedTotal);
     unitPriceInput.addEventListener("input", updateEstimatedTotal);
-    form.addEventListener("input", renewIdempotencyKey);
+    form.addEventListener("input", (event) => {
+      if (!event.target.closest(".valora-tx-fixed-panel")) renewIdempotencyKey();
+    });
     form.addEventListener("submit", handleSubmit);
 
     document.addEventListener("keydown", (event) => {
@@ -588,6 +693,7 @@
       subtitle,
       assetInput,
       suggestionsList,
+      fixedIncomePanel,
       selectedAssetBox,
       selectedAssetText,
       quantityInput,

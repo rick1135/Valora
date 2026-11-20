@@ -14,6 +14,7 @@
       <div class="shell topbar__inner">
         <a class="brand" href="/" aria-label="Valora">Valora</a>
         <span class="portfolio-label" id="portfolio-name">Carteira</span>
+        <a class="button button--ghost topbar__account" href="/conta.html">Conta</a>
         <button class="button button--ghost topbar__logout" id="logout-btn" type="button">Sair</button>
       </div>
     </header>
@@ -28,12 +29,33 @@
           <a class="tab tab--active" href="/lancamentos.html" aria-current="page">Lan&ccedil;amentos</a>
         </nav>
         <div class="actions">
+          <button class="button button--ghost" id="import-csv-btn" type="button">Importar CSV</button>
           <button class="button button--primary" data-new-transaction type="button">
             <span class="button__icon" aria-hidden="true">+</span>
             Novo lan&ccedil;amento
           </button>
         </div>
       </div>
+
+      <section class="panel csv-import" id="csv-import-modal" role="dialog" aria-modal="true" aria-labelledby="csv-import-title" hidden>
+        <div class="csv-import__header">
+          <h2 id="csv-import-title">Importar opera&ccedil;&otilde;es por CSV</h2>
+          <button class="button button--ghost" id="csv-import-close" type="button">Fechar</button>
+        </div>
+        <form id="csv-import-form">
+          <label class="csv-import__file" for="csv-file-input">Arquivo CSV
+            <input type="file" id="csv-file-input" accept=".csv,text/csv" required>
+          </label>
+          <p class="csv-import__hint">Compat&iacute;vel com CSV Valora e Negocia&ccedil;&otilde;es B3. At&eacute; 2 MB e 2.000 linhas.</p>
+          <button class="button button--primary" id="csv-analyze-btn" type="submit">Analisar arquivo</button>
+        </form>
+        <div id="csv-preview" class="csv-import__preview" hidden></div>
+        <p id="csv-import-status" class="csv-import__status" role="status" hidden></p>
+        <div class="csv-import__actions">
+          <button class="button button--primary" id="csv-confirm-btn" type="button" disabled>Confirmar importa&ccedil;&atilde;o</button>
+        </div>
+      </section>
+      <div class="csv-import-backdrop" id="csv-import-backdrop" hidden></div>
 
       <section class="summary" aria-labelledby="history-title">
         <h1 id="history-title">Extrato de lan&ccedil;amentos</h1>

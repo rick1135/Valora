@@ -12,8 +12,25 @@ public record BrapiResultDTO(
         BigDecimal regularMarketDayHigh,
         BigDecimal regularMarketDayLow,
         BrapiDividendsDataDTO dividendsData,
-        List<BrapiHistoricalDataDTO> historicalDataPrice
+        List<BrapiHistoricalDataDTO> historicalDataPrice,
+        String shortName,
+        String longName
 ) {
+    public BrapiResultDTO(
+            String symbol,
+            BigDecimal regularMarketPrice,
+            BigDecimal regularMarketChange,
+            BigDecimal regularMarketChangePercent,
+            Long regularMarketVolume,
+            BigDecimal regularMarketDayHigh,
+            BigDecimal regularMarketDayLow,
+            BrapiDividendsDataDTO dividendsData,
+            List<BrapiHistoricalDataDTO> historicalDataPrice
+    ) {
+        this(symbol, regularMarketPrice, regularMarketChange, regularMarketChangePercent, regularMarketVolume,
+                regularMarketDayHigh, regularMarketDayLow, dividendsData, historicalDataPrice, null, null);
+    }
+
     public BrapiResultDTO(String symbol, BigDecimal regularMarketPrice) {
         this(symbol, regularMarketPrice, null, null, null, null, null, null, null);
     }

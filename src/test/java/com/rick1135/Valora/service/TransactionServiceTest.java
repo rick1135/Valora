@@ -181,6 +181,31 @@ class TransactionServiceTest {
     }
 
     @Test
+    void createAndUpdateHideAssetsOwnedByAnotherUser() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        User other = new User();
+        other.setId(UUID.randomUUID());
+        Portfolio portfolio = portfolio(user);
+        Asset privateAsset = new Asset();
+        privateAsset.setId(UUID.randomUUID());
+        privateAsset.setOwnerUser(other);
+        Transaction existing = transaction(portfolio, new Asset(), TransactionType.BUY, "1", "2026-01-10T15:00:00Z");
+        TransactionDTO dto = new TransactionDTO(portfolio.getId(), privateAsset.getId(), TransactionType.BUY,
+                BigDecimal.ONE, BigDecimal.TEN, existing.getTransactionDate());
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(assetRepository.findById(privateAsset.getId())).thenReturn(Optional.of(privateAsset));
+        when(transactionRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> transactionService.processTransaction(user, dto))
+                .isInstanceOf(AssetNotFoundException.class).hasMessage("Ativo nao encontrado");
+        assertThatThrownBy(() -> transactionService.updateTransaction(user, existing.getId(), dto))
+                .isInstanceOf(AssetNotFoundException.class).hasMessage("Ativo nao encontrado");
+
+        verifyNoInteractions(transactionMapper, positionRepository, proventService);
+    }
+
+    @Test
     void processTransactionShouldRejectPortfolioNotOwnedBeforeLoadingAsset() {
         User user = new User();
         Portfolio portfolio = portfolio(user);
@@ -762,6 +787,29 @@ class TransactionServiceTest {
 
         verify(transactionRepository).findByPortfolioAndIdempotencyKey(portfolio, "operation-1");
         assertThat(buy.getIdempotencyKey()).isEqualTo("operation-1");
+    }
+
+    @Test
+    void processesAnOwnedAssetAndNormalizesTheKeyInsideTheCallersTransaction() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        Portfolio portfolio = portfolio(user);
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setOwnerUser(user);
+        Transaction buy = transaction(portfolio, asset, TransactionType.BUY, "3", "2026-01-10T15:00:00Z");
+        TransactionDTO dto = dtoFor(buy);
+        when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
+        when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(transactionMapper.toEntity(dto)).thenReturn(buy);
+        when(transactionRepository.saveAndFlush(buy)).thenReturn(buy);
+
+        var result = transactionService.processTransactionInCurrentTransaction(user, dto, "  csv-key  ");
+
+        assertThat(result.replayed()).isFalse();
+        assertThat(buy.getIdempotencyKey()).isEqualTo("csv-key");
+        verify(transactionRepository).findByPortfolioAndIdempotencyKey(portfolio, "csv-key");
+        verifyNoInteractions(transactionManager);
     }
 
     @Test

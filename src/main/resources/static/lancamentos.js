@@ -22,6 +22,139 @@
   const next = document.querySelector("#history-next");
   const pageInfo = document.querySelector("#history-page-info");
   const logout = document.querySelector("#logout-btn");
+  const importButton = document.querySelector("#import-csv-btn");
+  const importModal = document.querySelector("#csv-import-modal");
+  const importBackdrop = document.querySelector("#csv-import-backdrop");
+  const importForm = document.querySelector("#csv-import-form");
+  const fileInput = document.querySelector("#csv-file-input");
+  const preview = document.querySelector("#csv-preview");
+  const importStatus = document.querySelector("#csv-import-status");
+  const confirmImport = document.querySelector("#csv-confirm-btn");
+  let importFormData = null;
+  let previewPortfolioId = null;
+  let previewFileKey = null;
+  let previewSeq = 0;
+
+  function setImportStatus(message, tone = "error") {
+    importStatus.textContent = message;
+    importStatus.hidden = !message;
+    importStatus.dataset.tone = tone;
+  }
+
+  function invalidatePreview(message = "") {
+    previewSeq += 1;
+    importFormData = null;
+    previewPortfolioId = null;
+    previewFileKey = null;
+    preview.hidden = true;
+    preview.replaceChildren();
+    confirmImport.disabled = true;
+    if (message) setImportStatus(message);
+  }
+
+  function closeImport() {
+    importModal.hidden = true;
+    importBackdrop.hidden = true;
+    invalidatePreview();
+  }
+
+  function appendImportList(parent, title, values, renderValue = (value) => String(value)) {
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    const list = document.createElement("ul");
+    values.forEach((value) => {
+      const item = document.createElement("li");
+      item.textContent = renderValue(value);
+      list.append(item);
+    });
+    parent.append(heading, list);
+  }
+
+  function renderImportPreview(result) {
+    preview.replaceChildren();
+    preview.hidden = false;
+    const counts = document.createElement("p");
+    counts.textContent = `Linhas: ${result.totalRows ?? 0} · Válidas: ${result.validCount ?? 0} · Com erros: ${result.errorCount ?? 0}`;
+    preview.append(counts);
+    const missing = Array.isArray(result.missingTickers) ? result.missingTickers : [];
+    if (missing.length) {
+      const warning = document.createElement("p");
+      warning.textContent = "Estes ativos precisam ser cadastrados ou importados antes da importação.";
+      preview.append(warning);
+      appendImportList(preview, "Ativos ausentes", missing);
+    }
+    const errors = Array.isArray(result.errors) ? result.errors : [];
+    if (errors.length) appendImportList(preview, "Erros encontrados", errors, (item) => `Linha ${item.lineNumber ?? item.line ?? item.row ?? "?"}: ${item.message || "Erro de validação"}`);
+    const samples = Array.isArray(result.validRows) ? result.validRows.slice(0, 10) : (Array.isArray(result.sample) ? result.sample.slice(0, 10) : []);
+    if (samples.length) appendImportList(preview, "Amostra de linhas válidas", samples, (item) => `${item.ticker || item.assetTicker || ""} ${item.type || ""} ${item.quantity ?? ""} @ ${item.unitPrice ?? ""} (${item.date || item.transactionDate || ""})`);
+    confirmImport.disabled = !(result.validCount > 0 && result.errorCount === 0 && missing.length === 0);
+  }
+
+  importButton.addEventListener("click", () => {
+    importModal.hidden = false;
+    importBackdrop.hidden = false;
+    setImportStatus("");
+    invalidatePreview();
+    fileInput.focus();
+  });
+  document.querySelector("#csv-import-close").addEventListener("click", closeImport);
+  importBackdrop.addEventListener("click", closeImport);
+  fileInput.addEventListener("change", () => invalidatePreview());
+  importForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const file = fileInput.files?.[0];
+    if (!file) { setImportStatus("Selecione um arquivo CSV."); return; }
+    if (file.size > 2 * 1024 * 1024) { setImportStatus("O arquivo deve ter no máximo 2 MB."); return; }
+    const seq = ++previewSeq;
+    const fileKey = `${file.name}:${file.size}:${file.lastModified}`;
+    const analyze = document.querySelector("#csv-analyze-btn");
+    analyze.disabled = true;
+    setImportStatus("Analisando arquivo...", "info");
+    try {
+      let targetPortfolioId = activePortfolioId;
+      if (!targetPortfolioId) {
+        targetPortfolioId = (await api.getPortfolio())?.id;
+        if (seq !== previewSeq || importModal.hidden) return;
+        if (targetPortfolioId && !activePortfolioId) {
+          activePortfolioId = targetPortfolioId;
+        }
+      }
+      if (!targetPortfolioId) {
+        throw new Error("Nenhuma carteira ativa encontrada.");
+      }
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await api.request(`/transactions/import/preview?portfolioId=${encodeURIComponent(targetPortfolioId)}`, { method: "POST", body: formData });
+      if (seq !== previewSeq || importModal.hidden) return;
+      previewPortfolioId = targetPortfolioId;
+      previewFileKey = fileKey;
+      importFormData = formData;
+      renderImportPreview(result);
+      setImportStatus("Prévia pronta.", "success");
+    } catch (error) {
+      if (seq === previewSeq && !importModal.hidden) setImportStatus(error.message);
+    }
+    finally { analyze.disabled = false; }
+  });
+  confirmImport.addEventListener("click", async () => {
+    const file = fileInput.files?.[0];
+    const fileKey = file ? `${file.name}:${file.size}:${file.lastModified}` : null;
+    if (!importFormData || !previewPortfolioId || previewPortfolioId !== activePortfolioId || fileKey !== previewFileKey) {
+      invalidatePreview("Carteira ou arquivo alterado. Analise o arquivo novamente antes de confirmar.");
+      return;
+    }
+    if (confirmImport.disabled) return;
+    confirmImport.disabled = true;
+    setImportStatus("Importando operações...", "info");
+    try {
+      const targetPortfolioId = previewPortfolioId;
+      const result = await api.request(`/transactions/import?portfolioId=${encodeURIComponent(targetPortfolioId)}`, { method: "POST", body: importFormData });
+      setImportStatus(`Importação concluída: ${result.importedCount ?? 0} importadas; ${result.skippedDuplicatesCount ?? 0} duplicatas ignoradas.`, "success");
+      if (targetPortfolioId === activePortfolioId) await loadHistory(0);
+      window.setTimeout(closeImport, 1400);
+    } catch (error) { setImportStatus(error.message); confirmImport.disabled = false; }
+  });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !importModal.hidden) closeImport(); });
 
   let filters = {};
   let page = 0;
@@ -155,7 +288,11 @@
   });
   previous.addEventListener("click", () => loadHistory(page - 1));
   next.addEventListener("click", () => loadHistory(page + 1));
-  window.addEventListener("valora:portfolio-changed", (event) => loadHistory(0, event.detail.portfolio));
+  window.addEventListener("valora:portfolio-changed", (event) => {
+    const modalOpen = !importModal.hidden;
+    invalidatePreview(modalOpen ? "Carteira alterada. Analise o arquivo novamente antes de confirmar." : "");
+    loadHistory(0, event.detail.portfolio);
+  });
   document.addEventListener("valora:transaction-saved", (event) => {
     if (event.detail.portfolioId === activePortfolioId) loadHistory(page);
   });
