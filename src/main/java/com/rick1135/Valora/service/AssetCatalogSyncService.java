@@ -21,9 +21,11 @@ import org.springframework.web.client.RestClientException;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -78,6 +80,8 @@ public class AssetCatalogSyncService {
     private AssetCatalogSyncResultDTO syncPages(BrapiClient client) {
         int fetched = 0;
         int inserted = 0;
+        boolean overlapOrMismatchDetected = false;
+        Set<String> seenAcrossPages = new HashSet<>();
         for (int page = 1; page <= MAX_PAGES; page++) {
             BrapiQuoteListResponseDTO response;
             try {
@@ -93,9 +97,24 @@ public class AssetCatalogSyncService {
                         page, exception.getClass().getSimpleName());
                 return new AssetCatalogSyncResultDTO(fetched, inserted, fetched - inserted, false, "PARTIAL");
             }
+            if (response.currentPage() != null && response.currentPage() != page) {
+                overlapOrMismatchDetected = true;
+                log.warn("BRAPI retornou currentPage={} para a pagina solicitada {}.", response.currentPage(), page);
+            }
             fetched += response.stocks().size();
-            inserted += syncPage(response.stocks());
+            PageSyncOutcome outcome = syncPage(response.stocks(), seenAcrossPages);
+            inserted += outcome.inserted();
+            if (outcome.crossPageDuplicate()) {
+                overlapOrMismatchDetected = true;
+            }
             if (!response.hasNextPage()) {
+                if (response.totalPages() != null && page < response.totalPages()) {
+                    overlapOrMismatchDetected = true;
+                    log.warn("BRAPI encerrou paginacao na pagina {} de totalPages={}.", page, response.totalPages());
+                }
+                if (overlapOrMismatchDetected) {
+                    return new AssetCatalogSyncResultDTO(fetched, inserted, fetched - inserted, false, "PARTIAL");
+                }
                 return new AssetCatalogSyncResultDTO(fetched, inserted, fetched - inserted);
             }
         }
@@ -103,22 +122,29 @@ public class AssetCatalogSyncService {
         return new AssetCatalogSyncResultDTO(fetched, inserted, fetched - inserted, false, "PARTIAL");
     }
 
-    private int syncPage(List<BrapiListedAssetDTO> stocks) {
+    private record PageSyncOutcome(int inserted, boolean crossPageDuplicate) {}
+
+    private PageSyncOutcome syncPage(List<BrapiListedAssetDTO> stocks, Set<String> seenAcrossPages) {
         Map<String, BrapiListedAssetDTO> listedByTicker = new LinkedHashMap<>();
+        boolean crossPageDuplicate = false;
         for (BrapiListedAssetDTO item : stocks) {
             if (item == null || !StringUtils.hasText(item.stock())) {
                 continue;
             }
             String ticker = AssetService.normalizeTicker(item.stock());
             if (assetService.isValidCatalogTicker(ticker)) {
+                if (seenAcrossPages.contains(ticker)) {
+                    crossPageDuplicate = true;
+                }
                 listedByTicker.merge(ticker, item, (first, duplicate) ->
                         AssetService.categoryFromBrapiSubType(first.subType()) == null
                                 && AssetService.categoryFromBrapiSubType(duplicate.subType()) != null
                                 ? duplicate : first);
             }
         }
+        seenAcrossPages.addAll(listedByTicker.keySet());
         if (listedByTicker.isEmpty()) {
-            return 0;
+            return new PageSyncOutcome(0, crossPageDuplicate);
         }
 
         Map<String, Asset> existingByTicker = new HashMap<>();
@@ -133,10 +159,15 @@ public class AssetCatalogSyncService {
             Asset asset = existingByTicker.get(ticker);
             if (asset == null) {
                 String name = AssetService.catalogName(ticker, item.name());
+                AssetCategory category = assetService.resolveCategoryForCatalog(ticker, name, item.type(), item.subType());
+                if (category == null) {
+                    log.debug("Ignorando ativo {} com subtipo nao suportado: {}", ticker, item.subType());
+                    continue;
+                }
                 asset = new Asset();
                 asset.setTicker(ticker);
                 asset.setName(name);
-                asset.setCategory(assetService.inferCategoryForCatalog(ticker, name, item.type(), item.subType()));
+                asset.setCategory(category);
                 additions.add(asset);
             } else {
                 AssetCategory category = AssetService.categoryFromBrapiSubType(item.subType());
@@ -149,7 +180,7 @@ public class AssetCatalogSyncService {
         if (!corrections.isEmpty()) {
             assetRepository.saveAll(corrections);
         }
-        return saveBatch(additions);
+        return new PageSyncOutcome(saveBatch(additions), crossPageDuplicate);
     }
 
     private int saveBatch(List<Asset> batch) {

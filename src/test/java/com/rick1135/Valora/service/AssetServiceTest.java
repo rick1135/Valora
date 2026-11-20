@@ -548,6 +548,35 @@ class AssetServiceTest {
         assertThat(assetService.inferCategoryForCatalog(ticker, name, type)).isEqualTo(category);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"fi-infra", "fi-agro", "fip", "fidc", "unknown-subtype"})
+    void rejectsAndFiltersUnsupportedBrapiSubTypesConsistently(String unsupportedSubType) {
+        assertThat(assetService.inferCategoryForCatalog("JURO11", "Fundo Infra", "fund", unsupportedSubType)).isNull();
+
+        when(assetRepository.findByTickerContainingIgnoreCase("JURO", PageRequest.of(0, 25))).thenReturn(List.of());
+        when(brapiClient.listQuotes("JURO", 15, 1, "token")).thenReturn(new BrapiQuoteListResponseDTO(List.of(
+                new BrapiListedAssetDTO("JURO11", "Fundo Infra", "fund", unsupportedSubType),
+                new BrapiListedAssetDTO("ITSA4", "Itausa", "stock", "stock")
+        ), 1, 1, false));
+        AssetService service = configuredBrapiService();
+
+        assertThat(service.searchAssets("JURO"))
+                .extracting(AssetResponseDTO::ticker)
+                .containsExactly("ITSA4");
+
+        when(brapiClient.getQuote("JURO11", "token"))
+                .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO("JURO11", BigDecimal.TEN))));
+        when(brapiClient.listQuotes("JURO11", 5, 1, null, null, "token"))
+                .thenReturn(new BrapiQuoteListResponseDTO(List.of(
+                        new BrapiListedAssetDTO("JURO11", "Fundo Infra", "fund", unsupportedSubType)
+                ), 1, 1, false));
+
+        assertThatThrownBy(() -> service.importAssetFromBrapi(new AssetImportRequestDTO("JURO11", null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(unsupportedSubType);
+        verify(assetRepository, never()).saveAndFlush(any());
+    }
+
     @Test
     void createAssetValidatesFixedIncomeFields() {
         AssetRequestDTO missingIndexer = new AssetRequestDTO("CDB", "CDB BMG", AssetCategory.RENDA_FIXA, null, new java.math.BigDecimal("110.0"), "Banco BMG", java.time.LocalDate.now().plusDays(10));

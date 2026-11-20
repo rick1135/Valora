@@ -119,8 +119,12 @@ public class AssetService {
             name = quote.shortName().strip();
         }
         BrapiListedAssetDTO metadata = findCatalogMetadata(ticker);
-        AssetCategory category = inferCategoryForCatalog(ticker, name,
+        AssetCategory category = resolveCategoryForCatalog(ticker, name,
                 metadata == null ? null : metadata.type(), metadata == null ? null : metadata.subType());
+        if (category == null) {
+            throw new IllegalArgumentException(
+                    "Subtipo de ativo '" + metadata.subType().trim() + "' nao e suportado no catalogo.");
+        }
         Asset asset = new Asset();
         asset.setTicker(ticker);
         asset.setName(name);
@@ -254,7 +258,10 @@ public class AssetService {
             String ticker = normalizeTicker(item.stock());
             if (isValidCatalogTicker(ticker) && seen.add(ticker)) {
                 String name = catalogName(ticker, item.name());
-                AssetCategory category = inferCategoryForCatalog(ticker, name, item.type(), item.subType());
+                AssetCategory category = resolveCategoryForCatalog(ticker, name, item.type(), item.subType());
+                if (category == null) {
+                    continue;
+                }
                 results.add(new AssetResponseDTO(null, ticker, name, category, null, null, null, null, null, null, false));
             }
         }
@@ -358,23 +365,27 @@ public class AssetService {
     }
 
     AssetCategory inferCategoryForCatalog(String ticker, String name, @Nullable String brapiType) {
-        return inferCategoryForCatalog(ticker, name, brapiType, null);
+        return inferCategory(ticker, name, brapiType);
     }
 
-    AssetCategory inferCategoryForCatalog(String ticker, String name, @Nullable String brapiType,
-                                          @Nullable String brapiSubType) {
+    @Nullable AssetCategory inferCategoryForCatalog(String ticker, String name, @Nullable String brapiType,
+                                                    @Nullable String brapiSubType) {
+        return resolveCategoryForCatalog(ticker, name, brapiType, brapiSubType);
+    }
+
+    @Nullable AssetCategory resolveCategoryForCatalog(String ticker, String name, @Nullable String brapiType,
+                                                      @Nullable String brapiSubType) {
         if (!StringUtils.hasText(brapiSubType)) {
             return inferCategory(ticker, name, brapiType);
         }
-        AssetCategory structuredCategory = categoryFromBrapiSubType(brapiSubType);
-        return structuredCategory == null ? AssetCategory.ACOES : structuredCategory;
+        return categoryFromBrapiSubType(brapiSubType);
     }
 
     static @Nullable AssetCategory categoryFromBrapiSubType(@Nullable String brapiSubType) {
         if (brapiSubType == null) {
             return null;
         }
-        return switch (brapiSubType.toLowerCase(Locale.ROOT)) {
+        return switch (brapiSubType.trim().toLowerCase(Locale.ROOT)) {
             case "etf" -> AssetCategory.ETF;
             case "fii" -> AssetCategory.FII;
             case "unit", "stock", "bdr" -> AssetCategory.ACOES;

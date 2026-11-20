@@ -66,13 +66,13 @@ class AssetCatalogSyncServiceTest {
         });
         when(brapiClient.listQuotes(null, 100, 1, "name", "asc", "token")).thenReturn(page(1, true,
                 new BrapiListedAssetDTO(" itsa4 ", " Itausa ", "stock"),
+                new BrapiListedAssetDTO("itsa4", "Duplicado", "stock"),
                 new BrapiListedAssetDTO("ITSA4F", "Itausa fracionario", "stock"),
                 new BrapiListedAssetDTO("BOVV11", "BOVV11", "fund", "etf")));
         when(brapiClient.listQuotes(null, 100, 2, "name", "asc", "token")).thenReturn(page(2, false,
                 new BrapiListedAssetDTO("TAEE11", "TAEE11", "fund", "unit"),
                 new BrapiListedAssetDTO("SANB11", "SANB11", "fund", "UNIT"),
                 new BrapiListedAssetDTO("KLBN11", "KLBN11", "fund", "unit"),
-                new BrapiListedAssetDTO("itsa4", "Duplicado", "stock"),
                 new BrapiListedAssetDTO("ABCD3", " ", "stock")));
 
         when(assetRepository.saveAll(anyList())).thenAnswer(invocation -> {
@@ -212,12 +212,59 @@ class AssetCatalogSyncServiceTest {
         verifyNoInteractions(assetRepository, brapiClient);
     }
 
+    @Test
+    void syncSkipsUnsupportedFundSubTypesInsteadOfSavingAsAcoes() {
+        when(brapiClient.listQuotes(null, 100, 1, "name", "asc", "token")).thenReturn(page(1, false,
+                new BrapiListedAssetDTO("JURO11", "Fundo Infra", "fund", "fi-infra"),
+                new BrapiListedAssetDTO("KNCA11", "Fiagro", "fund", "fi-agro"),
+                new BrapiListedAssetDTO("FIPX11", "FIP", "fund", "fip"),
+                new BrapiListedAssetDTO("FIDC11", "FIDC", "fund", "fidc"),
+                new BrapiListedAssetDTO("MYST11", "Outro", "fund", "other-fund"),
+                new BrapiListedAssetDTO("BOVV11", "BOVV11", "fund", "etf"),
+                new BrapiListedAssetDTO("TAEE11", "Taesa", "stock", "unit")
+        ));
+        when(assetRepository.findByOwnerUserIsNullAndTickerNormalizedIn(anyCollection())).thenReturn(List.of());
+        when(assetRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AssetCatalogSyncResultDTO result = service("token").syncB3Catalog();
+
+        assertThat(result).isEqualTo(new AssetCatalogSyncResultDTO(7, 2, 5, true, "COMPLETED"));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Asset>> saved = ArgumentCaptor.forClass(List.class);
+        verify(assetRepository).saveAll(saved.capture());
+        assertThat(saved.getValue())
+                .extracting(Asset::getTicker, Asset::getCategory)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("BOVV11", AssetCategory.ETF),
+                        org.assertj.core.groups.Tuple.tuple("TAEE11", AssetCategory.ACOES)
+                );
+    }
+
+    @Test
+    void syncMarksPartialWhenPagesOverlapOrTotalPagesMismatch() {
+        when(brapiClient.listQuotes(null, 100, 1, "name", "asc", "token")).thenReturn(
+                new BrapiQuoteListResponseDTO(List.of(
+                        new BrapiListedAssetDTO("ITSA4", "Itausa", "stock", "stock")
+                ), 1, 2, true));
+        when(brapiClient.listQuotes(null, 100, 2, "name", "asc", "token")).thenReturn(
+                new BrapiQuoteListResponseDTO(List.of(
+                        new BrapiListedAssetDTO("ITSA4", "Itausa", "stock", "stock")
+                ), 2, 2, false));
+        when(assetRepository.findByOwnerUserIsNullAndTickerNormalizedIn(anyCollection())).thenReturn(List.of());
+        when(assetRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AssetCatalogSyncResultDTO result = service("token").syncB3Catalog();
+
+        assertThat(result.complete()).isFalse();
+        assertThat(result.status()).isEqualTo("PARTIAL");
+    }
+
     private AssetCatalogSyncService service(String token) {
         return new AssetCatalogSyncService(assetRepository, brapiClient, new AssetService(assetRepository, null),
                 token, true, true, 50);
     }
 
     private BrapiQuoteListResponseDTO page(int page, boolean hasNextPage, BrapiListedAssetDTO... stocks) {
-        return new BrapiQuoteListResponseDTO(List.of(stocks), page, 2, hasNextPage);
+        return new BrapiQuoteListResponseDTO(List.of(stocks), page, hasNextPage ? page + 1 : page, hasNextPage);
     }
 }

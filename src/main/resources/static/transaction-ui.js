@@ -223,17 +223,11 @@
         const importButton = createEl("button", "valora-tx-quick-action", `Importar "${query.toUpperCase()}" da B3`);
         importButton.type = "button";
         importButton.addEventListener("mousedown", (event) => event.preventDefault());
-        importButton.addEventListener("click", async () => {
+        importButton.addEventListener("click", () => {
           importButton.disabled = true;
-          setStatus("Importando ativo da B3...", "info");
-          try {
-            const created = await getApi().request("/assets/import", { method: "POST", body: { ticker: query.toUpperCase() } });
-            setStatus("Ativo importado com sucesso.", "success");
-            selectAsset(created);
-          } catch (error) {
-            importButton.disabled = false;
-            setStatus(extractErrorMessage(error), "error");
-          }
+          chooseAsset({ ticker: query.toUpperCase(), persisted: false }).finally(() => {
+            if (importButton.isConnected) importButton.disabled = false;
+          });
         });
         const fixedButton = createEl("button", "valora-tx-quick-action", "Cadastrar Renda Fixa");
         fixedButton.type = "button";
