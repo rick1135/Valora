@@ -16,6 +16,8 @@ import com.rick1135.Valora.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -30,6 +32,8 @@ import java.util.UUID;
 
 @Service
 public class UserService {
+    private static final Logger log = LoggerFactory.getLogger(UserService.class);
+
     private final UserRepository userRepository;
     private final PortfolioRepository portfolioRepository;
     private final PasswordEncoder passwordEncoder;
@@ -154,11 +158,21 @@ public class UserService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    tokenService.revokeAllUserTokens(userId);
+                    revokeTokensBestEffort(userId);
                 }
             });
         } else {
+            revokeTokensBestEffort(userId);
+        }
+    }
+
+    private void revokeTokensBestEffort(UUID userId) {
+        try {
             tokenService.revokeAllUserTokens(userId);
+        } catch (RuntimeException exception) {
+            // A versao de token ja foi confirmada no PostgreSQL e invalida tokens antigos;
+            // a limpeza no Redis e eventual e nao deve reportar falha apos commit SQL.
+            log.error("Falha ao revogar refresh tokens no Redis apos commit SQL para userId={}.", userId, exception);
         }
     }
 

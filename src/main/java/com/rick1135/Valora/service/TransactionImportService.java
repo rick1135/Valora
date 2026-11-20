@@ -55,12 +55,9 @@ public class TransactionImportService {
     private static final Pattern INTERNATIONAL_DECIMAL = Pattern.compile("[0-9]+(?:\\.[0-9]+)?");
     private static final BigDecimal MIN_DECIMAL = new BigDecimal("0.00000001");
     private static final BigDecimal DECIMAL_UPPER_BOUND = new BigDecimal("100000000000");
-    private static final Comparator<TransactionDTO> TRANSACTION_ORDER = Comparator
-            .comparing(TransactionDTO::transactionDate)
-            .thenComparing(TransactionDTO::assetId)
-            .thenComparing(TransactionDTO::type)
-            .thenComparing(TransactionDTO::quantity)
-            .thenComparing(TransactionDTO::unitPrice);
+    private static final Comparator<ParsedRow> EXECUTION_ORDER = Comparator
+            .comparing((ParsedRow row) -> row.transaction().transactionDate())
+            .thenComparingInt(row -> row.preview().lineNumber());
 
     private final PortfolioService portfolioService;
     private final AssetRepository assetRepository;
@@ -90,19 +87,20 @@ public class TransactionImportService {
             throw new IllegalArgumentException(message);
         }
 
-        List<TransactionDTO> sortedTransactions = parsed.rows().stream()
-                .map(ParsedRow::transaction)
-                .sorted(TRANSACTION_ORDER)
+        // Preserva a ordem fisica original em caso de empate de data/hora (ex.: CSV somente com datas).
+        List<ParsedRow> orderedRows = parsed.rows().stream()
+                .sorted(EXECUTION_ORDER)
                 .toList();
+        String batchFingerprint = batchFingerprint(orderedRows);
+        Map<String, Integer> occurrencesByTuple = new HashMap<>();
         int importedCount = 0;
         int skippedDuplicatesCount = 0;
-        TransactionDTO previous = null;
-        int occurrence = 0;
-        for (TransactionDTO transaction : sortedTransactions) {
-            occurrence = previous != null && TRANSACTION_ORDER.compare(previous, transaction) == 0 ? occurrence + 1 : 1;
-            previous = transaction;
+        for (ParsedRow row : orderedRows) {
+            TransactionDTO transaction = row.transaction();
+            String tuple = canonicalTuple(transaction);
+            int occurrence = occurrencesByTuple.merge(tuple, 1, Integer::sum);
             var result = transactionService.processTransactionInCurrentTransaction(
-                    user, transaction, idempotencyKey(transaction, occurrence));
+                    user, transaction, idempotencyKey(batchFingerprint, tuple, occurrence));
             if (result.replayed()) {
                 skippedDuplicatesCount++;
             } else {
@@ -293,13 +291,35 @@ public class TransactionImportService {
         return assetRepository.findVisibleByTickerIgnoreCase(user, ticker).stream().findFirst();
     }
 
-    private String idempotencyKey(TransactionDTO dto, int occurrence) {
-        String payload = dto.portfolioId() + "|" + dto.transactionDate()
+    /**
+     * Gera chave idempotente estavel para reenvios do mesmo lote (independentemente da ordem fisica das linhas),
+     * preservando ocorrencias identicas dentro do lote e evitando colisao entre lotes distintos com conteudos diferentes.
+     * Limitacao conhecida: dois arquivos distintos contendo exatamente o mesmo conjunto de linhas sem identificador
+     * externo de negociacao nao podem ser distinguidos apenas pelo conteudo.
+     */
+    private String idempotencyKey(String batchFingerprint, String canonicalTuple, int occurrence) {
+        return "csv:" + sha256Hex(batchFingerprint + "|" + canonicalTuple + "|" + occurrence);
+    }
+
+    private String batchFingerprint(List<ParsedRow> rows) {
+        String canonicalBatch = rows.stream()
+                .map(row -> canonicalTuple(row.transaction()))
+                .sorted()
+                .reduce((left, right) -> left + "\n" + right)
+                .orElse("");
+        return sha256Hex(canonicalBatch);
+    }
+
+    private String canonicalTuple(TransactionDTO dto) {
+        return dto.portfolioId() + "|" + dto.transactionDate()
                 + "|" + dto.assetId() + "|" + dto.type() + "|" + dto.quantity().stripTrailingZeros()
-                + "|" + dto.unitPrice().stripTrailingZeros() + "|" + occurrence;
+                + "|" + dto.unitPrice().stripTrailingZeros();
+    }
+
+    private String sha256Hex(String payload) {
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256").digest(payload.getBytes(StandardCharsets.UTF_8));
-            return "csv:" + HexFormat.of().formatHex(hash);
+            return HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 indisponivel.", exception);
         }

@@ -91,7 +91,7 @@ public class AssetService {
         } else if (StringUtils.hasText(quote.shortName())) {
             name = quote.shortName().strip();
         }
-        AssetCategory category = request.category() != null ? request.category() : inferCategory(ticker, name);
+        AssetCategory category = inferCategory(ticker, name);
         Asset asset = new Asset();
         asset.setTicker(ticker);
         asset.setName(name);

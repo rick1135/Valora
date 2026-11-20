@@ -275,17 +275,55 @@ class TransactionImportServiceTest {
 
         Instant noonInSaoPaulo = Instant.parse("2025-01-10T15:00:00Z");
         assertThat(transactions.getAllValues().subList(0, 4)).containsExactly(
+                new TransactionDTO(PORTFOLIO_ID, ASSET_ID, TransactionType.BUY, new BigDecimal("3"),
+                        new BigDecimal("34.00"), noonInSaoPaulo),
                 new TransactionDTO(PORTFOLIO_ID, ASSET_ID, TransactionType.BUY, new BigDecimal("2"),
                         new BigDecimal("35.50"), noonInSaoPaulo),
                 new TransactionDTO(PORTFOLIO_ID, ASSET_ID, TransactionType.BUY, new BigDecimal("2.0"),
                         new BigDecimal("35.5000"), noonInSaoPaulo),
-                new TransactionDTO(PORTFOLIO_ID, ASSET_ID, TransactionType.BUY, new BigDecimal("3"),
-                        new BigDecimal("34.00"), noonInSaoPaulo),
                 new TransactionDTO(PORTFOLIO_ID, ASSET_ID, TransactionType.SELL, BigDecimal.ONE,
                         new BigDecimal("40.00"), Instant.parse("2025-01-11T12:00:00Z")));
         List<String> firstKeys = keys.getAllValues().subList(0, 4);
         assertThat(firstKeys).doesNotHaveDuplicates().allMatch(key -> key.matches("csv:[0-9a-f]{64}"));
-        assertThat(keys.getAllValues().subList(4, 8)).containsExactlyElementsOf(firstKeys);
+        assertThat(keys.getAllValues().subList(4, 8)).containsExactlyInAnyOrderElementsOf(firstKeys);
+    }
+
+    @Test
+    void preservesPhysicalRowOrderWhenSameDaySellAppearsBeforeBuy() {
+        stubPetr4();
+        List<TransactionType> processedTypes = new java.util.ArrayList<>();
+        when(transactionService.processTransactionInCurrentTransaction(eq(user), any(), any()))
+                .thenAnswer(invocation -> {
+                    TransactionDTO dto = invocation.getArgument(1);
+                    processedTypes.add(dto.type());
+                    if (dto.type() == TransactionType.SELL) {
+                        throw new InsufficientPositionException("Saldo insuficiente para venda.");
+                    }
+                    return new TransactionService.TransactionResult(null, false);
+                });
+        String sameDaySellFirst = HEADER
+                + "2025-01-10,PETR4,SELL,1,36.00\n"
+                + "2025-01-10,PETR4,BUY,2,35.50\n";
+
+        assertThatThrownBy(() -> service.importCsv(user, PORTFOLIO_ID, csv(sameDaySellFirst)))
+                .isInstanceOf(InsufficientPositionException.class);
+        assertThat(processedTypes).containsExactly(TransactionType.SELL);
+    }
+
+    @Test
+    void separatesIdenticalTradesImportedInDistinctBatches() {
+        stubPetr4();
+        Set<String> seen = new HashSet<>();
+        when(transactionService.processTransactionInCurrentTransaction(eq(user), any(), any()))
+                .thenAnswer(invocation -> new TransactionService.TransactionResult(
+                        null, !seen.add(invocation.getArgument(2))));
+        String otherDayBuy = "2025-01-11,PETR4,BUY,1,36.00\n";
+
+        var batchA = service.importCsv(user, PORTFOLIO_ID, csv(HEADER + BUY));
+        var batchB = service.importCsv(user, PORTFOLIO_ID, csv(HEADER + BUY + otherDayBuy));
+
+        assertThat(batchA).isEqualTo(new TransactionImportResultDTO(1, 1, 0));
+        assertThat(batchB).isEqualTo(new TransactionImportResultDTO(2, 2, 0));
     }
 
     private void stubPetr4() {

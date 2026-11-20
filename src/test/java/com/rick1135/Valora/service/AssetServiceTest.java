@@ -80,7 +80,8 @@ class AssetServiceTest {
             "TEST11, FUNDO DE ÍNDICE IMOBILIÁRIO, , , FUNDO DE ÍNDICE IMOBILIÁRIO, ETF",
             "KNRI11, KINEA RENDA IMOBILIARIA FII, , , KINEA RENDA IMOBILIARIA FII, FII",
             "PETR4, , ' ', , PETR4, ACOES",
-            "IVVB11, iShares, , ACOES, iShares, ACOES"
+            "PETR4, Petrobras, , FII, Petrobras, ACOES",
+            "IVVB11, iShares, , ACOES, iShares, ETF"
     })
     void importsNewAssetWithResolvedNameAndCategory(String ticker, String longName, String shortName,
                                                     AssetCategory requestedCategory, String expectedName,

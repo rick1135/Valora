@@ -268,6 +268,25 @@ class UserServiceTest {
     }
 
     @Test
+    void changePasswordDoesNotFailAfterCommitWhenRedisRevocationThrows() {
+        User persisted = persistedAccountForUpdate();
+        when(passwordEncoder.matches("current-password", "old-hash")).thenReturn(true);
+        when(passwordEncoder.encode("new-password")).thenReturn("new-hash");
+        org.mockito.Mockito.doThrow(new com.rick1135.Valora.exception.TokenGenerationException("redis down", null))
+                .when(tokenService).revokeAllUserTokens(persisted.getId());
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            userService.changePassword(persisted, new ChangePasswordRequestDTO("current-password", "new-password"));
+            assertThat(persisted.getTokenVersion()).isEqualTo(1L);
+            TransactionSynchronizationUtils.triggerAfterCommit();
+            verify(tokenService).revokeAllUserTokens(persisted.getId());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
     void deleteAccountRejectsInvalidCurrentPassword() {
         User persisted = persistedAccountForUpdate();
 

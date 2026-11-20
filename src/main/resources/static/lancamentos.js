@@ -107,14 +107,23 @@
     if (file.size > 2 * 1024 * 1024) { setImportStatus("O arquivo deve ter no máximo 2 MB."); return; }
     const seq = ++previewSeq;
     const fileKey = `${file.name}:${file.size}:${file.lastModified}`;
-    const targetPortfolioId = activePortfolioId || (await api.getPortfolio())?.id;
-    if (!targetPortfolioId) { setImportStatus("Nenhuma carteira ativa encontrada."); return; }
-    const formData = new FormData();
-    formData.append("file", file);
     const analyze = document.querySelector("#csv-analyze-btn");
     analyze.disabled = true;
     setImportStatus("Analisando arquivo...", "info");
     try {
+      let targetPortfolioId = activePortfolioId;
+      if (!targetPortfolioId) {
+        targetPortfolioId = (await api.getPortfolio())?.id;
+        if (seq !== previewSeq || importModal.hidden) return;
+        if (targetPortfolioId && !activePortfolioId) {
+          activePortfolioId = targetPortfolioId;
+        }
+      }
+      if (!targetPortfolioId) {
+        throw new Error("Nenhuma carteira ativa encontrada.");
+      }
+      const formData = new FormData();
+      formData.append("file", file);
       const result = await api.request(`/transactions/import/preview?portfolioId=${encodeURIComponent(targetPortfolioId)}`, { method: "POST", body: formData });
       if (seq !== previewSeq || importModal.hidden) return;
       previewPortfolioId = targetPortfolioId;
