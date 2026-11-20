@@ -136,9 +136,48 @@
   outline: none;
 }
 
+.metas-suggestion-item--import {
+  border: 1px solid var(--border-strong);
+}
+
+.metas-suggestion-item--import:hover,
+.metas-suggestion-item--import:focus-visible {
+  border-color: var(--blue);
+  background: rgba(87, 150, 242, 0.2);
+}
+
+.metas-suggestion-item--import:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.metas-suggestion-item--import:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.metas-suggestion-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
 .metas-suggestion-meta {
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.metas-suggestion-empty {
+  margin: 0;
+  padding: 12px 10px;
+  color: var(--muted);
+  text-align: center;
 }
 
 .metas-form-empty {

@@ -82,6 +82,48 @@
       warning.textContent = "Estes ativos precisam ser cadastrados ou importados antes da importação.";
       preview.append(warning);
       appendImportList(preview, "Ativos ausentes", missing);
+      const importMissingButton = document.createElement("button");
+      importMissingButton.className = "button button--ghost";
+      importMissingButton.type = "button";
+      importMissingButton.textContent = "Importar ativos ausentes da B3";
+      importMissingButton.addEventListener("click", async () => {
+        const batchSeq = previewSeq;
+        const targetPortfolioId = previewPortfolioId;
+        const targetFileKey = previewFileKey;
+        const currentFileKey = () => {
+          const file = fileInput.files?.[0];
+          return file ? `${file.name}:${file.size}:${file.lastModified}` : null;
+        };
+        const isContextValid = () => batchSeq === previewSeq
+          && !importModal.hidden
+          && targetPortfolioId === activePortfolioId
+          && targetFileKey === currentFileKey();
+        importMissingButton.disabled = true;
+        setImportStatus("Importando ativos da B3...", "info");
+        const imported = [];
+        const failures = [];
+        for (const ticker of missing) {
+          if (!isContextValid()) return;
+          try {
+            await api.request("/assets/import", { method: "POST", body: { ticker } });
+            if (!isContextValid()) return;
+            imported.push(ticker);
+          } catch (error) {
+            if (!isContextValid()) return;
+            failures.push({ ticker, message: error?.message || "Falha na importação." });
+          }
+        }
+        if (!isContextValid()) return;
+        const summary = [`${imported.length} ativo(s) importado(s).`];
+        if (failures.length) summary.push(`Falhas: ${failures.map((item) => `${item.ticker} (${item.message})`).join("; ")}`);
+        setImportStatus(summary.join(" "), failures.length ? "error" : "success");
+        if (imported.length) {
+          if (!isContextValid()) return;
+          importForm.requestSubmit();
+        }
+        else importMissingButton.disabled = false;
+      });
+      preview.append(importMissingButton);
     }
     const errors = Array.isArray(result.errors) ? result.errors : [];
     if (errors.length) appendImportList(preview, "Erros encontrados", errors, (item) => `Linha ${item.lineNumber ?? item.line ?? item.row ?? "?"}: ${item.message || "Erro de validação"}`);

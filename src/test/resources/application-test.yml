@@ -23,6 +23,12 @@ security:
 brapi:
   token: ${BRAPI_TOKEN:}
 
+assets:
+  catalog:
+    sync:
+      enabled: false
+      startup-enabled: false
+
 provents:
   sync:
     asset-lookback-days: 365

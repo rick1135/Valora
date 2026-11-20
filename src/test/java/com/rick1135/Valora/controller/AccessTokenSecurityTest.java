@@ -366,6 +366,15 @@ class AccessTokenSecurityTest {
     }
 
     @Test
+    void assetCatalogSyncShouldRequireAdminRole() throws Exception {
+        assertGenericUnauthorized(mockMvc.perform(post("/assets/sync")), null);
+        mockMvc.perform(post("/assets/sync").with(user("investor@valora.dev").roles("USER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/assets/sync").with(user("admin@valora.dev").roles("ADMIN")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void benchmarkSyncShouldRequireAdminRoleAndStatusShouldRequireAuthentication() throws Exception {
         assertGenericUnauthorized(mockMvc.perform(get("/benchmarks/status")), null);
         mockMvc.perform(get("/benchmarks/status")
@@ -529,6 +538,10 @@ class AccessTokenSecurityTest {
         @PostMapping("/assets")
         @ResponseStatus(CREATED)
         void createAsset() {
+        }
+
+        @PostMapping("/assets/sync")
+        void syncAssetCatalog() {
         }
 
         @GetMapping({

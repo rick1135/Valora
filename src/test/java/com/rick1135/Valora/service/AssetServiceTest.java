@@ -1,6 +1,8 @@
 package com.rick1135.Valora.service;
 
 import com.rick1135.Valora.client.BrapiClient;
+import com.rick1135.Valora.dto.brapi.BrapiListedAssetDTO;
+import com.rick1135.Valora.dto.brapi.BrapiQuoteListResponseDTO;
 import com.rick1135.Valora.dto.brapi.BrapiResponseDTO;
 import com.rick1135.Valora.dto.brapi.BrapiResultDTO;
 import com.rick1135.Valora.dto.request.AssetImportRequestDTO;
@@ -36,6 +38,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 
@@ -43,18 +46,24 @@ import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -100,6 +109,47 @@ class AssetServiceTest {
         ArgumentCaptor<Asset> saved = ArgumentCaptor.forClass(Asset.class);
         verify(assetRepository).saveAndFlush(saved.capture());
         assertThat(saved.getValue().getOwnerUser()).isNull();
+    }
+
+    @Test
+    void importsAssetWhenCatalogMetadataIsUnavailable() {
+        when(brapiClient.getQuote("IVVB11", "token"))
+                .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO("IVVB11", BigDecimal.TEN))));
+        when(brapiClient.listQuotes("IVVB11", 5, 1, null, null, "token"))
+                .thenThrow(new RestClientException("upstream unavailable"));
+        when(assetRepository.saveAndFlush(any(Asset.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(configuredBrapiService().importAssetFromBrapi(new AssetImportRequestDTO("IVVB11", null)).category())
+                .isEqualTo(AssetCategory.ETF);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "BOVV11, fund, etf, ETF",
+            "TAEE11, fund, unit, ACOES",
+            "SANB11, fund, UNIT, ACOES",
+            "KLBN11, fund, unit, ACOES",
+            "HGLG11, stock, FII, FII",
+            "AAPL34, fund, BDR, ACOES",
+            "ITSA4, fund, stock, ACOES",
+            "HGRU11, fund, , FII"
+    })
+    void suggestionsAndImportsUseTheSameExactCatalogMetadata(String ticker, String type, String subType,
+                                                             AssetCategory category) {
+        var listing = new BrapiListedAssetDTO(ticker.toLowerCase(Locale.ROOT), ticker, type, subType);
+        when(brapiClient.listQuotes(ticker, 15, 1, "token"))
+                .thenReturn(new BrapiQuoteListResponseDTO(List.of(listing), 1, 1, false));
+        when(brapiClient.getQuote(ticker, "token"))
+                .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO(ticker, BigDecimal.TEN))));
+        when(brapiClient.listQuotes(ticker, 5, 1, null, null, "token"))
+                .thenReturn(new BrapiQuoteListResponseDTO(List.of(
+                        new BrapiListedAssetDTO("ABCD11", "Outro ticker", "stock", "stock"), listing), 1, 1, false));
+        when(assetRepository.saveAndFlush(any(Asset.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        AssetService service = configuredBrapiService();
+
+        assertThat(service.searchAssets(ticker)).extracting(AssetResponseDTO::category).containsExactly(category);
+        assertThat(service.importAssetFromBrapi(new AssetImportRequestDTO(ticker, null)).category())
+                .isEqualTo(category);
     }
 
     @Test
@@ -351,11 +401,180 @@ class AssetServiceTest {
                 AssetCategory.RENDA_FIXA, null, null, null, null);
         when(assetRepository.findVisibleToUser(user, PageRequest.of(0, 20, Sort.by("ticker"))))
                 .thenReturn(new PageImpl<>(List.of(privateAsset)));
-        when(assetRepository.searchVisibleToUser(user, "RF")).thenReturn(List.of(privateAsset));
+        when(assetRepository.searchVisibleToUser(user, "RF", "RF%", "%RF%", PageRequest.of(0, 25)))
+                .thenReturn(List.of(privateAsset));
         when(assetMapper.toResponse(privateAsset)).thenReturn(response);
 
         assertThat(assetService.getAllAssets(user, 0, 20, "ticker", "asc")).containsExactly(response);
         assertThat(assetService.searchAssets(user, " rf ")).containsExactly(response);
+    }
+
+    @Test
+    void searchCombinesLocalAndExternalAssetsAndCachesSuggestionsWithoutSaving() {
+        User user = new User();
+        UUID localId = UUID.randomUUID();
+        Asset local = new Asset();
+        local.setId(localId);
+        local.setTicker("ITSA4");
+        local.setName("Itausa");
+        local.setCategory(AssetCategory.ACOES);
+        AssetResponseDTO localResponse = new AssetResponseDTO(localId, "ITSA4", "Itausa",
+                AssetCategory.ACOES, null, null, null, null);
+        when(assetRepository.searchVisibleToUser(user, "ITSA4", "ITSA4%", "%ITSA4%", PageRequest.of(0, 25)))
+                .thenReturn(List.of(local));
+        when(brapiClient.listQuotes("ITSA4", 15, 1, "token")).thenReturn(new BrapiQuoteListResponseDTO(List.of(
+                new BrapiListedAssetDTO("itsa4", "Itausa", "stock"),
+                new BrapiListedAssetDTO("ITSA4F", "Itausa fracionario", "stock"),
+                new BrapiListedAssetDTO("IT$A4", "Invalido", "stock"),
+                new BrapiListedAssetDTO(" spxb11 ", "S&P 500", "fund"),
+                new BrapiListedAssetDTO("SPXB11", "ETF duplicado", "fund")
+        ), 1, 1, false));
+
+        AssetService service = configuredBrapiService();
+        var result = service.searchAssets(user, " itsa4 ");
+
+        assertThat(result).hasSize(2);
+        assertThat(result.getFirst()).isEqualTo(localResponse);
+        assertThat(result.getFirst().persisted()).isTrue();
+        assertThat(result.getLast()).isEqualTo(new AssetResponseDTO(null, "SPXB11", "S&P 500",
+                AssetCategory.ETF, null, null, null, null, null, null, false));
+        assertThat(service.searchAssets(user, "ITSA4")).isEqualTo(result);
+        assertThat(service.searchAssets(user, "ITSA4", false)).containsExactly(localResponse);
+        verify(brapiClient).listQuotes("ITSA4", 15, 1, "token");
+        verify(assetRepository, times(3)).searchVisibleToUser(user, "ITSA4", "ITSA4%", "%ITSA4%",
+                PageRequest.of(0, 25));
+        verifyNoMoreInteractions(assetRepository, brapiClient);
+    }
+
+    @Test
+    void searchReturnsLocalResultsWhenBrapiFails() {
+        UUID localId = UUID.randomUUID();
+        Asset local = new Asset();
+        local.setId(localId);
+        local.setTicker("ITSA4");
+        local.setName("Itausa");
+        local.setCategory(AssetCategory.ACOES);
+        AssetResponseDTO localResponse = new AssetResponseDTO(localId, "ITSA4", "Itausa",
+                AssetCategory.ACOES, null, null, null, null);
+        when(assetRepository.findByTickerContainingIgnoreCase("IT", PageRequest.of(0, 25))).thenReturn(List.of(local));
+        when(brapiClient.listQuotes("IT", 15, 1, "token"))
+                .thenThrow(new RestClientException("upstream unavailable"))
+                .thenReturn(new BrapiQuoteListResponseDTO(null, null, null, null));
+
+        AssetService service = configuredBrapiService();
+        assertThat(service.searchAssets("it")).containsExactly(localResponse);
+        assertThat(service.searchAssets("it")).containsExactly(localResponse);
+        verify(brapiClient, times(2)).listQuotes("IT", 15, 1, "token");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"%", "_", "\\"})
+    void localSearchPassesLiteralTermsAndLimitsBothQueries(String term) {
+        User user = new User();
+        var page = PageRequest.of(0, 25);
+        String literalPattern = "\\" + term + "%";
+
+        assertThat(assetService.searchAssets(user, term, false)).isEmpty();
+        assertThat(assetService.searchAssets(null, term, false)).isEmpty();
+
+        verify(assetRepository).searchVisibleToUser(user, term, literalPattern, "%" + literalPattern, page);
+        verify(assetRepository).findByTickerContainingIgnoreCase(term, page);
+        verifyNoInteractions(brapiClient);
+    }
+
+    @Test
+    void searchMethodsHaveNoServiceTransaction() {
+        assertThat(Arrays.stream(AssetService.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals("searchAssets")))
+                .hasSize(3)
+                .allSatisfy(method -> assertThat(method.getAnnotation(Transactional.class)).isNull());
+        assertThat(AssetService.class.getAnnotation(Transactional.class)).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void concurrentSearchesShareOneBrapiRequest(boolean requestSucceeds) throws Exception {
+        var requested = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var bothReadLocally = new CountDownLatch(2);
+        when(assetRepository.findByTickerContainingIgnoreCase("BOVV", PageRequest.of(0, 25))).thenAnswer(invocation -> {
+            bothReadLocally.countDown();
+            return List.of();
+        });
+        when(brapiClient.listQuotes("BOVV", 15, 1, "token")).thenAnswer(invocation -> {
+            requested.countDown();
+            assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+            if (!requestSucceeds) {
+                throw new RestClientException("upstream unavailable");
+            }
+            return new BrapiQuoteListResponseDTO(
+                    List.of(new BrapiListedAssetDTO("BOVV11", "BOVV11", "fund", "etf")), 1, 1, false);
+        });
+        AssetService service = configuredBrapiService();
+        var first = new FutureTask<>(() -> service.searchAssets("bovv"));
+        var second = new FutureTask<>(() -> service.searchAssets(" BOVV "));
+        Thread.ofPlatform().daemon().start(first);
+        try {
+            assertThat(requested.await(5, TimeUnit.SECONDS)).isTrue();
+            Thread follower = Thread.ofPlatform().daemon().start(second);
+            assertThat(bothReadLocally.await(5, TimeUnit.SECONDS)).isTrue();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (follower.getState() != Thread.State.WAITING && System.nanoTime() < deadline) {
+                Thread.sleep(1);
+            }
+            assertThat(follower.getState()).isEqualTo(Thread.State.WAITING);
+        } finally {
+            release.countDown();
+        }
+
+        var suggestions = first.get(5, TimeUnit.SECONDS);
+        List<String> expectedTickers = requestSucceeds ? List.of("BOVV11") : List.of();
+        assertThat(suggestions).extracting(AssetResponseDTO::ticker).containsExactlyElementsOf(expectedTickers);
+        assertThat(second.get(5, TimeUnit.SECONDS)).isEqualTo(suggestions);
+        verify(brapiClient).listQuotes("BOVV", 15, 1, "token");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "ITSA4, Itausa, STOCK, ACOES",
+            "AAPL34, Apple, BDR, ACOES",
+            "SPXB11, S&P 500, fund, ETF",
+            "SPXB11, Fundo XP, FUND, ETF",
+            "ABCD11, Fundo de Índice Imobiliário, , ETF",
+            "HGLG11, Fundo Imobiliario, fund, FII",
+            "KNRI11, FDO INV IMOB, , FII"
+    })
+    void classifiesCatalogAssets(String ticker, String name, String type, AssetCategory category) {
+        assertThat(assetService.inferCategoryForCatalog(ticker, name, type)).isEqualTo(category);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"fi-infra", "fi-agro", "fip", "fidc", "unknown-subtype"})
+    void rejectsAndFiltersUnsupportedBrapiSubTypesConsistently(String unsupportedSubType) {
+        assertThat(assetService.inferCategoryForCatalog("JURO11", "Fundo Infra", "fund", unsupportedSubType)).isNull();
+
+        when(assetRepository.findByTickerContainingIgnoreCase("JURO", PageRequest.of(0, 25))).thenReturn(List.of());
+        when(brapiClient.listQuotes("JURO", 15, 1, "token")).thenReturn(new BrapiQuoteListResponseDTO(List.of(
+                new BrapiListedAssetDTO("JURO11", "Fundo Infra", "fund", unsupportedSubType),
+                new BrapiListedAssetDTO("ITSA4", "Itausa", "stock", "stock")
+        ), 1, 1, false));
+        AssetService service = configuredBrapiService();
+
+        assertThat(service.searchAssets("JURO"))
+                .extracting(AssetResponseDTO::ticker)
+                .containsExactly("ITSA4");
+
+        when(brapiClient.getQuote("JURO11", "token"))
+                .thenReturn(new BrapiResponseDTO(List.of(new BrapiResultDTO("JURO11", BigDecimal.TEN))));
+        when(brapiClient.listQuotes("JURO11", 5, 1, null, null, "token"))
+                .thenReturn(new BrapiQuoteListResponseDTO(List.of(
+                        new BrapiListedAssetDTO("JURO11", "Fundo Infra", "fund", unsupportedSubType)
+                ), 1, 1, false));
+
+        assertThatThrownBy(() -> service.importAssetFromBrapi(new AssetImportRequestDTO("JURO11", null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(unsupportedSubType);
+        verify(assetRepository, never()).saveAndFlush(any());
     }
 
     @Test

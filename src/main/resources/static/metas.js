@@ -37,6 +37,7 @@
     isSaving: false,
     searchTimer: null,
     searchSeq: 0,
+    importSeq: 0,
   };
   let loadId = 0;
   let simulationId = 0;
@@ -355,7 +356,7 @@
     if (!Array.isArray(assets) || assets.length === 0) {
       const emptyLi = createEl("li");
       const msg = createEl("div", "metas-suggestion-meta", "Nenhum ativo encontrado.");
-      msg.style.padding = "8px 10px";
+      msg.classList.add("metas-suggestion-empty");
       emptyLi.append(msg);
       list.replaceChildren(emptyLi);
       list.hidden = false;
@@ -370,10 +371,34 @@
         createEl("strong", "", asset.ticker),
         createEl("span", "metas-suggestion-meta", `${asset.name || ""} · ${getCategoryLabel(asset.category)}`)
       );
-      btn.addEventListener("click", () => {
-        addAssetTarget(asset);
-        input.value = "";
-        hideAssetSuggestions();
+      if (asset.persisted === false || !asset.id) {
+        btn.append(createEl("span", "metas-suggestion-badge", "B3 · Importar"));
+      }
+      if (asset.persisted === false || !asset.id) {
+        btn.classList.add("metas-suggestion-item--import");
+      }
+      btn.addEventListener("click", async () => {
+        state.importSeq += 1;
+        const importing = asset.persisted === false || !asset.id;
+        const seq = importing ? ++state.importSeq : state.importSeq;
+        const targetPortfolioId = state.portfolioId;
+        btn.disabled = true;
+        try {
+          let selectedAsset = asset;
+          if (importing) {
+            selectedAsset = await apiRequest("/assets/import", { method: "POST", body: { ticker: asset.ticker } });
+            if (seq !== state.importSeq || state.portfolioId !== targetPortfolioId) return;
+          }
+          addAssetTarget(selectedAsset);
+          input.value = "";
+          hideAssetSuggestions();
+          setPageError("");
+        } catch (error) {
+          if (importing && (seq !== state.importSeq || state.portfolioId !== targetPortfolioId)) return;
+          btn.disabled = false;
+          const message = error instanceof Error ? error.message : "Não foi possível importar o ativo da B3.";
+          setPageError(`Não foi possível adicionar o ativo: ${message}`);
+        }
       });
       li.append(btn);
       return li;
@@ -388,6 +413,7 @@
     if (!input) return;
 
     input.addEventListener("input", () => {
+      state.importSeq += 1;
       const query = input.value.trim();
       window.clearTimeout(state.searchTimer);
       if (query.length < 2) {
@@ -577,6 +603,7 @@
   }
 
   async function loadMetasPage(options = {}) {
+    state.importSeq += 1;
     const currentLoad = ++loadId;
     simulationId += 1;
     state.portfolioId = null;

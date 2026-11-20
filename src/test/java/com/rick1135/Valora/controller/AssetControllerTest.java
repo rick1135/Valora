@@ -1,25 +1,30 @@
 package com.rick1135.Valora.controller;
 
+import com.rick1135.Valora.dto.response.AssetCatalogSyncResultDTO;
 import com.rick1135.Valora.dto.response.AssetResponseDTO;
 import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.exception.AssetAlreadyExistsException;
 import com.rick1135.Valora.exception.GlobalExceptionHandler;
+import com.rick1135.Valora.service.AssetCatalogSyncService;
 import com.rick1135.Valora.service.AssetService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
+import org.springframework.validation.beanvalidation.MethodValidationInterceptor;
 
 import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -33,17 +38,41 @@ class AssetControllerTest {
     @Mock
     private AssetService assetService;
 
+    @Mock
+    private AssetCatalogSyncService assetCatalogSyncService;
+
     @BeforeEach
     void setUp() {
         LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
 
-        AssetController controller = new AssetController(assetService);
+        AssetController controller = new AssetController(assetService, assetCatalogSyncService);
+        ProxyFactory proxyFactory = new ProxyFactory(controller);
+        proxyFactory.setProxyTargetClass(true);
+        proxyFactory.addAdvice(new MethodValidationInterceptor(validator.getValidator()));
 
-        mockMvc = MockMvcBuilders.standaloneSetup(controller)
+        mockMvc = MockMvcBuilders.standaloneSetup(proxyFactory.getProxy())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(validator)
                 .build();
+    }
+
+    @Test
+    void searchAssetsRejectsTickerLongerThan80Characters() throws Exception {
+        mockMvc.perform(get("/assets/search").param("ticker", "A".repeat(81)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("ticker deve ter no maximo 80 caracteres."));
+        verifyNoInteractions(assetService);
+    }
+
+    @Test
+    void searchAssetsAcceptsTickerWith80Characters() throws Exception {
+        String ticker = "A".repeat(80);
+        when(assetService.searchAssets(any(), eq(ticker), eq(true))).thenReturn(List.of());
+
+        mockMvc.perform(get("/assets/search").param("ticker", ticker))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
     }
 
     @Test
@@ -102,12 +131,41 @@ class AssetControllerTest {
     @Test
     void searchAssetsReturnsMatchingAssets() throws Exception {
         AssetResponseDTO response = new AssetResponseDTO(UUID.randomUUID(), "PETR4", "Petrobras", AssetCategory.ACOES, null, null, null, null);
-        when(assetService.searchAssets(any(), eq("petr"))).thenReturn(List.of(response));
+        AssetResponseDTO suggestion = new AssetResponseDTO(null, "SPXB11", "S&P 500", AssetCategory.ETF,
+                null, null, null, null, null, null, false);
+        when(assetService.searchAssets(any(), eq("petr"), eq(true))).thenReturn(List.of(response, suggestion));
 
         mockMvc.perform(get("/assets/search")
                         .param("ticker", "petr"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].ticker").value("PETR4"));
+                .andExpect(jsonPath("$[0].ticker").value("PETR4"))
+                .andExpect(jsonPath("$[0].persisted").value(true))
+                .andExpect(jsonPath("$[1].ticker").value("SPXB11"))
+                .andExpect(jsonPath("$[1].id").doesNotExist())
+                .andExpect(jsonPath("$[1].persisted").value(false));
+        verifyNoInteractions(assetCatalogSyncService);
+    }
+
+    @Test
+    void searchAssetsAcceptsOptOutFromExternalSuggestions() throws Exception {
+        when(assetService.searchAssets(any(), eq("itsa"), eq(false))).thenReturn(List.of());
+
+        mockMvc.perform(get("/assets/search").param("ticker", "itsa").param("includeExternal", "false"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void syncAssetsReturnsCatalogCounts() throws Exception {
+        when(assetCatalogSyncService.syncB3Catalog()).thenReturn(new AssetCatalogSyncResultDTO(5, 3, 2));
+
+        mockMvc.perform(post("/assets/sync"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fetched").value(5))
+                .andExpect(jsonPath("$.inserted").value(3))
+                .andExpect(jsonPath("$.skipped").value(2))
+                .andExpect(jsonPath("$.complete").value(true))
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
     }
 
     @Test
