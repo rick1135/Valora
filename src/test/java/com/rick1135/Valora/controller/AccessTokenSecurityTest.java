@@ -271,6 +271,20 @@ class AccessTokenSecurityTest {
                 .andExpect(status().isCreated());
     }
 
+    @Test
+    void benchmarkSyncShouldRequireAdminRoleAndStatusShouldRequireAuthentication() throws Exception {
+        assertGenericUnauthorized(mockMvc.perform(get("/benchmarks/status")), null);
+        mockMvc.perform(get("/benchmarks/status")
+                        .with(user("investor@valora.dev").roles("USER")))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/benchmarks/sync")
+                        .with(user("investor@valora.dev").roles("USER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/benchmarks/sync")
+                        .with(user("admin@valora.dev").roles("ADMIN")))
+                .andExpect(status().isOk());
+    }
+
     private void assertGenericUnauthorized(ResultActions resultActions, String sensitiveValue) throws Exception {
         resultActions
                 .andExpect(status().isUnauthorized())
@@ -411,6 +425,14 @@ class AccessTokenSecurityTest {
         @PostMapping("/auth/logout")
         @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
         void logout() {
+        }
+
+        @GetMapping("/benchmarks/status")
+        void benchmarkStatus() {
+        }
+
+        @PostMapping("/benchmarks/sync")
+        void benchmarkSync() {
         }
     }
 }

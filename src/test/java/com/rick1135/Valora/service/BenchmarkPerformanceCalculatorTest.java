@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BenchmarkPerformanceCalculatorTest {
 
+    private final MarketCalendar marketCalendar = new MarketCalendar(Clock.systemUTC());
     private BenchmarkPerformanceCalculator calculator;
 
     private Benchmark cdiBenchmark;
@@ -149,11 +151,11 @@ class BenchmarkPerformanceCalculatorTest {
 
     @Test
     void shouldReturnInsufficientDataWhenCdiMissingAtStart() {
-        LocalDate start = LocalDate.of(2026, 11, 2); // Monday
-        LocalDate end = LocalDate.of(2026, 11, 13);  // Friday (10 business days)
+        LocalDate start = LocalDate.of(2026, 11, 2);
+        LocalDate end = LocalDate.of(2026, 11, 13);
 
-        // Missing first 3 business days (Nov 2, 3, 4)
-        List<BenchmarkValue> values = buildDailyBusinessValues(cdiBenchmark, LocalDate.of(2026, 11, 5), end, new BigDecimal("0.05"));
+        // Nov 2 is a holiday. The first three business days are Nov 3–5.
+        List<BenchmarkValue> values = buildDailyBusinessValues(cdiBenchmark, LocalDate.of(2026, 11, 6), end, new BigDecimal("0.05"));
 
         BenchmarkYieldResult result = calculator.calculateYieldResult(cdiBenchmark, values, start, end);
 
@@ -195,12 +197,12 @@ class BenchmarkPerformanceCalculatorTest {
     }
 
     @Test
-    void shouldAllowCdiHolidayAndCurrentDayLagWithinTolerance() {
-        LocalDate start = LocalDate.of(2026, 11, 2); // Monday
-        LocalDate end = LocalDate.of(2026, 11, 13);  // Friday (10 business days)
+    void shouldAllowCdiMissingBusinessDayAndCurrentDayLagWithinTolerance() {
+        LocalDate start = LocalDate.of(2026, 11, 2);
+        LocalDate end = LocalDate.of(2026, 11, 16);
 
-        // 1 holiday in middle (Nov 6) + 1 day lag at end (Nov 13) -> 8/10 = 80% covered
-        List<BenchmarkValue> values = buildDailyBusinessValues(cdiBenchmark, start, LocalDate.of(2026, 11, 12), new BigDecimal("0.05"))
+        // Finados is excluded. Missing Nov 6 and Nov 16 leaves 8 of 10 business days covered.
+        List<BenchmarkValue> values = buildDailyBusinessValues(cdiBenchmark, start, end.minusDays(3), new BigDecimal("0.05"))
                 .stream()
                 .filter(bv -> !bv.getReferenceDate().equals(LocalDate.of(2026, 11, 6)))
                 .toList();
@@ -210,6 +212,24 @@ class BenchmarkPerformanceCalculatorTest {
         assertTrue(result.available());
         assertEquals(BenchmarkCoverageStatus.AVAILABLE, result.status());
         assertTrue(result.percentage().compareTo(BigDecimal.ZERO) > 0);
+    }
+
+    @Test
+    void shouldExcludeCarnivalFromCdiGapAndCoverage() {
+        LocalDate friday = LocalDate.of(2026, 2, 13);
+        LocalDate thursday = LocalDate.of(2026, 2, 19);
+        BigDecimal dailyRate = new BigDecimal("0.05");
+        List<BenchmarkValue> values = List.of(
+                new BenchmarkValue(1L, cdiBenchmark, friday, dailyRate),
+                new BenchmarkValue(2L, cdiBenchmark, thursday, dailyRate)
+        );
+
+        // Ash Wednesday is the only missing business day in the interval.
+        BenchmarkYieldResult result = calculator.calculateYieldResult(cdiBenchmark, values, friday, thursday);
+
+        assertTrue(result.available());
+        assertEquals(BenchmarkCoverageStatus.AVAILABLE, result.status());
+        assertEquals(new BigDecimal("0.1000"), result.percentage());
     }
 
     @Test
@@ -365,7 +385,7 @@ class BenchmarkPerformanceCalculatorTest {
         long id = 1L;
         LocalDate current = from;
         while (!current.isAfter(to)) {
-            if (current.getDayOfWeek().getValue() <= 5) {
+            if (marketCalendar.isBusinessDay(current)) {
                 list.add(new BenchmarkValue(id++, benchmark, current, rate));
             }
             current = current.plusDays(1);

@@ -4,11 +4,12 @@ import com.rick1135.Valora.common.FinancialConstants;
 import com.rick1135.Valora.entity.Benchmark;
 import com.rick1135.Valora.entity.BenchmarkType;
 import com.rick1135.Valora.entity.BenchmarkValue;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.DayOfWeek;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -25,6 +26,17 @@ public class BenchmarkPerformanceCalculator {
     private static final int MAX_EDGE_GAP_BUSINESS_DAYS = 2;
     private static final int MAX_INTERNAL_GAP_BUSINESS_DAYS = 2;
     private static final double MIN_BUSINESS_DAY_COVERAGE_RATIO = 0.80;
+
+    private final MarketCalendar marketCalendar;
+
+    public BenchmarkPerformanceCalculator() {
+        this(new MarketCalendar(Clock.systemDefaultZone()));
+    }
+
+    @Autowired
+    public BenchmarkPerformanceCalculator(MarketCalendar marketCalendar) {
+        this.marketCalendar = marketCalendar;
+    }
 
     public enum BenchmarkCoverageStatus {
         AVAILABLE,
@@ -113,7 +125,7 @@ public class BenchmarkPerformanceCalculator {
             return BenchmarkYieldResult.unavailable(BenchmarkCoverageStatus.MISSING_DATA);
         }
 
-        long expectedBusinessDays = countBusinessDays(startDate, endDate);
+        long expectedBusinessDays = marketCalendar.businessDaysBetween(startDate, endDate);
         if (expectedBusinessDays == 0) {
             return BenchmarkYieldResult.unavailable(BenchmarkCoverageStatus.INSUFFICIENT_DATA);
         }
@@ -121,11 +133,11 @@ public class BenchmarkPerformanceCalculator {
         LocalDate firstDate = validValues.get(0).getReferenceDate();
         LocalDate lastDate = validValues.get(validValues.size() - 1).getReferenceDate();
 
-        if (countBusinessDays(startDate, firstDate.minusDays(1)) > MAX_EDGE_GAP_BUSINESS_DAYS) {
+        if (marketCalendar.businessDaysBetween(startDate, firstDate.minusDays(1)) > MAX_EDGE_GAP_BUSINESS_DAYS) {
             return BenchmarkYieldResult.unavailable(BenchmarkCoverageStatus.INSUFFICIENT_DATA);
         }
 
-        if (countBusinessDays(lastDate.plusDays(1), endDate) > MAX_EDGE_GAP_BUSINESS_DAYS) {
+        if (marketCalendar.businessDaysBetween(lastDate.plusDays(1), endDate) > MAX_EDGE_GAP_BUSINESS_DAYS) {
             return BenchmarkYieldResult.unavailable(BenchmarkCoverageStatus.INSUFFICIENT_DATA);
         }
 
@@ -133,14 +145,14 @@ public class BenchmarkPerformanceCalculator {
             LocalDate prevDate = validValues.get(i - 1).getReferenceDate();
             LocalDate currDate = validValues.get(i).getReferenceDate();
             if (currDate.isAfter(prevDate.plusDays(1))
-                    && countBusinessDays(prevDate.plusDays(1), currDate.minusDays(1)) > MAX_INTERNAL_GAP_BUSINESS_DAYS) {
+                    && marketCalendar.businessDaysBetween(prevDate.plusDays(1), currDate.minusDays(1)) > MAX_INTERNAL_GAP_BUSINESS_DAYS) {
                 return BenchmarkYieldResult.unavailable(BenchmarkCoverageStatus.INSUFFICIENT_DATA);
             }
         }
 
         Set<LocalDate> coveredBusinessDays = validValues.stream()
                 .map(BenchmarkValue::getReferenceDate)
-                .filter(this::isBusinessDay)
+                .filter(marketCalendar::isBusinessDay)
                 .collect(Collectors.toSet());
 
         if (expectedBusinessDays <= 5) {
@@ -186,8 +198,10 @@ public class BenchmarkPerformanceCalculator {
             return BenchmarkYieldResult.unavailable(BenchmarkCoverageStatus.INVALID_BASE_VALUE);
         }
 
-        if (countBusinessDays(startDate, first.getReferenceDate().minusDays(1)) > MAX_EDGE_GAP_BUSINESS_DAYS
-                || countBusinessDays(last.getReferenceDate().plusDays(1), endDate) > MAX_EDGE_GAP_BUSINESS_DAYS) {
+        LocalDate firstDate = first.getReferenceDate();
+        LocalDate lastDate = last.getReferenceDate();
+        if (marketCalendar.businessDaysBetween(startDate, firstDate.minusDays(1)) > MAX_EDGE_GAP_BUSINESS_DAYS
+                || marketCalendar.businessDaysBetween(lastDate.plusDays(1), endDate) > MAX_EDGE_GAP_BUSINESS_DAYS) {
             return BenchmarkYieldResult.unavailable(BenchmarkCoverageStatus.INSUFFICIENT_DATA);
         }
 
@@ -244,25 +258,5 @@ public class BenchmarkPerformanceCalculator {
         }
 
         return BenchmarkYieldResult.available(calculateAccumulatedRateYield(monthlyValues));
-    }
-
-    private long countBusinessDays(LocalDate from, LocalDate to) {
-        if (from == null || to == null || from.isAfter(to)) {
-            return 0;
-        }
-        long count = 0;
-        LocalDate current = from;
-        while (!current.isAfter(to)) {
-            if (isBusinessDay(current)) {
-                count++;
-            }
-            current = current.plusDays(1);
-        }
-        return count;
-    }
-
-    private boolean isBusinessDay(LocalDate date) {
-        DayOfWeek day = date.getDayOfWeek();
-        return day != DayOfWeek.SATURDAY && day != DayOfWeek.SUNDAY;
     }
 }

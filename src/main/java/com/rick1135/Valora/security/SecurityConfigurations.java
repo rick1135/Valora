@@ -91,6 +91,7 @@ public class SecurityConfigurations {
                         .requestMatchers("/auth/login", "/auth/register", "/auth/refresh", "/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.POST, "/assets").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/provents", "/provents/sync").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/benchmarks/sync").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(securityFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
