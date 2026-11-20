@@ -23,6 +23,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   min-width: 320px;
   background: var(--page);
@@ -255,11 +259,14 @@ a {
   justify-content: center;
   min-width: 98px;
   min-height: 36px;
+  padding: 0 12px;
   border: 1px solid #1c3a4c;
   border-radius: 999px;
   color: var(--pink);
   background: #101926;
+  font-size: 0.9rem;
   font-weight: 850;
+  white-space: nowrap;
 }
 
 .metric-card__note {
@@ -2129,6 +2136,11 @@ tbody tr:last-child td {
 .metric-card__badge--positive {
   color: var(--green);
   border-color: rgba(8, 208, 150, 0.35);
+}
+
+.metric-card__badge--neutral {
+  color: var(--muted-strong);
+  border-color: var(--border-strong);
 }
 
 .metric-card__trend--negative {

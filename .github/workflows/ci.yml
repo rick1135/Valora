@@ -35,6 +35,8 @@ jobs:
           while IFS= read -r -d '' f; do
             node --check "$f"
           done < <(find src/main/resources/static -type f -name '*.js' -print0)
+      - name: Test CSV import interactions
+        run: node --test src/test/js/lancamentos.test.cjs
       - name: Reject unsafe HTML injection APIs
         run: |
           if find src/main/resources/static -type f -name '*.js' -exec grep -nE "innerHTML|outerHTML|insertAdjacentHTML" {} +; then

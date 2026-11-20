@@ -114,7 +114,7 @@
     banner.hidden = false;
   }
 
-  function buildMetricCard({ label, value, note, tone, badge, badgeTone, trend, trendTone }) {
+  function buildMetricCard({ label, value, note, tone, badge, badgeTone, badgeTitle, trend, trendTone }) {
     const card = document.createElement("article");
     card.className = `metric-card${tone ? ` metric-card--${tone}` : ""}`;
 
@@ -134,6 +134,9 @@
       const badgeEl = document.createElement("span");
       badgeEl.className = `metric-card__badge${badgeTone ? ` metric-card__badge--${badgeTone}` : ""}`;
       badgeEl.textContent = badge;
+      if (badgeTitle) {
+        badgeEl.title = badgeTitle;
+      }
       bodyEl.append(badgeEl);
     }
 
@@ -173,8 +176,11 @@
 
     const dayChangeAvailable = Boolean(profitability.dayChangeAvailable);
     const dayPct = toNumber(profitability.dayPercentageVariation);
-    const dayBadge = dayChangeAvailable ? formatPercent(dayPct, true) : null;
-    const dayBadgeTone = dayPct >= 0 ? "positive" : "";
+    const dayBadge = dayChangeAvailable ? `Hoje: ${formatPercent(dayPct, true)}` : null;
+    const dayBadgeTone = dayPct > 0 ? "positive" : dayPct < 0 ? "" : "neutral";
+    const dayBadgeTitle = dayChangeAvailable
+      ? "Varia\u00e7\u00e3o do patrim\u00f4nio no preg\u00e3o de hoje em rela\u00e7\u00e3o ao fechamento anterior"
+      : null;
 
     const profitTone =
       absoluteProfit > 0 ? "" : absoluteProfit < 0 ? "negative" : "neutral";
@@ -240,6 +246,7 @@
         tone: "neutral",
         badge: dayBadge,
         badgeTone: dayBadgeTone,
+        badgeTitle: dayBadgeTitle,
       }),
       buildMetricCard({
         label: "Lucro total",

@@ -16,6 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -67,8 +68,12 @@ public class TransactionImportService {
     public TransactionImportPreviewDTO preview(User user, UUID portfolioId, MultipartFile file) {
         portfolioService.resolveOwnedPortfolio(user, portfolioId);
         ParsedCsv parsed = parse(user, portfolioId, file);
+        BigDecimal totalVolume = parsed.rows().stream()
+                .map(row -> row.preview().totalValue())
+                .reduce(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP), BigDecimal::add);
         return new TransactionImportPreviewDTO(parsed.totalRows(), parsed.rows().size(), parsed.errors().size(),
-                parsed.missingTickers(), parsed.rows().stream().map(ParsedRow::preview).toList(), parsed.errors());
+                parsed.missingTickers(), parsed.rows().stream().map(ParsedRow::preview).toList(), parsed.errors(),
+                totalVolume);
     }
 
     @Transactional
@@ -116,8 +121,7 @@ public class TransactionImportService {
         String header = lines.next();
         char delimiter = QUOTED_HEADER_FIELD.matcher(header).replaceAll("").contains(";") ? ';' : ',';
         List<String> headerFields = splitFields(header, delimiter).stream()
-                .map(field -> Normalizer.normalize(field, Normalizer.Form.NFD)
-                        .replaceAll("\\p{M}+", "").toLowerCase(Locale.ROOT))
+                .map(TransactionImportService::normalizeHeader)
                 .toList();
         CsvColumns columns = CsvColumns.from(headerFields);
         LocalDate today = marketCalendar.today();
@@ -160,7 +164,8 @@ public class TransactionImportService {
                     continue;
                 }
                 Asset resolved = asset.get();
-                PreviewRow preview = new PreviewRow(lineNumber, date, resolved.getTicker(), type, quantity, price);
+                BigDecimal totalValue = quantity.multiply(price).setScale(2, RoundingMode.HALF_UP);
+                PreviewRow preview = new PreviewRow(lineNumber, date, resolved.getTicker(), type, quantity, price, totalValue);
                 TransactionDTO transaction = new TransactionDTO(portfolioId, resolved.getId(), type, quantity, price, instant);
                 rows.add(new ParsedRow(preview, transaction));
             } catch (IllegalArgumentException exception) {
@@ -249,9 +254,12 @@ public class TransactionImportService {
     }
 
     private TransactionType parseType(String value) {
-        return switch (value.toUpperCase(Locale.ROOT)) {
-            case "COMPRA", "BUY" -> TransactionType.BUY;
-            case "VENDA", "SELL" -> TransactionType.SELL;
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "COMPRA", "BUY", "C" -> TransactionType.BUY;
+            case "VENDA", "SELL", "V" -> TransactionType.SELL;
             default -> throw new IllegalArgumentException("Tipo de transacao invalido. Informe compra ou venda.");
         };
     }
@@ -331,24 +339,60 @@ public class TransactionImportService {
     private record ParsedCsv(int totalRows, List<ParsedRow> rows, List<RowError> errors, List<String> missingTickers) {
     }
 
+    private static String normalizeHeader(String field) {
+        return Normalizer.normalize(field, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[_/\\-]+", " ")
+                .replaceAll("\\s+", " ")
+                .strip();
+    }
+
     private record CsvColumns(int date, int ticker, int type, int quantity, int price) {
         static CsvColumns from(List<String> header) {
-            int quantity = find(header, "quantidade", "quantity");
-            CsvColumns valora = new CsvColumns(find(header, "data", "date"), find(header, "ticker", "ativo"),
-                    find(header, "tipo", "type"), quantity, find(header, "preco_unitario", "preco", "unit_price", "price"));
-            if (valora.isComplete()) {
-                return valora;
+            int date = find(header,
+                    "data", "date", "data da compra", "data compra",
+                    "data da operacao", "data operacao", "data da transacao", "data transacao",
+                    "data do negocio", "data negocio", "transaction date");
+            int ticker = find(header,
+                    "ticker", "ativo", "codigo da acao", "codigo acao",
+                    "codigo do ativo", "codigo ativo", "codigo de negociacao",
+                    "codigo", "acao", "papel", "symbol");
+            int type = find(header,
+                    "tipo", "type", "operacao", "tipo operacao", "tipo da operacao",
+                    "tipo de movimentacao", "tipo movimentacao",
+                    "compra venda", "compra ou venda", "movimentacao", "c v");
+            int quantity = find(header, "quantidade", "qtd", "qtde", "cotas", "quantity", "qty");
+            int price = find(header, "preco unitario", "preco", "valor unitario", "unit price", "price", "cotacao");
+
+            if (price < 0 && header.contains("valor")) {
+                throw new IllegalArgumentException(
+                        "Coluna 'Valor' ambigua. Informe o preco unitario em uma coluna 'Preco unitario' ou 'Preco'.");
             }
-            CsvColumns b3 = new CsvColumns(find(header, "data do negocio"), find(header, "codigo de negociacao"),
-                    find(header, "tipo de movimentacao"), find(header, "quantidade"), find(header, "preco", "valor"));
-            if (b3.isComplete()) {
-                return b3;
+
+            CsvColumns columns = new CsvColumns(date, ticker, type, quantity, price);
+            if (columns.isComplete() && columns.hasDistinctIndices()) {
+                return columns;
+            }
+            List<String> missing = new ArrayList<>();
+            if (date < 0) missing.add("data");
+            if (type < 0) missing.add("tipo (compra/venda)");
+            if (ticker < 0) missing.add("codigo da acao");
+            if (quantity < 0) missing.add("quantidade");
+            if (price < 0) missing.add("preco unitario");
+            if (!missing.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Cabecalho invalido. Colunas obrigatorias ausentes: " + String.join(", ", missing) + ".");
             }
             throw new IllegalArgumentException("Cabecalho invalido. Use o modelo CSV Valora ou B3 Negociacoes.");
         }
 
         private boolean isComplete() {
             return date >= 0 && ticker >= 0 && type >= 0 && quantity >= 0 && price >= 0;
+        }
+
+        private boolean hasDistinctIndices() {
+            return java.util.stream.IntStream.of(date, ticker, type, quantity, price).distinct().count() == 5;
         }
 
         private static int find(List<String> header, String... aliases) {
