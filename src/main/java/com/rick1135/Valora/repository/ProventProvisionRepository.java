@@ -29,6 +29,17 @@ public interface ProventProvisionRepository extends JpaRepository<ProventProvisi
     boolean existsByPortfolio(Portfolio portfolio);
 
     @Query("""
+            select pp from ProventProvision pp
+            join fetch pp.portfolio
+            join fetch pp.provent p
+            where pp.status = :status and p.paymentDate <= :currentDate
+            """)
+    List<ProventProvision> findByStatusAndProventPaymentDateLessThanEqual(
+            @Param("status") ProventStatus status,
+            @Param("currentDate") LocalDate currentDate
+    );
+
+    @Query("""
             select coalesce(sum(pp.netAmount), 0)
             from ProventProvision pp
             where pp.portfolio = :portfolio and pp.status = :status

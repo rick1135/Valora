@@ -1,6 +1,7 @@
 package com.rick1135.Valora.dto.response;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 public record PortfolioSummaryDTO(
@@ -33,8 +34,78 @@ public record PortfolioSummaryDTO(
             BigDecimal dayAbsoluteVariation,
             BigDecimal dayPercentageVariation,
             boolean dayChangeAvailable,
-            List<BenchmarkComparisonDTO> benchmarkComparisons
+            List<BenchmarkComparisonDTO> benchmarkComparisons,
+            BigDecimal twrPercentage,
+            boolean twrReliable,
+            LocalDate twrValuedThrough,
+            boolean twrUpToDate
     ) {
+        public ProfitabilityDTO(
+                BigDecimal absoluteProfit,
+                BigDecimal unrealizedProfit,
+                BigDecimal realizedProfit,
+                BigDecimal totalPercentage,
+                BigDecimal dayAbsoluteVariation,
+                BigDecimal dayPercentageVariation,
+                boolean dayChangeAvailable,
+                List<BenchmarkComparisonDTO> benchmarkComparisons,
+                BigDecimal twrPercentage,
+                boolean twrReliable
+        ) {
+            this(absoluteProfit, unrealizedProfit, realizedProfit, totalPercentage, dayAbsoluteVariation,
+                    dayPercentageVariation, dayChangeAvailable, benchmarkComparisons, twrPercentage, twrReliable,
+                    null, false);
+        }
+
+        public ProfitabilityDTO(
+                BigDecimal absoluteProfit,
+                BigDecimal unrealizedProfit,
+                BigDecimal realizedProfit,
+                BigDecimal totalPercentage,
+                BigDecimal dayAbsoluteVariation,
+                BigDecimal dayPercentageVariation,
+                boolean dayChangeAvailable,
+                List<BenchmarkComparisonDTO> benchmarkComparisons,
+                BigDecimal twrPercentage
+        ) {
+            this(
+                    absoluteProfit,
+                    unrealizedProfit,
+                    realizedProfit,
+                    totalPercentage,
+                    dayAbsoluteVariation,
+                    dayPercentageVariation,
+                    dayChangeAvailable,
+                    benchmarkComparisons,
+                    twrPercentage,
+                    false
+            );
+        }
+
+        public ProfitabilityDTO(
+                BigDecimal absoluteProfit,
+                BigDecimal unrealizedProfit,
+                BigDecimal realizedProfit,
+                BigDecimal totalPercentage,
+                BigDecimal dayAbsoluteVariation,
+                BigDecimal dayPercentageVariation,
+                boolean dayChangeAvailable,
+                List<BenchmarkComparisonDTO> benchmarkComparisons
+        ) {
+            this(
+                    absoluteProfit,
+                    unrealizedProfit,
+                    realizedProfit,
+                    totalPercentage,
+                    dayAbsoluteVariation,
+                    dayPercentageVariation,
+                    dayChangeAvailable,
+                    benchmarkComparisons,
+                    null,
+                    false
+            );
+        }
+
         public ProfitabilityDTO(
                 BigDecimal absoluteProfit,
                 BigDecimal totalPercentage,
@@ -51,7 +122,9 @@ public record PortfolioSummaryDTO(
                     dayAbsoluteVariation,
                     dayPercentageVariation,
                     dayChangeAvailable,
-                    benchmarkComparisons
+                    benchmarkComparisons,
+                    null,
+                    false
             );
         }
     }

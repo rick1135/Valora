@@ -14,6 +14,7 @@ import com.rick1135.Valora.exception.PortfolioNotFoundException;
 import com.rick1135.Valora.mapper.PortfolioMapper;
 import com.rick1135.Valora.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +42,9 @@ public class PortfolioService {
     private final MarketCalendar marketCalendar;
     private final PositionTimelineCalculator positionTimelineCalculator;
     private final FixedIncomeValuationService fixedIncomeValuationService;
+
+    @Autowired(required = false)
+    private PortfolioSnapshotService portfolioSnapshotService;
 
     @Transactional
     public PortfolioResponseDTO createPortfolio(User user, PortfolioRequestDTO dto) {
@@ -130,6 +134,9 @@ public class PortfolioService {
                         : effectiveFixedIncomeValuationService().valuatePositions(fixedIncomePositions, portfolioTransactions);
 
         List<PortfolioSummaryDTO.BenchmarkComparisonDTO> benchmarkComparisons = calculateBenchmarkComparisons(portfolio);
+        PortfolioSnapshotService.PortfolioTwrSummary twrSummary = portfolioSnapshotService == null
+                ? null
+                : portfolioSnapshotService.getPortfolioTwrSummary(portfolio).orElse(null);
 
         return performanceCalculator.calculate(
                 positions,
@@ -137,7 +144,11 @@ public class PortfolioService {
                 totalProvents,
                 realizedProfit,
                 benchmarkComparisons,
-                fixedIncomeValuations
+                fixedIncomeValuations,
+                twrSummary == null ? null : twrSummary.twrPercentage(),
+                twrSummary != null && twrSummary.reliable(),
+                twrSummary == null ? null : twrSummary.valuedThrough(),
+                twrSummary != null && twrSummary.upToDate()
         );
     }
 

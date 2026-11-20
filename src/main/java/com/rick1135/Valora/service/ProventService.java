@@ -11,6 +11,7 @@ import com.rick1135.Valora.mapper.ProventMapper;
 import com.rick1135.Valora.repository.*;
 import com.rick1135.Valora.repository.projection.UserAssetHoldingProjection;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -37,6 +38,9 @@ public class ProventService {
     private final PortfolioService portfolioService;
     private final ProventMapper proventMapper;
     private final MarketCalendar marketCalendar;
+
+    @Autowired(required = false)
+    private PortfolioSnapshotService portfolioSnapshotService;
 
     @Transactional
     public ProventResponseDTO createProvent(ProventRequestDTO dto) {
@@ -116,6 +120,8 @@ public class ProventService {
         }
 
         proventProvisionRepository.saveAll(provisions);
+        provisions.forEach(provision ->
+                invalidateSnapshotsFrom(provision.getPortfolio(), savedProvent.getPaymentDate()));
 
         return proventMapper.toResponse(savedProvent, asset, provisions.size());
     }
@@ -146,13 +152,17 @@ public class ProventService {
             Optional<ProventProvision> existing = proventProvisionRepository.findByProventAndPortfolio(provent, portfolio);
 
             if (quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
-                existing.ifPresent(proventProvisionRepository::delete);
+                existing.ifPresent(provision -> {
+                    proventProvisionRepository.delete(provision);
+                    invalidateSnapshotsFrom(portfolio, provent.getPaymentDate());
+                });
                 continue;
             }
 
             ProventProvision provision = existing.orElseGet(ProventProvision::new);
             populateProvisionFields(provision, provent, portfolio, asset, quantity);
             proventProvisionRepository.save(provision);
+            invalidateSnapshotsFrom(portfolio, provent.getPaymentDate());
         }
     }
 
@@ -210,6 +220,8 @@ public class ProventService {
                 .toList();
         if (!toDelete.isEmpty()) {
             proventProvisionRepository.deleteAll(toDelete);
+            toDelete.forEach(provision ->
+                    invalidateSnapshotsFrom(provision.getPortfolio(), provent.getPaymentDate()));
         }
 
         if (quantityByPortfolioId.isEmpty()) {
@@ -232,6 +244,14 @@ public class ProventService {
 
         if (!toSave.isEmpty()) {
             proventProvisionRepository.saveAll(toSave);
+            toSave.forEach(provision ->
+                    invalidateSnapshotsFrom(provision.getPortfolio(), provent.getPaymentDate()));
+        }
+    }
+
+    private void invalidateSnapshotsFrom(Portfolio portfolio, LocalDate paymentDate) {
+        if (portfolioSnapshotService != null && paymentDate != null) {
+            portfolioSnapshotService.invalidateSnapshotsFrom(portfolio, paymentDate);
         }
     }
 

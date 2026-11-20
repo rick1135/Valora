@@ -1,6 +1,6 @@
 .rentability-cards {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 20px;
   margin-bottom: 32px;
 }
@@ -22,6 +22,7 @@
 
 .rentability-card__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -155,6 +156,169 @@
   line-height: 1.5;
 }
 
+.range-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.range-btn {
+  min-width: 48px;
+  min-height: 40px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.range-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-strong);
+}
+
+.range-btn--active,
+.range-btn--active:hover {
+  border-color: var(--blue);
+  background: var(--surface-strong);
+  color: var(--blue);
+}
+
+.range-btn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
+.history-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+  margin-bottom: 32px;
+}
+
+.history-charts-grid .panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.history-charts-grid .chart-legend {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 8px 16px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.history-charts-grid .chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chart-legend__swatch {
+  width: 16px;
+  border-top: 2px solid currentColor;
+}
+
+.chart-legend__swatch.chart-series--invested {
+  border-top-style: dashed;
+}
+
+.chart-series--portfolio {
+  color: var(--green);
+}
+
+.chart-series--cdi {
+  color: var(--yellow);
+}
+
+.chart-series--ibovespa {
+  color: var(--blue);
+}
+
+.chart-series--selic {
+  color: var(--pink);
+}
+
+.chart-series--ipca {
+  color: #a78bfa;
+}
+
+.chart-series--invested {
+  color: var(--muted-strong);
+}
+
+.chart-warning-badge {
+  align-self: flex-start;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--yellow);
+  font-size: 0.85rem;
+}
+
+.chart-container {
+  margin-top: auto;
+}
+
+.chart-container svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-axis-label {
+  fill: var(--muted-strong);
+  font-size: 14px;
+}
+
+.chart-grid-line {
+  stroke: var(--border);
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-zero-line {
+  stroke: var(--muted);
+  stroke-dasharray: 2 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-line.chart-series--invested {
+  stroke-dasharray: 6 4;
+}
+
+.history-charts-grid .chart-legend[hidden] {
+  display: none;
+}
+
+.history-chart-empty {
+  margin: 0;
+}
+
+@media (max-width: 1250px) {
+  .rentability-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 1120px) {
   .rentability-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -165,8 +329,18 @@
   }
 }
 
+@media (max-width: 900px) {
+  .history-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 640px) {
   .rentability-cards {
     grid-template-columns: 1fr;
+  }
+
+  .history-charts-grid .panel {
+    padding: 18px 14px;
   }
 }

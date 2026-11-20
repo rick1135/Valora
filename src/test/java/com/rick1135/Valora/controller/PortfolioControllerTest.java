@@ -2,6 +2,7 @@ package com.rick1135.Valora.controller;
 
 import com.rick1135.Valora.dto.response.AssetAllocationDTO;
 import com.rick1135.Valora.dto.response.AssetPositionSummaryDTO;
+import com.rick1135.Valora.dto.response.PortfolioHistoryResponseDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.dto.response.PortfolioTargetResponseDTO;
 import com.rick1135.Valora.dto.response.PositionResponseDTO;
@@ -9,6 +10,7 @@ import com.rick1135.Valora.dto.response.SuggestedOrderDTO;
 import com.rick1135.Valora.exception.GlobalExceptionHandler;
 import com.rick1135.Valora.exception.PortfolioNotFoundException;
 import com.rick1135.Valora.service.PortfolioService;
+import com.rick1135.Valora.service.PortfolioSnapshotService;
 import com.rick1135.Valora.service.PositionService;
 import com.rick1135.Valora.service.SmartRebalancingService;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,8 +25,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -49,9 +53,14 @@ class PortfolioControllerTest {
     @Mock
     private SmartRebalancingService smartRebalancingService;
 
+    @Mock
+    private PortfolioSnapshotService portfolioSnapshotService;
+
     @BeforeEach
     void setUp() {
-        PortfolioController controller = new PortfolioController(positionService, portfolioService, smartRebalancingService);
+        PortfolioController controller = new PortfolioController(
+                positionService, portfolioService, smartRebalancingService, portfolioSnapshotService
+        );
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -88,11 +97,17 @@ class PortfolioControllerTest {
                 new BigDecimal("50.00"),
                 new PortfolioSummaryDTO.ProfitabilityDTO(
                         new BigDecimal("100.00"),
+                        new BigDecimal("100.00"),
+                        BigDecimal.ZERO,
                         new BigDecimal("33.3333"),
                         new BigDecimal("5.00"),
                         new BigDecimal("1.4493"),
                         true,
-                        List.of()
+                        List.of(),
+                        new BigDecimal("8.50"),
+                        false,
+                        LocalDate.of(2026, 2, 2),
+                        false
                 ),
                 List.of(
                         new AssetAllocationDTO("ACOES", new BigDecimal("250.00"), new BigDecimal("71.4286")),
@@ -108,10 +123,77 @@ class PortfolioControllerTest {
                 .andExpect(jsonPath("$.totalPatrimony").value(350.0))
                 .andExpect(jsonPath("$.profitability.absoluteProfit").value(100.0))
                 .andExpect(jsonPath("$.profitability.dayAbsoluteVariation").value(5.0))
+                .andExpect(jsonPath("$.profitability.twrPercentage").value(8.5))
+                .andExpect(jsonPath("$.profitability.twrReliable").value(false))
+                .andExpect(jsonPath("$.profitability.twrValuedThrough").value("2026-02-02"))
+                .andExpect(jsonPath("$.profitability.twrUpToDate").value(false))
                 .andExpect(jsonPath("$.fallbackQuoteUsed").value(true))
                 .andExpect(jsonPath("$.fallbackTickers[0]").value("ETF11"))
                 .andExpect(jsonPath("$.allocations[0].category").value("ACOES"))
                 .andExpect(jsonPath("$.allocations[0].percentage").value(71.4286));
+    }
+
+    @Test
+    void getPortfolioHistoryShouldDefaultToAll() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
+        LocalDate date = LocalDate.of(2026, 1, 10);
+        BigDecimal twr = new BigDecimal("2.50");
+        PortfolioHistoryResponseDTO history = new PortfolioHistoryResponseDTO(
+                "ALL", date, date, twr, true,
+                List.of(new PortfolioHistoryResponseDTO.HistoryPointDTO(
+                        date, new BigDecimal("102.50"), new BigDecimal("100.00"), twr, true
+                )),
+                Map.of("CDI", List.of(new PortfolioHistoryResponseDTO.BenchmarkPointDTO(date, BigDecimal.ONE)))
+        );
+        when(portfolioSnapshotService.getPortfolioHistory(any(), eq(portfolioId), eq("ALL"))).thenReturn(history);
+
+        mockMvc.perform(get("/portfolios/{portfolioId}/history", portfolioId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.range").value("ALL"))
+                .andExpect(jsonPath("$.twrPercentage").value(2.5))
+                .andExpect(jsonPath("$.points[0].totalPatrimony").value(102.5))
+                .andExpect(jsonPath("$.points[0].twrSegment").value(1))
+                .andExpect(jsonPath("$.benchmarks.CDI[0].percentage").value(1.0));
+    }
+
+    @Test
+    void getPortfolioHistoryShouldUseRequestedRange() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
+        LocalDate lossDate = LocalDate.of(2026, 1, 12);
+        LocalDate reentryDate = lossDate.plusDays(1);
+        PortfolioHistoryResponseDTO history = new PortfolioHistoryResponseDTO(
+                "6M", lossDate, LocalDate.of(2026, 2, 20), null, false,
+                List.of(
+                        new PortfolioHistoryResponseDTO.HistoryPointDTO(
+                                lossDate, BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("-100"), true),
+                        new PortfolioHistoryResponseDTO.HistoryPointDTO(
+                                reentryDate, new BigDecimal("100"), new BigDecimal("100"), null, true, 2)),
+                Map.of(),
+                Map.of("IPCA", false)
+        );
+        when(portfolioSnapshotService.getPortfolioHistory(any(), eq(portfolioId), eq("6M"))).thenReturn(history);
+
+        mockMvc.perform(get("/portfolios/{portfolioId}/history", portfolioId).param("range", "6M"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.range").value("6M"))
+                .andExpect(jsonPath("$.twrPercentage").value(nullValue()))
+                .andExpect(jsonPath("$.pricingComplete").value(false))
+                .andExpect(jsonPath("$.points[0].twrPercentage").value(-100))
+                .andExpect(jsonPath("$.points[0].pricingComplete").value(true))
+                .andExpect(jsonPath("$.points[1].twrPercentage").value(nullValue()))
+                .andExpect(jsonPath("$.points[1].twrSegment").value(2))
+                .andExpect(jsonPath("$.benchmarksComplete.IPCA").value(false));
+    }
+
+    @Test
+    void getPortfolioHistoryShouldReturnBadRequestForInvalidRange() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
+        when(portfolioSnapshotService.getPortfolioHistory(any(), eq(portfolioId), eq("INVALID")))
+                .thenThrow(new IllegalArgumentException("Periodo invalido."));
+
+        mockMvc.perform(get("/portfolios/{portfolioId}/history", portfolioId).param("range", "INVALID"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Periodo invalido."));
     }
 
     @Test

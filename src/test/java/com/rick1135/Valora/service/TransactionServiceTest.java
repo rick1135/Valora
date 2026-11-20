@@ -20,6 +20,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
@@ -50,6 +51,7 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class TransactionServiceTest {
@@ -75,6 +77,9 @@ class TransactionServiceTest {
     @Mock
     private PlatformTransactionManager transactionManager;
 
+    @Mock
+    private PortfolioSnapshotService portfolioSnapshotService;
+
     @Spy
     private MarketCalendar marketCalendar = new MarketCalendar(Clock.system(ZoneId.of("America/Sao_Paulo")));
 
@@ -88,6 +93,7 @@ class TransactionServiceTest {
 
     @Test
     void processTransactionShouldReturnCreatedTransactionSnapshotOnBuy() {
+        ReflectionTestUtils.setField(transactionService, "portfolioSnapshotService", portfolioSnapshotService);
         User user = new User();
         user.setId(UUID.randomUUID());
         Portfolio portfolio = portfolio(user);
@@ -96,21 +102,21 @@ class TransactionServiceTest {
         asset.setId(UUID.randomUUID());
         asset.setTicker("PETR4");
 
-        Instant now = Instant.now();
+        Instant transactionDate = Instant.parse("2026-01-10T02:30:00Z");
         TransactionDTO dto = new TransactionDTO(
                 portfolio.getId(),
                 asset.getId(),
                 TransactionType.BUY,
                 new BigDecimal("10.00000000"),
                 new BigDecimal("25.00000000"),
-                now
+                transactionDate
         );
 
         Transaction mappedTransaction = new Transaction();
         mappedTransaction.setType(TransactionType.BUY);
         mappedTransaction.setQuantity(new BigDecimal("10.00000000"));
         mappedTransaction.setUnitPrice(new BigDecimal("25.00000000"));
-        mappedTransaction.setTransactionDate(now);
+        mappedTransaction.setTransactionDate(transactionDate);
 
         when(portfolioService.resolveOwnedPortfolio(user, portfolio.getId())).thenReturn(portfolio);
         when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
@@ -149,6 +155,7 @@ class TransactionServiceTest {
         assertThat(response.type()).isEqualTo(TransactionType.BUY);
         assertThat(response.positionQuantity()).isEqualByComparingTo("10.00000000");
         assertThat(response.averagePrice()).isEqualByComparingTo("25.00000000");
+        verify(portfolioSnapshotService).invalidateSnapshotsFrom(portfolio, LocalDate.of(2026, 1, 9));
     }
 
     @Test
@@ -779,6 +786,7 @@ class TransactionServiceTest {
 
     @Test
     void processTransactionShouldReplayEqualPayloadWithoutChangingPositionOrProvents() {
+        ReflectionTestUtils.setField(transactionService, "portfolioSnapshotService", portfolioSnapshotService);
         User user = new User();
         Portfolio portfolio = portfolio(user);
         Asset asset = new Asset();
@@ -794,7 +802,7 @@ class TransactionServiceTest {
         verify(transactionMapper).toResponse(buy, asset, null);
         verify(transactionRepository, never()).saveAndFlush(any());
         verify(positionRepository, never()).save(any());
-        verifyNoInteractions(assetRepository, proventService);
+        verifyNoInteractions(assetRepository, proventService, portfolioSnapshotService);
     }
 
     @Test
@@ -859,6 +867,7 @@ class TransactionServiceTest {
 
     @Test
     void updateTransactionShouldRebuildTimelineAndReconcileFromEarlierDate() {
+        ReflectionTestUtils.setField(transactionService, "portfolioSnapshotService", portfolioSnapshotService);
         User user = new User();
         Portfolio portfolio = portfolio(user);
         Asset asset = new Asset();
@@ -882,6 +891,7 @@ class TransactionServiceTest {
         assertThat(position.getValue().getAveragePrice()).isEqualByComparingTo("15");
         assertThat(position.getValue().getPurchaseDate()).isEqualTo(LocalDate.of(2026, 1, 15));
         verify(proventService).reconcileProvisionsForPortfolioAndAsset(portfolio, asset, LocalDate.of(2026, 1, 10));
+        verify(portfolioSnapshotService).invalidateSnapshotsFrom(portfolio, LocalDate.of(2026, 1, 10));
     }
 
     @Test
@@ -907,6 +917,7 @@ class TransactionServiceTest {
 
     @Test
     void updateAndDeleteShouldReconcileBothSidesOfMoveAndResetEmptyPosition() {
+        ReflectionTestUtils.setField(transactionService, "portfolioSnapshotService", portfolioSnapshotService);
         User user = new User();
         Portfolio source = portfolio(user);
         Portfolio destination = portfolio(user);
@@ -952,6 +963,10 @@ class TransactionServiceTest {
         verify(proventService).reconcileProvisionsForPortfolioAndAsset(source, sourceAsset, LocalDate.of(2026, 1, 10));
         verify(proventService).reconcileProvisionsForPortfolioAndAsset(destination, destinationAsset, LocalDate.of(2026, 1, 10));
         verify(proventService).reconcileProvisionsForPortfolioAndAsset(destination, destinationAsset, LocalDate.of(2026, 1, 15));
+        verify(portfolioSnapshotService).invalidateSnapshotsFrom(source, LocalDate.of(2026, 1, 10));
+        verify(portfolioSnapshotService).invalidateSnapshotsFrom(destination, LocalDate.of(2026, 1, 10));
+        verify(portfolioSnapshotService).invalidateSnapshotsFrom(destination, LocalDate.of(2026, 1, 15));
+        verifyNoMoreInteractions(portfolioSnapshotService);
     }
 
     @Test

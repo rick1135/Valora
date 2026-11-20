@@ -11,6 +11,20 @@
     maximumFractionDigits: 2,
   });
 
+  const compactCurrencyFormatter = new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    notation: "compact",
+    maximumFractionDigits: 2,
+  });
+
+  const chartDateFormatter = new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    timeZone: "UTC",
+  });
+
   function isFiniteNumber(value) {
     return (
       value !== null &&
@@ -18,6 +32,13 @@
       value !== "" &&
       Number.isFinite(Number(value))
     );
+  }
+  function formatTwrValuedThrough(value) {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const date = new Date(`${value}T00:00:00Z`);
+    return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC",
+    }).format(date);
   }
 
   function toNumber(value) {
@@ -135,7 +156,7 @@
     );
   }
 
-  function renderSummaryCards(summary) {
+  function renderSummaryCards(summary, history) {
     const container = document.querySelector("#rentability-cards");
     if (!container) return;
 
@@ -146,7 +167,31 @@
     const totalProvents = toNumber(summary?.totalProvents);
     const hasTotalPercentage = isFiniteNumber(prof.totalPercentage);
     const totalPercentage = hasTotalPercentage ? toNumber(prof.totalPercentage) : null;
-
+    const hasPeriodTwr = isFiniteNumber(history?.twrPercentage);
+    const twr = hasPeriodTwr ? history.twrPercentage : prof.twrPercentage;
+    const hasTwr = isFiniteNumber(twr);
+    const twrReliable = hasPeriodTwr ? history.pricingComplete !== false : prof.twrReliable === true;
+    const twrEstimated = hasTwr && !twrReliable;
+    let twrBadge = twrEstimated ? { text: hasPeriodTwr ? "Estimado" : "Parcial" } : null;
+    let twrNote = "O TWR isola o efeito de aportes e resgates.";
+    if (hasPeriodTwr) {
+      twrNote = twrReliable
+        ? "Retorno no período selecionado. Isola o efeito de aportes e resgates."
+        : "Retorno estimado: há cotações incompletas ou renda fixa a custo no período.";
+    } else if (history && history.twrPercentage === null) {
+      twrNote = "Período descontínuo ou sem base contínua para TWR.";
+    } else if (hasTwr) {
+      const valuedThrough = formatTwrValuedThrough(prof.twrValuedThrough);
+      if (prof.twrUpToDate === false) {
+        twrBadge = { text: "Desatualizado" };
+        twrNote = `Retorno consolidado da carteira. ${valuedThrough ? `Atualizado até ${valuedThrough} ` : ""}(desatualizado em relação ao último fechamento).`;
+      } else {
+        twrNote = twrReliable
+          ? "Retorno consolidado da carteira. Isola o efeito de aportes e resgates."
+          : "Retorno estimado: histórico com cotações incompletas ou renda fixa a custo.";
+        if (valuedThrough) twrNote = `Atualizado até ${valuedThrough}. ${twrNote}`;
+      }
+    }
     const cards = [
       {
         label: "Lucro absoluto",
@@ -163,6 +208,14 @@
               tone: "unavailable",
             },
         note: "Soma de lucro n\u00e3o realizado, lucro realizado e proventos; percentual calculado sobre o custo atual.",
+      },
+      {
+        label: "Retorno ponderado (TWR)",
+        value: hasTwr ? formatPercent(twr, true) : "Indisponível",
+        tone: hasTwr ? valueTone(twr) : "neutral",
+        highlight: true,
+        badge: twrBadge,
+        note: twrNote,
       },
       {
         label: "Lucro n\u00e3o realizado",
@@ -339,10 +392,241 @@
     container.replaceChildren(...nodes);
   }
 
+  function createSvgEl(tag, attributes, text) {
+    const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [name, value] of Object.entries(attributes)) {
+      element.setAttribute(name, value);
+    }
+    if (text !== undefined) element.textContent = text;
+    return element;
+  }
+
+  function makeSeries(label, style, points, valueKey) {
+    const samples = (Array.isArray(points) ? points : [])
+      .map((point) => {
+        const value = point?.[valueKey];
+        return {
+          time: Date.parse(point?.date),
+          value: isFiniteNumber(value) ? Number(value) : null,
+        };
+      })
+      .filter((sample) => Number.isFinite(sample.time))
+      .sort((a, b) => a.time - b.time);
+    const values = samples.filter((sample) => sample.value !== null);
+    return { label, className: `chart-series--${style}`, samples, values };
+  }
+
+  function drawSeries(svg, series, x, y) {
+    let segment = [];
+
+    function flushSegment() {
+      if (segment.length === 1) {
+        const [point] = segment;
+        svg.append(createSvgEl("circle", {
+          class: series.className,
+          cx: x(point.time),
+          cy: y(point.value),
+          r: 2.5,
+          fill: "currentColor",
+        }));
+      } else if (segment.length > 1) {
+        svg.append(createSvgEl("polyline", {
+          class: `chart-line ${series.className}`,
+          points: segment.map((point) => `${x(point.time)},${y(point.value)}`).join(" "),
+        }));
+      }
+      segment = [];
+    }
+
+    for (const point of series.samples) {
+      if (point.value === null) {
+        flushSegment();
+      } else {
+        segment.push(point);
+      }
+    }
+    flushSegment();
+  }
+
+  function createChart(id, series, formatAxis, start, end) {
+    const left = 94;
+    const right = 408;
+    const top = 12;
+    const bottom = 174;
+    let min = Infinity;
+    let max = -Infinity;
+    for (const item of series) {
+      for (const { value } of item.values) {
+        min = Math.min(min, value);
+        max = Math.max(max, value);
+      }
+    }
+    const padding = Math.max((max - min) * 0.08, Math.abs(max) * 0.000001, 0.02);
+    min -= padding;
+    max += padding;
+
+    const x = (time) => left + ((time - start) / (end - start)) * (right - left);
+    const y = (value) => bottom - ((value - min) / (max - min)) * (bottom - top);
+    const svg = createSvgEl("svg", {
+      viewBox: "0 0 440 202",
+      role: "img",
+      "aria-labelledby": `${id}-chart-title`,
+    });
+
+    const horizontalLine = (row, className) => createSvgEl("line", {
+      class: className, x1: left, y1: row, x2: right, y2: row,
+    });
+    for (let step = 0; step <= 4; step += 1) {
+      const value = min + ((max - min) * step) / 4;
+      const row = y(value);
+      svg.append(
+        horizontalLine(row, "chart-grid-line"),
+        createSvgEl("text", {
+          class: "chart-axis-label",
+          x: left - 8,
+          y: row,
+          "text-anchor": "end",
+          "dominant-baseline": "middle",
+        }, formatAxis(value))
+      );
+    }
+    if (min <= 0 && max >= 0) {
+      svg.append(horizontalLine(y(0), "chart-zero-line"));
+    }
+
+    const mid = Math.floor(((start + end) / 2) / 86400000) * 86400000;
+    const dateLabels = [start, end];
+    if (mid > start && mid < end) dateLabels.splice(1, 0, mid);
+    for (const time of dateLabels) {
+      svg.append(createSvgEl("text", {
+        class: "chart-axis-label",
+        x: x(time),
+        y: bottom + 22,
+        "text-anchor": "middle",
+      }, chartDateFormatter.format(time)));
+    }
+
+    for (const item of series) drawSeries(svg, item, x, y);
+    return svg;
+  }
+
+  function renderChart(id, series, formatValue, formatAxis, status, portfolioDates) {
+    const container = document.querySelector(`#${id}-chart-container`);
+    const legend = document.querySelector(`#${id}-chart-legend`);
+    const empty = document.querySelector(`#${id}-chart-empty`);
+    const available = series.filter((item) => item.values.length > 0);
+    const hasChart = portfolioDates > 1 && available.some(({ values }) =>
+      values[0].time < values[values.length - 1].time
+    );
+
+    const legendItems = available.map((item) => {
+      const entry = createEl("li");
+      const swatch = createEl("span", `chart-legend__swatch ${item.className}`);
+      swatch.setAttribute("aria-hidden", "true");
+      const latest = item.values[item.values.length - 1].value;
+      entry.append(
+        swatch,
+        createEl("span", null, item.label),
+        createEl("strong", null, formatValue(latest))
+      );
+      return entry;
+    });
+    legend.replaceChildren(...legendItems);
+    legend.hidden = legendItems.length === 0;
+
+    container.replaceChildren();
+    container.hidden = !hasChart;
+    empty.hidden = hasChart;
+    if (!hasChart) {
+      const noData = available.length === 0 || portfolioDates === 0;
+      empty.textContent = status || (noData
+        ? "Não há dados para este gráfico no período selecionado."
+        : "São necessárias pelo menos duas datas com dados para exibir o gráfico.");
+      return;
+    }
+
+    const start = Math.min(...available.map(({ values }) => values[0].time));
+    const end = Math.max(...available.map(({ values }) => values[values.length - 1].time));
+    container.append(createChart(id, available, formatAxis, start, end));
+  }
+
+  function renderHistory(history, status) {
+    const points = history?.points;
+    const benchmarks = history?.benchmarks;
+    const benchmarkLabel = (label, ticker) =>
+      history?.benchmarksComplete?.[ticker] === false ? `${label} (parcial)` : label;
+    const twrSeries = [
+      makeSeries("Carteira", "portfolio", points, "twrPercentage"),
+      makeSeries(benchmarkLabel("CDI", "CDI"), "cdi", benchmarks?.CDI, "percentage"),
+      makeSeries(benchmarkLabel("Ibovespa", "^BVSP"), "ibovespa", benchmarks?.["^BVSP"], "percentage"),
+      makeSeries(benchmarkLabel("Selic", "SELIC"), "selic", benchmarks?.SELIC, "percentage"),
+      makeSeries(benchmarkLabel("IPCA", "IPCA"), "ipca", benchmarks?.IPCA, "percentage"),
+    ];
+    const patrimonySeries = [
+      makeSeries("Total investido", "invested", points, "totalInvested"),
+      makeSeries("Patrimônio total", "portfolio", points, "totalPatrimony"),
+    ];
+    const portfolioDates = new Set(twrSeries[0].samples.map(({ time }) => time)).size;
+
+    document.querySelector("#history-pricing-warning").hidden = history?.pricingComplete !== false;
+    renderChart("twr", twrSeries, (value) => formatPercent(value, true), formatPercent, status, portfolioDates);
+    renderChart("patrimony", patrimonySeries, formatCurrency,
+      (value) => compactCurrencyFormatter.format(value), status, portfolioDates);
+  }
+
   let loadId = 0;
+  let historyLoadId = 0;
+  let selectedRange = "ALL";
+  let portfolioPath = null;
+  let currentSummary = null;
+  let currentHistory = null;
+  let historyLoading = false;
+  let historyHasActivity = false;
+
+  function updateSummaryVisibility() {
+    if (!currentSummary) return;
+
+    const hasActivity = hasPortfolioActivity(currentSummary) || historyHasActivity;
+    document.querySelector("#rentabilidade-content").hidden = !hasActivity;
+    document.querySelector("#rentabilidade-empty").hidden = hasActivity || historyLoading;
+    renderSummaryCards(currentSummary, currentHistory);
+    setLoading(!hasActivity && historyLoading);
+  }
+
+  async function loadHistory(path, range) {
+    const requestId = ++historyLoadId;
+    const charts = document.querySelector("#history-charts-section");
+    historyLoading = true;
+    currentHistory = null;
+    charts.setAttribute("aria-busy", "true");
+    renderHistory(null, "Carregando histórico...");
+    updateSummaryVisibility();
+
+    let status = "";
+    try {
+      const history = await apiRequest(`${path}/history?range=${encodeURIComponent(range)}`);
+      if (requestId !== historyLoadId) return;
+      currentHistory = history;
+      historyHasActivity ||= Array.isArray(history?.points) && history.points.length > 0;
+    } catch {
+      if (requestId !== historyLoadId) return;
+      status = "Não foi possível carregar o histórico. Selecione um período para tentar novamente.";
+    }
+
+    historyLoading = false;
+    renderHistory(currentHistory, status);
+    charts.setAttribute("aria-busy", "false");
+    updateSummaryVisibility();
+  }
 
   async function loadRentabilidade() {
     const currentLoad = ++loadId;
+    ++historyLoadId;
+    portfolioPath = null;
+    currentSummary = null;
+    currentHistory = null;
+    historyLoading = false;
+    historyHasActivity = false;
     showError("");
     renderFallbackNotice(null);
     setLoading(true);
@@ -359,26 +643,17 @@
         showError("Crie uma carteira para visualizar a rentabilidade.");
         return;
       }
-      const summary =
-        (await apiRequest(
-          `/portfolios/${encodeURIComponent(portfolio.id)}/summary`
-        )) || {};
+      portfolioPath = `/portfolios/${encodeURIComponent(portfolio.id)}`;
+      const summaryRequest = apiRequest(`${portfolioPath}/summary`);
+      loadHistory(portfolioPath, selectedRange);
+      const summary = (await summaryRequest) || {};
       if (currentLoad !== loadId) return;
 
+      currentSummary = summary;
       renderFallbackNotice(summary);
-
-      if (!hasPortfolioActivity(summary)) {
-        if (content) content.hidden = true;
-        if (emptyState) emptyState.hidden = false;
-        return;
-      }
-
-      if (emptyState) emptyState.hidden = true;
-      if (content) content.hidden = false;
-
-      renderSummaryCards(summary);
       renderBenchmarks(summary);
       renderBreakdown(summary);
+      updateSummaryVisibility();
     } catch (error) {
       if (currentLoad !== loadId) return;
       if (content) content.hidden = true;
@@ -391,7 +666,22 @@
         `N\u00e3o foi poss\u00edvel carregar a rentabilidade da carteira: ${message}`
       );
     } finally {
-      if (currentLoad === loadId) setLoading(false);
+      if (currentLoad === loadId && !currentSummary) setLoading(false);
+    }
+  }
+
+  function wireRangeSelector() {
+    const buttons = document.querySelectorAll("#history-range-selector .range-btn");
+    for (const button of buttons) {
+      button.addEventListener("click", () => {
+        selectedRange = button.dataset.range;
+        for (const option of buttons) {
+          const active = option === button;
+          option.classList.toggle("range-btn--active", active);
+          option.setAttribute("aria-pressed", String(active));
+        }
+        if (portfolioPath) loadHistory(portfolioPath, selectedRange);
+      });
     }
   }
 
@@ -431,6 +721,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     wireEmptyStateAction();
     wireLogoutAction();
+    wireRangeSelector();
     loadRentabilidade();
   });
 

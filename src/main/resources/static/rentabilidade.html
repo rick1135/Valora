@@ -39,7 +39,7 @@
 
       <section class="summary" aria-labelledby="profitability-title">
         <h1 id="profitability-title">Rentabilidade</h1>
-        <p>Resultados consolidados da carteira a partir do resumo atual: lucro absoluto, realizado, n&atilde;o realizado, proventos e &iacute;ndices de refer&ecirc;ncia.</p>
+        <p>Acompanhe a s&eacute;rie hist&oacute;rica do patrim&ocirc;nio, o retorno ponderado no tempo (TWR) e os resultados consolidados da carteira.</p>
       </section>
 
       <div class="dashboard-banner dashboard-banner--loading" id="rentabilidade-loading" role="status" aria-live="polite">
@@ -58,7 +58,33 @@
       </section>
 
       <div class="portfolio-data" id="rentabilidade-content" hidden>
+        <div class="range-selector" id="history-range-selector" role="group" aria-label="Per&iacute;odo do hist&oacute;rico">
+          <button class="range-btn" type="button" data-range="1M" aria-pressed="false">1M</button>
+          <button class="range-btn" type="button" data-range="3M" aria-pressed="false">3M</button>
+          <button class="range-btn" type="button" data-range="6M" aria-pressed="false">6M</button>
+          <button class="range-btn" type="button" data-range="1Y" aria-pressed="false">1A</button>
+          <button class="range-btn" type="button" data-range="YTD" aria-pressed="false">YTD</button>
+          <button class="range-btn range-btn--active" type="button" data-range="ALL" aria-pressed="true">Tudo</button>
+        </div>
+
         <section class="rentability-cards" id="rentability-cards" aria-label="Indicadores de rentabilidade"></section>
+
+        <section class="history-charts-grid" id="history-charts-section" aria-label="Hist&oacute;rico da carteira">
+          <article class="panel rentability-panel" aria-labelledby="twr-chart-title">
+            <h2 id="twr-chart-title">Rentabilidade ponderada (TWR) vs &Iacute;ndices</h2>
+            <p class="chart-warning-badge" id="history-pricing-warning" role="status" hidden>H&aacute; cota&ccedil;&otilde;es incompletas ou ativos de renda fixa avaliados pelo custo no per&iacute;odo selecionado.</p>
+            <ul class="chart-legend" id="twr-chart-legend" aria-label="Retorno acumulado por s&eacute;rie" hidden></ul>
+            <div class="chart-container" id="twr-chart-container" hidden></div>
+            <p class="panel__empty history-chart-empty" id="twr-chart-empty" role="status"></p>
+          </article>
+
+          <article class="panel rentability-panel" aria-labelledby="patrimony-chart-title">
+            <h2 id="patrimony-chart-title">Evolu&ccedil;&atilde;o patrimonial</h2>
+            <ul class="chart-legend" id="patrimony-chart-legend" aria-label="&Uacute;ltimo valor por s&eacute;rie" hidden></ul>
+            <div class="chart-container" id="patrimony-chart-container" hidden></div>
+            <p class="panel__empty history-chart-empty" id="patrimony-chart-empty" role="status"></p>
+          </article>
+        </section>
 
         <section class="rentability-panels" aria-label="Detalhamento e &iacute;ndices de refer&ecirc;ncia">
           <article class="panel rentability-panel" aria-labelledby="benchmarks-title">
@@ -73,7 +99,7 @@
             <p class="panel__empty" id="benchmarks-empty" hidden>Nenhum &iacute;ndice de refer&ecirc;ncia dispon&iacute;vel para esta carteira no momento.</p>
 
             <p class="scope-note">
-              Refer&ecirc;ncia separada: o percentual da carteira considera o lucro absoluto sobre o custo atual das posi&ccedil;&otilde;es abertas, e n&atilde;o um retorno ponderado no tempo (TWR). Por isso, os &iacute;ndices s&atilde;o exibidos apenas como refer&ecirc;ncia de mercado, sem compara&ccedil;&atilde;o direta em pontos percentuais.
+              Os &iacute;ndices desta lista cobrem o per&iacute;odo consolidado da carteira. No gr&aacute;fico, o TWR e os &iacute;ndices acompanham o per&iacute;odo selecionado.
             </p>
           </article>
 
@@ -88,7 +114,7 @@
             <div class="overview-breakdown" id="profitability-breakdown"></div>
 
             <p class="scope-note">
-              Escopo atual: os valores exibidos refletem o resumo consolidado mais recente da carteira. S&eacute;rie hist&oacute;rica mensal, gr&aacute;fico evolutivo e matriz mensal de retorno ainda n&atilde;o est&atilde;o dispon&iacute;veis nesta vers&atilde;o da API.
+              A rentabilidade sobre o custo atual divide o lucro absoluto pelo custo das posi&ccedil;&otilde;es abertas. O TWR mede o retorno no per&iacute;odo e isola o efeito de aportes e resgates.
             </p>
           </article>
         </section>
