@@ -1,6 +1,7 @@
 package com.rick1135.Valora.controller;
 
 import com.rick1135.Valora.dto.request.PortfolioRequestDTO;
+import com.rick1135.Valora.dto.response.PortfolioHistoryResponseDTO;
 import com.rick1135.Valora.dto.response.PortfolioResponseDTO;
 import com.rick1135.Valora.dto.response.PortfolioSummaryDTO;
 import com.rick1135.Valora.dto.response.PortfolioTargetResponseDTO;
@@ -8,6 +9,7 @@ import com.rick1135.Valora.dto.response.PositionResponseDTO;
 import com.rick1135.Valora.dto.response.SuggestedOrderDTO;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.service.PortfolioService;
+import com.rick1135.Valora.service.PortfolioSnapshotService;
 import com.rick1135.Valora.service.PositionService;
 import com.rick1135.Valora.service.SmartRebalancingService;
 import jakarta.validation.Valid;
@@ -35,6 +37,7 @@ public class PortfolioController {
     private final PositionService positionService;
     private final PortfolioService portfolioService;
     private final SmartRebalancingService smartRebalancingService;
+    private final PortfolioSnapshotService portfolioSnapshotService;
 
     @PostMapping
     public ResponseEntity<PortfolioResponseDTO> createPortfolio(
@@ -89,6 +92,15 @@ public class PortfolioController {
             @PathVariable UUID portfolioId
     ) {
         return ResponseEntity.ok(portfolioService.getPortfolioSummary(user, portfolioId));
+    }
+
+    @GetMapping("/{portfolioId}/history")
+    public ResponseEntity<PortfolioHistoryResponseDTO> getPortfolioHistory(
+            @AuthenticationPrincipal User user,
+            @PathVariable UUID portfolioId,
+            @RequestParam(defaultValue = "ALL") String range
+    ) {
+        return ResponseEntity.ok(portfolioSnapshotService.getPortfolioHistory(user, portfolioId, range));
     }
 
     @GetMapping("/{portfolioId}/targets")

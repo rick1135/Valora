@@ -16,6 +16,7 @@ import com.rick1135.Valora.repository.PositionRepository;
 import com.rick1135.Valora.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -48,6 +49,9 @@ public class TransactionService {
     private final PositionTimelineCalculator positionTimelineCalculator;
     private final ProventService proventService;
     private final PlatformTransactionManager transactionManager;
+
+    @Autowired(required = false)
+    private PortfolioSnapshotService portfolioSnapshotService;
 
     public TransactionResponseDTO processTransaction(User user, TransactionDTO dto) {
         return processTransaction(user, dto, null).response();
@@ -104,6 +108,7 @@ public class TransactionService {
         }
         Position position = savePosition(portfolio, asset, timelineResult);
         reconcileProventsFromTransactionDate(portfolio, asset, transaction.getTransactionDate());
+        invalidateSnapshots(portfolio, transaction.getTransactionDate());
         return new TransactionResult(transactionMapper.toResponse(transaction, asset, position), false);
     }
 
@@ -167,6 +172,10 @@ public class TransactionService {
             reconcileProventsFromTransactionDate(oldPortfolio, oldAsset, affectedDate);
         }
         reconcileProventsFromTransactionDate(portfolio, asset, affectedDate);
+        invalidateSnapshots(portfolio, affectedDate);
+        if (portfolioChanged) {
+            invalidateSnapshots(oldPortfolio, affectedDate);
+        }
         return transactionMapper.toResponse(transaction, asset, position);
     }
 
@@ -182,6 +191,7 @@ public class TransactionService {
         transactionRepository.delete(transaction);
         savePosition(portfolio, asset, timelineResult);
         reconcileProventsFromTransactionDate(portfolio, asset, transaction.getTransactionDate());
+        invalidateSnapshots(portfolio, transaction.getTransactionDate());
     }
 
     private Position savePosition(
@@ -261,6 +271,13 @@ public class TransactionService {
             }
         }
         return false;
+    }
+
+    private void invalidateSnapshots(Portfolio portfolio, Instant transactionDate) {
+        if (portfolioSnapshotService != null) {
+            LocalDate marketDate = effectiveMarketCalendar().marketDate(transactionDate);
+            portfolioSnapshotService.invalidateSnapshotsFrom(portfolio, marketDate);
+        }
     }
 
     private void reconcileProventsFromTransactionDate(
