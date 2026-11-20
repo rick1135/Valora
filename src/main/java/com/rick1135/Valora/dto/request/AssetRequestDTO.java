@@ -1,10 +1,15 @@
 package com.rick1135.Valora.dto.request;
 
 import com.rick1135.Valora.entity.AssetCategory;
+import com.rick1135.Valora.entity.FixedIncomeIndexer;
+import com.rick1135.Valora.entity.FixedIncomeRateType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
 
 public record AssetRequestDTO(
         @NotBlank(message = "Ticker e obrigatorio.")
@@ -19,9 +24,15 @@ public record AssetRequestDTO(
         String name,
         @NotNull(message = "Categoria e obrigatoria.")
         AssetCategory category,
-        com.rick1135.Valora.entity.FixedIncomeIndexer indexer,
-        java.math.BigDecimal annualRate,
+        FixedIncomeIndexer indexer,
+        BigDecimal annualRate,
         String issuer,
-        java.time.LocalDate expirationDate
+        LocalDate expirationDate,
+        FixedIncomeRateType rateType,
+        BigDecimal spreadRate
 ) {
+    public AssetRequestDTO(String ticker, String name, AssetCategory category, FixedIncomeIndexer indexer,
+                           BigDecimal annualRate, String issuer, LocalDate expirationDate) {
+        this(ticker, name, category, indexer, annualRate, issuer, expirationDate, null, null);
+    }
 }

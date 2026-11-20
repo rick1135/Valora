@@ -1,8 +1,10 @@
 package com.rick1135.Valora.entity;
 
+import com.rick1135.Valora.common.FinancialConstants;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.util.Locale;
 import java.util.*;
 
@@ -35,8 +37,15 @@ public class Asset {
     @Column(length = 20)
     private FixedIncomeIndexer indexer;
 
-    @Column(name = "annual_rate", precision = 19, scale = com.rick1135.Valora.common.FinancialConstants.PERCENTAGE_SCALE)
-    private java.math.BigDecimal annualRate;
+    @Column(name = "annual_rate", precision = 19, scale = FinancialConstants.PERCENTAGE_SCALE)
+    private BigDecimal annualRate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "rate_type", length = 30)
+    private FixedIncomeRateType rateType;
+
+    @Column(name = "spread_rate", precision = 19, scale = FinancialConstants.PERCENTAGE_SCALE)
+    private BigDecimal spreadRate;
 
     @Column(length = 255)
     private String issuer;

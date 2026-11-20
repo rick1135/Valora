@@ -4,11 +4,16 @@ import com.rick1135.Valora.dto.request.AssetRequestDTO;
 import com.rick1135.Valora.dto.response.AssetResponseDTO;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
+import com.rick1135.Valora.entity.FixedIncomeIndexer;
+import com.rick1135.Valora.entity.FixedIncomeRateType;
 import com.rick1135.Valora.exception.AssetAlreadyExistsException;
 import com.rick1135.Valora.mapper.AssetMapper;
 import com.rick1135.Valora.repository.AssetRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.mapstruct.factory.Mappers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -18,6 +23,8 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -179,11 +187,68 @@ class AssetServiceTest {
         assertThat(persisted.getTicker()).isEqualTo("CDB");
         assertThat(persisted.getIndexer()).isEqualTo(com.rick1135.Valora.entity.FixedIncomeIndexer.CDI);
         assertThat(persisted.getAnnualRate()).isEqualTo(rate);
+        assertThat(persisted.getRateType()).isEqualTo(FixedIncomeRateType.PERCENTAGE_OF_INDEX);
         assertThat(persisted.getIssuer()).isEqualTo("Banco BMG");
         assertThat(persisted.getExpirationDate()).isEqualTo(expiration);
         assertThat(response.indexer()).isEqualTo(com.rick1135.Valora.entity.FixedIncomeIndexer.CDI);
         assertThat(response.annualRate()).isEqualTo(rate);
         assertThat(response.issuer()).isEqualTo("Banco BMG");
         assertThat(response.expirationDate()).isEqualTo(expiration);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @CsvSource({
+            "CDB 110% CDI, CDI, PERCENTAGE_OF_INDEX, 110, , PERCENTAGE_OF_INDEX, ",
+            "Tesouro SELIC + 0.15%, SELIC, SPREAD, , 0.15, SPREAD, 0.15",
+            "Tesouro IPCA + 6.5%, IPCA, SPREAD, , 6.5, SPREAD, 6.5",
+            "CDB PRE 13.5%, PRE, FIXED, 13.5, , FIXED, ",
+            "CDB PRE sem tipo de taxa, PRE, , 13.5, , FIXED, ",
+            "CDB CDI com spread sem tipo de taxa, CDI, , , 0.15, SPREAD, 0.15",
+            "Tesouro IPCA com taxa anual legada, IPCA, , 6.5, , SPREAD, 6.5",
+            "Tesouro SELIC com spread zero, SELIC, SPREAD, , 0, SPREAD, 0",
+            "CDB PRE com taxa e spread zero, PRE, FIXED, 0, 0, FIXED, 0"
+    })
+    void createAssetPersistsAndReturnsRateModel(String name, FixedIncomeIndexer indexer,
+                                               FixedIncomeRateType requestedType, BigDecimal annualRate,
+                                               BigDecimal requestedSpread, FixedIncomeRateType expectedType,
+                                               BigDecimal expectedSpread) {
+        AssetRequestDTO request = new AssetRequestDTO("RF1", name, AssetCategory.RENDA_FIXA, indexer,
+                annualRate, "Emissor", LocalDate.now().plusDays(30), requestedType, requestedSpread);
+        AssetService service = new AssetService(assetRepository, Mappers.getMapper(AssetMapper.class));
+        when(assetRepository.saveAndFlush(any(Asset.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AssetResponseDTO response = service.createAsset(request);
+
+        ArgumentCaptor<Asset> captor = ArgumentCaptor.forClass(Asset.class);
+        verify(assetRepository).saveAndFlush(captor.capture());
+        Asset persisted = captor.getValue();
+        assertThat(persisted.getRateType()).isEqualTo(expectedType);
+        assertThat(persisted.getAnnualRate()).isEqualTo(annualRate);
+        assertThat(persisted.getSpreadRate()).isEqualTo(expectedSpread);
+        assertThat(response.rateType()).isEqualTo(expectedType);
+        assertThat(response.annualRate()).isEqualTo(annualRate);
+        assertThat(response.spreadRate()).isEqualTo(expectedSpread);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "IPCA, PERCENTAGE_OF_INDEX, 110, , CDI ou SELIC",
+            "PRE, SPREAD, , 0.15, 'CDI, SELIC ou IPCA'",
+            "CDI, FIXED, 13.5, , indexador PRE",
+            "PRE, FIXED, 13.5, 0.15, spread nulo ou zero",
+            "PRE, FIXED, -1, , taxa anual nao pode ser negativa",
+            "CDI, PERCENTAGE_OF_INDEX, 0, , taxa anual deve ser maior que zero",
+            "IPCA, SPREAD, , -1, spread e obrigatorio e nao pode ser negativo",
+            "IPCA, SPREAD, , , spread e obrigatorio e nao pode ser negativo"
+    })
+    void createAssetRejectsInvalidRateModel(FixedIncomeIndexer indexer, FixedIncomeRateType rateType,
+                                            BigDecimal annualRate, BigDecimal spreadRate, String errorMessage) {
+        AssetRequestDTO request = new AssetRequestDTO("RF1", "Renda fixa", AssetCategory.RENDA_FIXA, indexer,
+                annualRate, "Emissor", LocalDate.now().plusDays(30), rateType, spreadRate);
+
+        assertThatThrownBy(() -> assetService.createAsset(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(errorMessage);
+        verifyNoInteractions(assetRepository, assetMapper);
     }
 }
