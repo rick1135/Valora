@@ -34,8 +34,34 @@ public record PortfolioSummaryDTO(
             BigDecimal dayPercentageVariation,
             boolean dayChangeAvailable,
             List<BenchmarkComparisonDTO> benchmarkComparisons,
-            BigDecimal twrPercentage
+            BigDecimal twrPercentage,
+            boolean twrReliable
     ) {
+        public ProfitabilityDTO(
+                BigDecimal absoluteProfit,
+                BigDecimal unrealizedProfit,
+                BigDecimal realizedProfit,
+                BigDecimal totalPercentage,
+                BigDecimal dayAbsoluteVariation,
+                BigDecimal dayPercentageVariation,
+                boolean dayChangeAvailable,
+                List<BenchmarkComparisonDTO> benchmarkComparisons,
+                BigDecimal twrPercentage
+        ) {
+            this(
+                    absoluteProfit,
+                    unrealizedProfit,
+                    realizedProfit,
+                    totalPercentage,
+                    dayAbsoluteVariation,
+                    dayPercentageVariation,
+                    dayChangeAvailable,
+                    benchmarkComparisons,
+                    twrPercentage,
+                    false
+            );
+        }
+
         public ProfitabilityDTO(
                 BigDecimal absoluteProfit,
                 BigDecimal unrealizedProfit,
@@ -55,7 +81,8 @@ public record PortfolioSummaryDTO(
                     dayPercentageVariation,
                     dayChangeAvailable,
                     benchmarkComparisons,
-                    null
+                    null,
+                    false
             );
         }
 
@@ -76,7 +103,8 @@ public record PortfolioSummaryDTO(
                     dayPercentageVariation,
                     dayChangeAvailable,
                     benchmarkComparisons,
-                    null
+                    null,
+                    false
             );
         }
     }

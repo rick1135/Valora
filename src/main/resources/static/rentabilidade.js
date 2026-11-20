@@ -163,11 +163,18 @@
     const hasPeriodTwr = isFiniteNumber(history?.twrPercentage);
     const twr = hasPeriodTwr ? history.twrPercentage : prof.twrPercentage;
     const hasTwr = isFiniteNumber(twr);
-    const twrNote = hasPeriodTwr
-      ? "Retorno no período selecionado. Isola o efeito de aportes e resgates."
-      : hasTwr
+    const twrReliable = hasPeriodTwr ? history.pricingComplete !== false : prof.twrReliable === true;
+    const twrEstimated = hasTwr && !twrReliable;
+    let twrNote = "O TWR isola o efeito de aportes e resgates.";
+    if (hasPeriodTwr) {
+      twrNote = twrReliable
+        ? "Retorno no período selecionado. Isola o efeito de aportes e resgates."
+        : "Retorno estimado: há cotações incompletas ou renda fixa a custo no período.";
+    } else if (hasTwr) {
+      twrNote = twrReliable
         ? "Retorno consolidado da carteira. Isola o efeito de aportes e resgates."
-        : "O TWR isola o efeito de aportes e resgates.";
+        : "Retorno estimado: histórico com cotações incompletas ou renda fixa a custo.";
+    }
 
     const cards = [
       {
@@ -191,6 +198,7 @@
         value: hasTwr ? formatPercent(twr, true) : "Indisponível",
         tone: hasTwr ? valueTone(twr) : "neutral",
         highlight: true,
+        badge: twrEstimated ? { text: hasPeriodTwr ? "Estimado" : "Parcial" } : null,
         note: twrNote,
       },
       {
@@ -529,11 +537,14 @@
   function renderHistory(history, status) {
     const points = history?.points;
     const benchmarks = history?.benchmarks;
+    const benchmarkLabel = (label, ticker) =>
+      history?.benchmarksComplete?.[ticker] === false ? `${label} (parcial)` : label;
     const twrSeries = [
       makeSeries("Carteira", "portfolio", points, "twrPercentage"),
-      makeSeries("CDI", "cdi", benchmarks?.CDI, "percentage"),
-      makeSeries("Ibovespa", "ibovespa", benchmarks?.["^BVSP"], "percentage"),
-      makeSeries("Selic", "selic", benchmarks?.SELIC, "percentage"),
+      makeSeries(benchmarkLabel("CDI", "CDI"), "cdi", benchmarks?.CDI, "percentage"),
+      makeSeries(benchmarkLabel("Ibovespa", "^BVSP"), "ibovespa", benchmarks?.["^BVSP"], "percentage"),
+      makeSeries(benchmarkLabel("Selic", "SELIC"), "selic", benchmarks?.SELIC, "percentage"),
+      makeSeries(benchmarkLabel("IPCA", "IPCA"), "ipca", benchmarks?.IPCA, "percentage"),
     ];
     const patrimonySeries = [
       makeSeries("Total investido", "invested", points, "totalInvested"),

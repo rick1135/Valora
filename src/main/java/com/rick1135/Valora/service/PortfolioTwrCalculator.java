@@ -12,13 +12,14 @@ import java.util.List;
 public class PortfolioTwrCalculator {
     private static final int FACTOR_SCALE = 12;
     private static final BigDecimal ONE = BigDecimal.ONE.setScale(FACTOR_SCALE);
-    private static final BigDecimal MIN_FACTOR = BigDecimal.ONE.movePointLeft(FACTOR_SCALE);
+    private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(FACTOR_SCALE);
 
     public record DailyObservation(
             LocalDate date,
             BigDecimal totalPatrimony,
             BigDecimal totalInvested,
-            BigDecimal netCashFlow,
+            BigDecimal inflows,
+            BigDecimal outflows,
             BigDecimal proventsReceived,
             boolean pricingComplete
     ) {}
@@ -35,9 +36,10 @@ public class PortfolioTwrCalculator {
         List<DailyResult> results = new ArrayList<>(observations.size());
         for (DailyObservation observation : observations) {
             BigDecimal factor = calculateFactor(observation, previousPatrimony);
-            BigDecimal quota = previousQuota.multiply(factor)
-                    .setScale(FACTOR_SCALE, FinancialConstants.DEFAULT_ROUNDING)
-                    .max(MIN_FACTOR);
+            boolean reentry = previousQuota.signum() == 0 && previousPatrimony.signum() <= 0
+                    && observation.inflows().signum() > 0;
+            BigDecimal quota = reentry ? factor : previousQuota.multiply(factor)
+                    .setScale(FACTOR_SCALE, FinancialConstants.DEFAULT_ROUNDING);
             results.add(new DailyResult(observation, factor, quota));
             previousPatrimony = observation.totalPatrimony();
             previousQuota = quota;
@@ -46,22 +48,21 @@ public class PortfolioTwrCalculator {
     }
 
     public BigDecimal calculatePeriodTwrPercentage(BigDecimal startQuota, BigDecimal endQuota) {
+        if (startQuota == null || endQuota == null || startQuota.signum() <= 0) {
+            return null;
+        }
         return endQuota.subtract(startQuota).movePointRight(2)
                 .divide(startQuota, FinancialConstants.PERCENTAGE_SCALE, FinancialConstants.DEFAULT_ROUNDING);
     }
 
     private BigDecimal calculateFactor(DailyObservation observation, BigDecimal previousPatrimony) {
-        BigDecimal cashFlow = observation.netCashFlow();
-        BigDecimal proceeds = observation.totalPatrimony().add(observation.proventsReceived());
-        if (previousPatrimony.signum() <= 0) {
-            return cashFlow.signum() > 0 && proceeds.signum() > 0 ? divide(proceeds, cashFlow) : ONE;
+        BigDecimal base = previousPatrimony.add(observation.inflows());
+        if (base.signum() <= 0) {
+            return ONE;
         }
-        return cashFlow.signum() < 0
-                ? divide(proceeds.subtract(cashFlow), previousPatrimony)
-                : divide(proceeds, previousPatrimony.add(cashFlow));
-    }
-
-    private BigDecimal divide(BigDecimal proceeds, BigDecimal base) {
-        return proceeds.divide(base, FACTOR_SCALE, FinancialConstants.DEFAULT_ROUNDING).max(MIN_FACTOR);
+        BigDecimal proceeds = observation.totalPatrimony().add(observation.outflows())
+                .add(observation.proventsReceived());
+        return proceeds.signum() <= 0 ? ZERO
+                : proceeds.divide(base, FACTOR_SCALE, FinancialConstants.DEFAULT_ROUNDING);
     }
 }

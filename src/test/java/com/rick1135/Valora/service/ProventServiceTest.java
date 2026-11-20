@@ -11,9 +11,11 @@ import com.rick1135.Valora.mapper.ProventMapper;
 import com.rick1135.Valora.repository.*;
 import com.rick1135.Valora.repository.projection.UserAssetHoldingProjection;
 import org.mapstruct.factory.Mappers;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -21,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -53,12 +56,19 @@ class ProventServiceTest {
     private PortfolioService portfolioService;
     @Mock
     private MarketCalendar marketCalendar;
+    @Mock
+    private PortfolioSnapshotService portfolioSnapshotService;
 
     @Spy
     private ProventMapper proventMapper = Mappers.getMapper(ProventMapper.class);
 
     @InjectMocks
     private ProventService proventService;
+
+    @BeforeEach
+    void injectSnapshotService() {
+        ReflectionTestUtils.setField(proventService, "portfolioSnapshotService", portfolioSnapshotService);
+    }
 
     @Test
     void createProventShouldProvisionDividendWithoutTax() {
@@ -99,7 +109,9 @@ class ProventServiceTest {
         assertThat(response.type()).isEqualTo(ProventType.DIVIDEND);
 
         ArgumentCaptor<List<ProventProvision>> captor = ArgumentCaptor.forClass(List.class);
-        verify(proventProvisionRepository).saveAll(captor.capture());
+        InOrder writes = inOrder(proventProvisionRepository, portfolioSnapshotService);
+        writes.verify(proventProvisionRepository).saveAll(captor.capture());
+        writes.verify(portfolioSnapshotService).invalidateSnapshotsFrom(portfolio, paymentDate);
         ProventProvision provision = captor.getValue().getFirst();
         assertThat(provision.getGrossAmount()).isEqualByComparingTo("12.30000000");
         assertThat(provision.getWithholdingTaxAmount()).isEqualByComparingTo("0.00000000");
@@ -590,6 +602,9 @@ class ProventServiceTest {
         ArgumentCaptor<ProventProvision> savedCaptor = ArgumentCaptor.forClass(ProventProvision.class);
         verify(proventProvisionRepository, times(2)).save(savedCaptor.capture());
         verify(proventProvisionRepository).delete(existingDelete);
+        verify(portfolioSnapshotService).invalidateSnapshotsFrom(portfolio, pCreate.getPaymentDate());
+        verify(portfolioSnapshotService).invalidateSnapshotsFrom(portfolio, pUpdate.getPaymentDate());
+        verify(portfolioSnapshotService).invalidateSnapshotsFrom(portfolio, pDelete.getPaymentDate());
 
         List<ProventProvision> saved = savedCaptor.getAllValues();
         ProventProvision created = saved.get(0);
@@ -643,6 +658,40 @@ class ProventServiceTest {
         assertThat(provision.getGrossAmount()).isEqualByComparingTo("100.00000000");
         assertThat(provision.getWithholdingTaxAmount()).isEqualByComparingTo("15.00000000");
         assertThat(provision.getNetAmount()).isEqualByComparingTo("85.00000000");
+        verifyNoInteractions(portfolioSnapshotService);
+    }
+
+    @Test
+    void reconcileProvisionsForExistingProventShouldInvalidateDeletedProvisionWhenNoHoldingsRemain() {
+        Portfolio portfolio = portfolio();
+        Asset asset = new Asset();
+        asset.setId(UUID.randomUUID());
+        asset.setTicker("BBAS3");
+        ProventOriginMetadata origin = grossJcpOrigin("bbas3-jcp", asset.getTicker(), BigDecimal.ONE);
+        LocalDate comDate = LocalDate.of(2026, 2, 10);
+        LocalDate paymentDate = LocalDate.of(2026, 2, 20);
+        Instant endOfComDate = Instant.parse("2026-02-11T02:59:59.999999999Z");
+
+        Provent provent = new Provent();
+        provent.setAsset(asset);
+        provent.setComDate(comDate);
+        provent.setPaymentDate(paymentDate);
+        ProventProvision provision = new ProventProvision();
+        provision.setProvent(provent);
+        provision.setPortfolio(portfolio);
+
+        when(proventRepository.findByOriginSourceAndOriginEventKey(origin.source(), origin.sourceEventKey()))
+                .thenReturn(Optional.of(provent));
+        when(marketCalendar.endOfMarketDay(comDate)).thenReturn(endOfComDate);
+        when(transactionRepository.findPortfolioHoldingsByAssetAtDate(asset.getId(), endOfComDate, TransactionType.BUY))
+                .thenReturn(List.of());
+        when(proventProvisionRepository.findByProvent(provent)).thenReturn(List.of(provision));
+
+        proventService.reconcileProvisionsForExistingProvent(origin);
+
+        InOrder writes = inOrder(proventProvisionRepository, portfolioSnapshotService);
+        writes.verify(proventProvisionRepository).deleteAll(List.of(provision));
+        writes.verify(portfolioSnapshotService).invalidateSnapshotsFrom(portfolio, paymentDate);
     }
 
     private ProventOriginMetadata grossJcpOrigin(String eventKey, String ticker, BigDecimal rate) {

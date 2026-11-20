@@ -134,9 +134,9 @@ public class PortfolioService {
                         : effectiveFixedIncomeValuationService().valuatePositions(fixedIncomePositions, portfolioTransactions);
 
         List<PortfolioSummaryDTO.BenchmarkComparisonDTO> benchmarkComparisons = calculateBenchmarkComparisons(portfolio);
-        BigDecimal twrPercentage = portfolioSnapshotService == null
+        PortfolioSnapshotService.PortfolioTwrSummary twrSummary = portfolioSnapshotService == null
                 ? null
-                : portfolioSnapshotService.getPortfolioTwrPercentage(portfolio).orElse(null);
+                : portfolioSnapshotService.getPortfolioTwrSummary(portfolio).orElse(null);
 
         return performanceCalculator.calculate(
                 positions,
@@ -145,7 +145,8 @@ public class PortfolioService {
                 realizedProfit,
                 benchmarkComparisons,
                 fixedIncomeValuations,
-                twrPercentage
+                twrSummary == null ? null : twrSummary.twrPercentage(),
+                twrSummary != null && twrSummary.reliable()
         );
     }
 

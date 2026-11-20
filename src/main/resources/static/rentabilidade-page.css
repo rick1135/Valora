@@ -247,6 +247,10 @@
   color: var(--pink);
 }
 
+.chart-series--ipca {
+  color: #a78bfa;
+}
+
 .chart-series--invested {
   color: var(--muted-strong);
 }

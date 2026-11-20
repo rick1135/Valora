@@ -6,8 +6,8 @@ CREATE TABLE portfolio_daily_snapshots (
     total_invested DECIMAL(19, 8) NOT NULL,
     net_cash_flow DECIMAL(19, 8) NOT NULL,
     provents_received DECIMAL(19, 8) NOT NULL,
-    daily_return_factor DECIMAL(19, 12) NOT NULL,
-    twr_quota_value DECIMAL(19, 12) NOT NULL,
+    daily_return_factor DECIMAL(19, 12) NOT NULL CHECK (daily_return_factor >= 0),
+    twr_quota_value DECIMAL(19, 12) NOT NULL CHECK (twr_quota_value >= 0),
     pricing_complete BOOLEAN NOT NULL DEFAULT TRUE,
     UNIQUE (portfolio_id, snapshot_date)
 );

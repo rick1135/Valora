@@ -12,8 +12,16 @@ public record PortfolioHistoryResponseDTO(
         BigDecimal twrPercentage,
         boolean pricingComplete,
         List<HistoryPointDTO> points,
-        Map<String, List<BenchmarkPointDTO>> benchmarks
+        Map<String, List<BenchmarkPointDTO>> benchmarks,
+        Map<String, Boolean> benchmarksComplete
 ) {
+    public PortfolioHistoryResponseDTO(
+            String range, LocalDate startDate, LocalDate endDate, BigDecimal twrPercentage,
+            boolean pricingComplete, List<HistoryPointDTO> points, Map<String, List<BenchmarkPointDTO>> benchmarks
+    ) {
+        this(range, startDate, endDate, twrPercentage, pricingComplete, points, benchmarks, Map.of());
+    }
+
     public record HistoryPointDTO(
             LocalDate date,
             BigDecimal totalPatrimony,

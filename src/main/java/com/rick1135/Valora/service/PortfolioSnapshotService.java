@@ -6,23 +6,19 @@ import com.rick1135.Valora.dto.brapi.BrapiResponseDTO;
 import com.rick1135.Valora.dto.response.PortfolioHistoryResponseDTO;
 import com.rick1135.Valora.dto.response.PortfolioHistoryResponseDTO.BenchmarkPointDTO;
 import com.rick1135.Valora.dto.response.PortfolioHistoryResponseDTO.HistoryPointDTO;
-import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
-import com.rick1135.Valora.entity.BenchmarkType;
+import com.rick1135.Valora.entity.Benchmark;
 import com.rick1135.Valora.entity.BenchmarkValue;
 import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.PortfolioDailySnapshot;
-import com.rick1135.Valora.entity.ProventStatus;
-import com.rick1135.Valora.entity.Transaction;
 import com.rick1135.Valora.entity.TransactionType;
 import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.PortfolioNotFoundException;
 import com.rick1135.Valora.repository.BenchmarkRepository;
 import com.rick1135.Valora.repository.BenchmarkValueRepository;
 import com.rick1135.Valora.repository.PortfolioDailySnapshotRepository;
+import com.rick1135.Valora.repository.PortfolioDailySnapshotRepository.SnapshotTrade;
 import com.rick1135.Valora.repository.PortfolioRepository;
-import com.rick1135.Valora.repository.ProventProvisionRepository;
-import com.rick1135.Valora.repository.TransactionRepository;
 import com.rick1135.Valora.service.PortfolioTwrCalculator.DailyObservation;
 import com.rick1135.Valora.service.PortfolioTwrCalculator.DailyResult;
 import org.slf4j.Logger;
@@ -31,7 +27,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClientException;
@@ -42,6 +37,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,20 +52,19 @@ import java.util.UUID;
 public class PortfolioSnapshotService {
     private static final Logger logger = LoggerFactory.getLogger(PortfolioSnapshotService.class);
     private static final List<String> BENCHMARK_TICKERS = List.of("CDI", "SELIC", "^BVSP", "IPCA");
+    private static final int CAPTURE_ATTEMPTS = 3;
     private static final BigDecimal ZERO_PERCENTAGE = BigDecimal.ZERO.setScale(FinancialConstants.PERCENTAGE_SCALE);
 
     // Match the position timeline's ordering for transactions with the same timestamp.
-    private static final Comparator<Transaction> TRANSACTION_ORDER = Comparator
-            .comparing(Transaction::getTransactionDate)
-            .thenComparing(Transaction::getType)
-            .thenComparing(Transaction::getQuantity)
-            .thenComparing(Transaction::getUnitPrice)
-            .thenComparing(Transaction::getId, Comparator.nullsLast(Comparator.naturalOrder()));
+    private static final Comparator<Trade> TRANSACTION_ORDER = Comparator
+            .comparing(Trade::transactionDate)
+            .thenComparing(Trade::type)
+            .thenComparing(Trade::quantity)
+            .thenComparing(Trade::unitPrice)
+            .thenComparing(Trade::id);
 
     private final PortfolioRepository portfolioRepository;
     private final PortfolioDailySnapshotRepository snapshotRepository;
-    private final TransactionRepository transactionRepository;
-    private final ProventProvisionRepository proventProvisionRepository;
     private final BenchmarkRepository benchmarkRepository;
     private final BenchmarkValueRepository benchmarkValueRepository;
     private final MarketCalendar marketCalendar;
@@ -81,8 +76,6 @@ public class PortfolioSnapshotService {
     public PortfolioSnapshotService(
             PortfolioRepository portfolioRepository,
             PortfolioDailySnapshotRepository snapshotRepository,
-            TransactionRepository transactionRepository,
-            ProventProvisionRepository proventProvisionRepository,
             BenchmarkRepository benchmarkRepository,
             BenchmarkValueRepository benchmarkValueRepository,
             MarketCalendar marketCalendar,
@@ -93,8 +86,6 @@ public class PortfolioSnapshotService {
     ) {
         this.portfolioRepository = portfolioRepository;
         this.snapshotRepository = snapshotRepository;
-        this.transactionRepository = transactionRepository;
-        this.proventProvisionRepository = proventProvisionRepository;
         this.benchmarkRepository = benchmarkRepository;
         this.benchmarkValueRepository = benchmarkValueRepository;
         this.marketCalendar = marketCalendar;
@@ -104,19 +95,14 @@ public class PortfolioSnapshotService {
         this.brapiToken = brapiToken;
     }
 
-    @Transactional
     public PortfolioHistoryResponseDTO getPortfolioHistory(User user, UUID portfolioId, String range) {
         HistoryRange historyRange = HistoryRange.parse(range);
         Portfolio portfolio = portfolioRepository.findByIdAndUser(portfolioId, user)
                 .orElseThrow(PortfolioSnapshotService::portfolioNotFound);
-        if (snapshotRepository.lockPortfolio(portfolioId).isEmpty()) {
-            throw portfolioNotFound();
-        }
-
         LocalDate today = marketCalendar.today();
         LocalDate end = marketCalendar.lastBusinessDayOnOrBefore(today);
         LocalDate start = historyRange.startDate(today);
-        rebuildMissingSnapshots(portfolio, end);
+        rebuildMissingSnapshots(portfolio, end, false);
         List<PortfolioDailySnapshot> snapshots;
         if (start == null) {
             snapshots = snapshotRepository.findByPortfolioOrderBySnapshotDateAsc(portfolio);
@@ -129,29 +115,40 @@ public class PortfolioSnapshotService {
             return new PortfolioHistoryResponseDTO(historyRange.label, start, end, ZERO_PERCENTAGE, true, List.of(), Map.of());
         }
 
-        BigDecimal startQuota = snapshots.getFirst().getTwrQuotaValue();
+        LocalDate firstPointDate = snapshots.getFirst().getSnapshotDate();
+        var previous = snapshotRepository.findFirstByPortfolioAndSnapshotDateLessThanOrderBySnapshotDateDesc(
+                portfolio, firstPointDate);
+        BigDecimal startQuota = previous.map(PortfolioDailySnapshot::getTwrQuotaValue)
+                .filter(quota -> quota.signum() > 0).orElse(BigDecimal.ONE);
+        LocalDate baseDate = previous.map(PortfolioDailySnapshot::getSnapshotDate)
+                .orElseGet(() -> marketCalendar.previousBusinessDay(firstPointDate));
         List<HistoryPointDTO> points = snapshots.stream()
                 .map(snapshot -> new HistoryPointDTO(
                         snapshot.getSnapshotDate(), snapshot.getTotalPatrimony(), snapshot.getTotalInvested(),
                         twrCalculator.calculatePeriodTwrPercentage(startQuota, snapshot.getTwrQuotaValue()),
                         snapshot.isPricingComplete()))
                 .toList();
-        LocalDate firstPointDate = points.getFirst().date();
+        var benchmarks = loadBenchmarks(baseDate, firstPointDate, end);
         return new PortfolioHistoryResponseDTO(
                 historyRange.label, firstPointDate, end, points.getLast().twrPercentage(),
-                points.stream().allMatch(HistoryPointDTO::pricingComplete), points, loadBenchmarks(firstPointDate, end)
+                points.stream().allMatch(HistoryPointDTO::pricingComplete), points,
+                benchmarks.points(), benchmarks.complete()
         );
     }
 
-    // The portfolio summary can call this from its read-only transaction.
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public record PortfolioTwrSummary(BigDecimal twrPercentage, boolean reliable) {}
+
+    @Transactional(readOnly = true)
+    public Optional<PortfolioTwrSummary> getPortfolioTwrSummary(Portfolio portfolio) {
+        return snapshotRepository.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio)
+                .map(snapshot -> new PortfolioTwrSummary(
+                        twrCalculator.calculatePeriodTwrPercentage(BigDecimal.ONE, snapshot.getTwrQuotaValue()),
+                        !snapshotRepository.existsByPortfolioAndPricingCompleteFalse(portfolio)));
+    }
+
+    @Transactional(readOnly = true)
     public Optional<BigDecimal> getPortfolioTwrPercentage(Portfolio portfolio) {
-        if (snapshotRepository.lockPortfolio(portfolio.getId()).isEmpty()) {
-            return Optional.empty();
-        }
-        LocalDate end = marketCalendar.lastBusinessDayOnOrBefore(marketCalendar.today());
-        return rebuildMissingSnapshots(portfolio, end)
-                .map(snapshot -> twrCalculator.calculatePeriodTwrPercentage(BigDecimal.ONE, snapshot.getTwrQuotaValue()));
+        return getPortfolioTwrSummary(portfolio).map(PortfolioTwrSummary::twrPercentage);
     }
 
     @Transactional
@@ -167,68 +164,126 @@ public class PortfolioSnapshotService {
         LocalDate end = marketCalendar.lastBusinessDayOnOrBefore(today);
         for (Portfolio portfolio : portfolioRepository.findAll()) {
             try {
-                captureTransaction.executeWithoutResult(status -> {
-                    if (snapshotRepository.lockPortfolio(portfolio.getId()).isPresent()) {
-                        // History may have priced today's holdings before the closing quotes were available.
-                        if (end.equals(today)) {
-                            snapshotRepository.deleteByPortfolioAndSnapshotDateGreaterThanEqual(portfolio, today);
-                        }
-                        rebuildMissingSnapshots(portfolio, end);
-                    }
-                });
+                // Intraday history may have captured today's prices before the final close.
+                rebuildMissingSnapshots(portfolio, end, end.equals(today));
             } catch (RuntimeException exception) {
                 logger.error("Falha ao capturar snapshots da carteira {}", portfolio.getId(), exception);
             }
         }
     }
 
-    private Optional<PortfolioDailySnapshot> rebuildMissingSnapshots(Portfolio portfolio, LocalDate end) {
+    private void rebuildMissingSnapshots(Portfolio portfolio, LocalDate end, boolean refreshEnd) {
+        for (int attempt = 0; attempt < CAPTURE_ATTEMPTS; attempt++) {
+            SnapshotBoundary boundary = findBoundary(portfolio, end, refreshEnd);
+            if (boundary.replaceFrom() == null && boundary.previous() != null
+                    && !boundary.previous().date().isBefore(end)) {
+                return;
+            }
+            CaptureInputs inputs = loadCaptureInputs(portfolio, end);
+            if (inputs.trades().isEmpty()) {
+                return;
+            }
+            List<PortfolioDailySnapshot> missing = calculateSnapshots(portfolio, end, boundary, inputs);
+            if (missing.isEmpty()) {
+                return;
+            }
+            boolean saved = Boolean.TRUE.equals(captureTransaction.execute(status -> {
+                if (snapshotRepository.lockPortfolio(portfolio.getId()).isEmpty()) {
+                    throw portfolioNotFound();
+                }
+                // A mutation or another capture may have changed the suffix during the HTTP fetch.
+                if (!boundary.equals(findBoundary(portfolio, end, refreshEnd))
+                        || !inputs.equals(loadCaptureInputs(portfolio, end))) {
+                    return false;
+                }
+                if (boundary.replaceFrom() != null) {
+                    snapshotRepository.deleteByPortfolioAndSnapshotDateGreaterThanEqual(portfolio, boundary.replaceFrom());
+                }
+                snapshotRepository.saveAll(missing);
+                return true;
+            }));
+            if (saved) {
+                return;
+            }
+        }
+        throw new ConcurrentModificationException("A carteira mudou durante a captura dos snapshots.");
+    }
+
+    private SnapshotBoundary findBoundary(Portfolio portfolio, LocalDate end, boolean refreshEnd) {
+        LocalDate replaceFrom = snapshotRepository
+                .findFirstByPortfolioAndPricingCompleteFalseOrderBySnapshotDateAsc(portfolio)
+                .map(PortfolioDailySnapshot::getSnapshotDate)
+                .filter(date -> !date.isAfter(end))
+                .orElse(null);
         Optional<PortfolioDailySnapshot> latest = snapshotRepository.findFirstByPortfolioOrderBySnapshotDateDesc(portfolio);
-        if (latest.isPresent() && !latest.get().getSnapshotDate().isBefore(end)) {
-            return latest;
+        if (replaceFrom == null && refreshEnd && latest.isPresent() && !latest.get().getSnapshotDate().isBefore(end)) {
+            replaceFrom = end;
         }
+        var previous = replaceFrom == null ? latest : snapshotRepository
+                .findFirstByPortfolioAndSnapshotDateLessThanOrderBySnapshotDateDesc(portfolio, replaceFrom);
+        return new SnapshotBoundary(replaceFrom, previous.map(SnapshotAnchor::from).orElse(null),
+                latest.map(SnapshotAnchor::from).orElse(null));
+    }
 
-        List<Transaction> transactions = transactionRepository.findByPortfolioOrderByTransactionDateAscIdAsc(portfolio)
-                .stream().sorted(TRANSACTION_ORDER).toList();
-        if (transactions.isEmpty()) {
-            return latest;
+    private CaptureInputs loadCaptureInputs(Portfolio portfolio, LocalDate end) {
+        Instant until = marketCalendar.endOfMarketDay(end).plusNanos(1);
+        List<Trade> trades = snapshotRepository.findSnapshotTrades(portfolio, until).stream()
+                .map(Trade::from).sorted(TRANSACTION_ORDER).toList();
+        NavigableMap<LocalDate, BigDecimal> paidByDate = new TreeMap<>();
+        if (!trades.isEmpty()) {
+            LocalDate firstTrade = marketCalendar.marketDate(trades.getFirst().transactionDate());
+            for (var total : snapshotRepository.findSnapshotPaidProvents(portfolio, firstTrade, end)) {
+                paidByDate.put(total.getPaymentDate(), total.getNetAmount());
+            }
         }
+        return new CaptureInputs(trades, paidByDate);
+    }
 
-        LocalDate firstTransactionDate = marketCalendar.marketDate(transactions.getFirst().getTransactionDate());
-        LocalDate start = latest.map(snapshot -> snapshot.getSnapshotDate().plusDays(1)).orElse(firstTransactionDate);
+    private List<PortfolioDailySnapshot> calculateSnapshots(
+            Portfolio portfolio, LocalDate end, SnapshotBoundary boundary, CaptureInputs inputs
+    ) {
+        List<Trade> trades = inputs.trades();
+        SnapshotAnchor previous = boundary.previous();
+        LocalDate lastCapturedDate = previous == null ? null : previous.date();
+        LocalDate start = boundary.replaceFrom();
+        if (start == null) {
+            start = lastCapturedDate == null ? marketCalendar.marketDate(trades.getFirst().transactionDate())
+                    : lastCapturedDate.plusDays(1);
+        }
         while (!start.isAfter(end) && !marketCalendar.isBusinessDay(start)) {
             start = start.plusDays(1);
         }
-        if (start.isAfter(end)) {
-            return latest;
+
+        NavigableMap<LocalDate, BigDecimal> provents = new TreeMap<>(inputs.paidProvents());
+        if (lastCapturedDate != null) {
+            provents.headMap(lastCapturedDate, true).clear();
         }
 
-        NavigableMap<LocalDate, BigDecimal> provents = loadPaidProvents(portfolio, firstTransactionDate, end);
-        if (latest.isPresent()) {
-            provents = provents.tailMap(latest.get().getSnapshotDate(), false);
-        }
-
+        Map<SnapshotAsset, Holding> holdings = new HashMap<>();
         Map<String, NavigableMap<LocalDate, BigDecimal>> historicalPrices = new HashMap<>();
-        Map<Asset, Holding> holdings = new HashMap<>();
         List<DailyObservation> observations = new ArrayList<>();
         int transactionIndex = 0;
-        LocalDate lastCapturedDate = latest.map(PortfolioDailySnapshot::getSnapshotDate).orElse(null);
         for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
             if (!marketCalendar.isBusinessDay(date)) {
                 continue;
             }
 
-            BigDecimal cashFlow = BigDecimal.ZERO;
-            while (transactionIndex < transactions.size()) {
-                Transaction transaction = transactions.get(transactionIndex);
-                LocalDate transactionDate = marketCalendar.marketDate(transaction.getTransactionDate());
+            BigDecimal inflows = BigDecimal.ZERO;
+            BigDecimal outflows = BigDecimal.ZERO;
+            while (transactionIndex < trades.size()) {
+                Trade trade = trades.get(transactionIndex);
+                LocalDate transactionDate = marketCalendar.marketDate(trade.transactionDate());
                 if (transactionDate.isAfter(date)) {
                     break;
                 }
-                Holding holding = holdings.computeIfAbsent(transaction.getAsset(), ignored -> new Holding());
-                BigDecimal amount = holding.apply(transaction);
+                Holding holding = holdings.computeIfAbsent(trade.asset(), ignored -> new Holding());
+                BigDecimal amount = holding.apply(trade);
                 if (lastCapturedDate == null || transactionDate.isAfter(lastCapturedDate)) {
-                    cashFlow = cashFlow.add(amount);
+                    if (trade.type() == TransactionType.BUY) {
+                        inflows = inflows.add(amount);
+                    } else {
+                        outflows = outflows.add(amount);
+                    }
                 }
                 transactionIndex++;
             }
@@ -236,34 +291,43 @@ public class PortfolioSnapshotService {
             BigDecimal proventsReceived = provents.headMap(date, true).values().stream()
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             provents.headMap(date, true).clear();
-            observations.add(observe(date, cashFlow, proventsReceived, holdings, historicalPrices, start));
+            observations.add(observe(date, inflows, outflows, proventsReceived, holdings, historicalPrices, start));
             lastCapturedDate = date;
         }
 
-        BigDecimal previousPatrimony = latest.map(PortfolioDailySnapshot::getTotalPatrimony).orElse(BigDecimal.ZERO);
-        BigDecimal previousQuota = latest.map(PortfolioDailySnapshot::getTwrQuotaValue).orElse(BigDecimal.ONE);
-        List<PortfolioDailySnapshot> missing = twrCalculator.calculate(observations, previousPatrimony, previousQuota)
+        BigDecimal previousPatrimony = previous == null ? BigDecimal.ZERO : previous.patrimony();
+        BigDecimal previousQuota = previous == null ? BigDecimal.ONE : previous.quota();
+        return twrCalculator.calculate(observations, previousPatrimony, previousQuota)
                 .stream().map(result -> toSnapshot(portfolio, result)).toList();
-        snapshotRepository.saveAll(missing);
-        return Optional.of(missing.getLast());
     }
 
-    private NavigableMap<LocalDate, BigDecimal> loadPaidProvents(Portfolio portfolio, LocalDate start, LocalDate end) {
-        NavigableMap<LocalDate, BigDecimal> paidByDate = new TreeMap<>();
-        for (var provision : proventProvisionRepository.findByPortfolioOrderByProventPaymentDateDescProventComDateDesc(portfolio)) {
-            LocalDate date = provision.getProvent().getPaymentDate();
-            if (provision.getStatus() == ProventStatus.PAID && !date.isBefore(start) && !date.isAfter(end)) {
-                paidByDate.merge(date, provision.getNetAmount(), BigDecimal::add);
-            }
+    private record SnapshotBoundary(LocalDate replaceFrom, SnapshotAnchor previous, SnapshotAnchor latest) {}
+
+    private record SnapshotAnchor(Long id, LocalDate date, BigDecimal patrimony, BigDecimal quota) {
+        private static SnapshotAnchor from(PortfolioDailySnapshot snapshot) {
+            return new SnapshotAnchor(snapshot.getId(), snapshot.getSnapshotDate(),
+                    snapshot.getTotalPatrimony(), snapshot.getTwrQuotaValue());
         }
-        return paidByDate;
+    }
+
+    private record CaptureInputs(List<Trade> trades, NavigableMap<LocalDate, BigDecimal> paidProvents) {}
+
+    private record SnapshotAsset(UUID id, String ticker, AssetCategory category) {}
+
+    private record Trade(UUID id, Instant transactionDate, TransactionType type, BigDecimal quantity, BigDecimal unitPrice,
+                         SnapshotAsset asset) {
+        private static Trade from(SnapshotTrade trade) {
+            return new Trade(trade.getId(), trade.getTransactionDate(), trade.getType(), trade.getQuantity(),
+                    trade.getUnitPrice(), new SnapshotAsset(trade.getAssetId(), trade.getTicker(), trade.getCategory()));
+        }
     }
 
     private DailyObservation observe(
             LocalDate date,
-            BigDecimal cashFlow,
+            BigDecimal inflows,
+            BigDecimal outflows,
             BigDecimal provents,
-            Map<Asset, Holding> holdings,
+            Map<SnapshotAsset, Holding> holdings,
             Map<String, NavigableMap<LocalDate, BigDecimal>> historicalPrices,
             LocalDate start
     ) {
@@ -271,25 +335,26 @@ public class PortfolioSnapshotService {
         BigDecimal totalInvested = BigDecimal.ZERO;
         boolean pricingComplete = true;
         for (var entry : holdings.entrySet()) {
-            Asset asset = entry.getKey();
+            SnapshotAsset asset = entry.getKey();
             Holding holding = entry.getValue();
             if (holding.quantity.signum() <= 0) {
                 continue;
             }
             BigDecimal cost = holding.quantity.multiply(holding.averagePrice);
             totalInvested = totalInvested.add(cost);
-            Map.Entry<LocalDate, BigDecimal> close = asset.getCategory() == AssetCategory.RENDA_FIXA
+            Map.Entry<LocalDate, BigDecimal> close = asset.category() == AssetCategory.RENDA_FIXA
                     ? null
-                    : historicalPrices.computeIfAbsent(asset.getTicker(), ticker -> loadHistoricalPrices(ticker, start))
+                    : historicalPrices.computeIfAbsent(asset.ticker(), ticker -> loadHistoricalPrices(ticker, start))
                             .floorEntry(date);
             if (close == null) {
                 pricingComplete = false;
                 totalPatrimony = totalPatrimony.add(cost);
             } else {
+                pricingComplete &= close.getKey().equals(date);
                 totalPatrimony = totalPatrimony.add(holding.quantity.multiply(close.getValue()));
             }
         }
-        return new DailyObservation(date, money(totalPatrimony), money(totalInvested), money(cashFlow),
+        return new DailyObservation(date, money(totalPatrimony), money(totalInvested), inflows, outflows,
                 money(provents), pricingComplete);
     }
 
@@ -319,51 +384,98 @@ public class PortfolioSnapshotService {
         return prices;
     }
 
-    private Map<String, List<BenchmarkPointDTO>> loadBenchmarks(LocalDate start, LocalDate end) {
-        Map<String, List<BenchmarkPointDTO>> benchmarks = new LinkedHashMap<>();
+    private BenchmarkHistory loadBenchmarks(LocalDate baseDate, LocalDate firstPointDate, LocalDate end) {
+        Map<String, List<BenchmarkPointDTO>> points = new LinkedHashMap<>();
+        Map<String, Boolean> complete = new LinkedHashMap<>();
         for (String ticker : BENCHMARK_TICKERS) {
-            var benchmark = benchmarkRepository.findByTicker(ticker);
-            List<BenchmarkPointDTO> points = benchmark.map(value -> benchmarkPoints(
-                    value.getType(), start, end, benchmarkValueRepository.findByBenchmarkInRange(value, start, end)
-            )).orElseGet(List::of);
-            benchmarks.put(ticker, points);
+            BenchmarkSeries series = benchmarkRepository.findByTicker(ticker)
+                    .map(benchmark -> switch (benchmark.getType()) {
+                        case INDEX -> indexSeries(benchmark, baseDate, firstPointDate, end);
+                        case INTEREST_RATE -> interestRateSeries(benchmark, firstPointDate, end);
+                        case INFLATION -> inflationSeries(benchmark, firstPointDate, end);
+                    })
+                    .orElseGet(() -> new BenchmarkSeries(List.of(), false));
+            points.put(ticker, series.points());
+            complete.put(ticker, series.complete());
         }
-        return benchmarks;
+        return new BenchmarkHistory(points, complete);
     }
 
-    private List<BenchmarkPointDTO> benchmarkPoints(
-            BenchmarkType type, LocalDate start, LocalDate end, List<BenchmarkValue> values
-    ) {
+    private BenchmarkSeries indexSeries(Benchmark benchmark, LocalDate baseDate, LocalDate start, LocalDate end) {
+        var base = benchmarkValueRepository.findLatestBeforeOrAt(benchmark, baseDate)
+                .filter(value -> value.getValue() != null && value.getValue().signum() > 0)
+                .filter(value -> marketCalendar.businessDaysBetween(value.getReferenceDate().plusDays(1), baseDate) <= 2);
+        if (base.isEmpty()) {
+            return new BenchmarkSeries(List.of(), false);
+        }
+
+        NavigableMap<LocalDate, BigDecimal> closes = new TreeMap<>();
+        for (BenchmarkValue value : benchmarkValueRepository.findByBenchmarkInRange(benchmark, start, end)) {
+            if (value.getValue() != null && value.getValue().signum() > 0
+                    && marketCalendar.isBusinessDay(value.getReferenceDate())) {
+                closes.put(value.getReferenceDate(), value.getValue());
+            }
+        }
+        List<BenchmarkPointDTO> points = closes.entrySet().stream()
+                .map(close -> new BenchmarkPointDTO(close.getKey(),
+                        twrCalculator.calculatePeriodTwrPercentage(base.get().getValue(), close.getValue())))
+                .toList();
+        return new BenchmarkSeries(points, closes.size() == marketCalendar.businessDaysBetween(start, end));
+    }
+
+    private BenchmarkSeries interestRateSeries(Benchmark benchmark, LocalDate start, LocalDate end) {
+        NavigableMap<LocalDate, BigDecimal> rates = new TreeMap<>();
+        for (BenchmarkValue value : benchmarkValueRepository.findByBenchmarkInRange(benchmark, start, end)) {
+            if (value.getValue() != null && marketCalendar.isBusinessDay(value.getReferenceDate())) {
+                rates.put(value.getReferenceDate(), value.getValue());
+            }
+        }
+        // Only the final business day's rate may still be awaiting publication.
+        LocalDate lastBusinessDay = marketCalendar.lastBusinessDayOnOrBefore(end);
+        long expectedBeforeLast = marketCalendar.businessDaysBetween(start, lastBusinessDay.minusDays(1));
+        boolean complete = !rates.isEmpty() && rates.headMap(lastBusinessDay, false).size() == expectedBeforeLast;
+        return new BenchmarkSeries(compoundRates(rates), complete);
+    }
+
+    private BenchmarkSeries inflationSeries(Benchmark benchmark, LocalDate start, LocalDate end) {
+        LocalDate firstReferenceDate = start.withDayOfMonth(1);
+        Map<YearMonth, BigDecimal> ratesByMonth = new HashMap<>();
+        for (BenchmarkValue value : benchmarkValueRepository.findByBenchmarkInRange(benchmark, firstReferenceDate, end)) {
+            if (value.getValue() != null) {
+                ratesByMonth.putIfAbsent(YearMonth.from(value.getReferenceDate()), value.getValue());
+            }
+        }
+
+        boolean complete = start.equals(firstReferenceDate);
+        YearMonth month = YearMonth.from(complete ? start : start.plusMonths(1));
+        NavigableMap<LocalDate, BigDecimal> closedMonthRates = new TreeMap<>();
+        while (!month.atEndOfMonth().isAfter(end)) {
+            BigDecimal rate = ratesByMonth.get(month);
+            if (rate == null) {
+                complete = false;
+            } else {
+                closedMonthRates.put(month.atEndOfMonth(), rate);
+            }
+            month = month.plusMonths(1);
+        }
+        return new BenchmarkSeries(compoundRates(closedMonthRates), complete);
+    }
+
+    private List<BenchmarkPointDTO> compoundRates(NavigableMap<LocalDate, BigDecimal> rates) {
         List<BenchmarkPointDTO> points = new ArrayList<>();
-        if (type == BenchmarkType.INDEX) {
-            BigDecimal base = null;
-            for (BenchmarkValue value : values) {
-                if (value.getValue().signum() <= 0) {
-                    continue;
-                }
-                if (base == null) {
-                    base = value.getValue();
-                }
-                points.add(new BenchmarkPointDTO(value.getReferenceDate(),
-                        twrCalculator.calculatePeriodTwrPercentage(base, value.getValue())));
-            }
-        } else if (!values.isEmpty()) {
-            points.add(new BenchmarkPointDTO(start, ZERO_PERCENTAGE));
-            BigDecimal factor = BigDecimal.ONE;
-            for (BenchmarkValue value : values) {
-                LocalDate date = type == BenchmarkType.INFLATION
-                        ? YearMonth.from(value.getReferenceDate()).atEndOfMonth()
-                        : value.getReferenceDate();
-                if (date.isAfter(start) && !date.isAfter(end)) {
-                    factor = factor.multiply(BigDecimal.ONE.add(value.getValue().movePointLeft(2)))
-                            .setScale(FinancialConstants.BENCHMARK_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
-                    points.add(new BenchmarkPointDTO(date,
-                            twrCalculator.calculatePeriodTwrPercentage(BigDecimal.ONE, factor)));
-                }
-            }
+        BigDecimal factor = BigDecimal.ONE;
+        for (var rate : rates.entrySet()) {
+            factor = factor.multiply(BigDecimal.ONE.add(rate.getValue().movePointLeft(2)))
+                    .setScale(FinancialConstants.BENCHMARK_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
+            points.add(new BenchmarkPointDTO(rate.getKey(),
+                    twrCalculator.calculatePeriodTwrPercentage(BigDecimal.ONE, factor)));
         }
         return List.copyOf(points);
     }
+
+    private record BenchmarkHistory(Map<String, List<BenchmarkPointDTO>> points, Map<String, Boolean> complete) {}
+
+    private record BenchmarkSeries(List<BenchmarkPointDTO> points, boolean complete) {}
 
     private static BigDecimal money(BigDecimal value) {
         return value.setScale(FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
@@ -372,7 +484,8 @@ public class PortfolioSnapshotService {
     private static PortfolioDailySnapshot toSnapshot(Portfolio portfolio, DailyResult result) {
         DailyObservation observation = result.observation();
         return new PortfolioDailySnapshot(null, portfolio, observation.date(), observation.totalPatrimony(),
-                observation.totalInvested(), observation.netCashFlow(), observation.proventsReceived(),
+                observation.totalInvested(), money(observation.inflows().subtract(observation.outflows())),
+                observation.proventsReceived(),
                 result.dailyReturnFactor(), result.quota(), observation.pricingComplete());
     }
 
@@ -384,10 +497,10 @@ public class PortfolioSnapshotService {
         private BigDecimal quantity = BigDecimal.ZERO;
         private BigDecimal averagePrice = BigDecimal.ZERO;
 
-        private BigDecimal apply(Transaction transaction) {
-            BigDecimal tradedQuantity = transaction.getQuantity();
-            BigDecimal amount = tradedQuantity.multiply(transaction.getUnitPrice());
-            if (transaction.getType() == TransactionType.BUY) {
+        private BigDecimal apply(Trade trade) {
+            BigDecimal tradedQuantity = trade.quantity();
+            BigDecimal amount = tradedQuantity.multiply(trade.unitPrice());
+            if (trade.type() == TransactionType.BUY) {
                 BigDecimal cost = quantity.multiply(averagePrice).add(amount);
                 quantity = quantity.add(tradedQuantity);
                 averagePrice = cost.divide(quantity,
@@ -399,7 +512,7 @@ public class PortfolioSnapshotService {
             if (quantity.signum() == 0) {
                 averagePrice = BigDecimal.ZERO;
             }
-            return amount.negate();
+            return amount;
         }
     }
 

@@ -17,6 +17,7 @@ import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.PortfolioNotFoundException;
 import com.rick1135.Valora.mapper.PortfolioMapper;
 import com.rick1135.Valora.repository.*;
+import com.rick1135.Valora.service.PortfolioSnapshotService.PortfolioTwrSummary;
 import org.mapstruct.factory.Mappers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +25,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -65,6 +67,9 @@ class PortfolioServiceTest {
     @Mock
     private BenchmarkPerformanceCalculator benchmarkPerformanceCalculator;
 
+    @Mock
+    private PortfolioSnapshotService portfolioSnapshotService;
+
     @Spy
     private PortfolioMapper portfolioMapper = Mappers.getMapper(PortfolioMapper.class);
 
@@ -91,6 +96,7 @@ class PortfolioServiceTest {
 
     @org.junit.jupiter.api.BeforeEach
     void setupBenchmarks() {
+        ReflectionTestUtils.setField(portfolioService, "portfolioSnapshotService", portfolioSnapshotService);
         org.mockito.Mockito.lenient().when(benchmarkRepository.findAll()).thenReturn(List.of());
         org.mockito.Mockito.lenient().when(transactionRepository.findFirstTransactionDateByPortfolio(any())).thenReturn(Optional.empty());
     }
@@ -161,6 +167,8 @@ class PortfolioServiceTest {
         assertThat(summary.profitability().dayAbsoluteVariation()).isEqualByComparingTo("0");
         assertThat(summary.profitability().dayPercentageVariation()).isEqualByComparingTo("0");
         assertThat(summary.profitability().dayChangeAvailable()).isFalse();
+        assertThat(summary.profitability().twrPercentage()).isNull();
+        assertThat(summary.profitability().twrReliable()).isFalse();
         assertThat(summary.fallbackQuoteUsed()).isFalse();
         assertThat(summary.fallbackTickers()).isEmpty();
         assertThat(summary.allocations()).isEmpty();
@@ -262,6 +270,8 @@ class PortfolioServiceTest {
                 .thenReturn(BigDecimal.ZERO);
         when(transactionRepository.findByPortfolioOrderByTransactionDateAscIdAsc(portfolio))
                 .thenReturn(List.of(buy, sell));
+        when(portfolioSnapshotService.getPortfolioTwrSummary(portfolio))
+                .thenReturn(Optional.of(new PortfolioTwrSummary(new BigDecimal("8.5000"), true)));
 
         PortfolioSummaryDTO summary = portfolioService.getPortfolioSummary(user, portfolio.getId());
 
@@ -271,6 +281,8 @@ class PortfolioServiceTest {
         assertThat(summary.profitability().realizedProfit()).isEqualByComparingTo("20.00");
         assertThat(summary.profitability().absoluteProfit()).isEqualByComparingTo("20.00");
         assertThat(summary.profitability().totalPercentage()).isNull();
+        assertThat(summary.profitability().twrPercentage()).isEqualByComparingTo("8.5000");
+        assertThat(summary.profitability().twrReliable()).isTrue();
     }
 
     @Test
@@ -294,6 +306,8 @@ class PortfolioServiceTest {
         when(portfolioRepository.findByIdAndUser(portfolio.getId(), user)).thenReturn(Optional.of(portfolio));
         when(positionRepository.findByPortfolioAndQuantityGreaterThan(portfolio, BigDecimal.ZERO))
                 .thenReturn(List.of(cdbPosition));
+        when(portfolioSnapshotService.getPortfolioTwrSummary(portfolio))
+                .thenReturn(Optional.of(new PortfolioTwrSummary(new BigDecimal("1.2500"), false)));
         when(proventProvisionRepository.sumNetAmountByPortfolioAndStatus(portfolio, ProventStatus.PAID))
                 .thenReturn(BigDecimal.ZERO);
         when(transactionRepository.findByPortfolioOrderByTransactionDateAscIdAsc(portfolio))
@@ -305,6 +319,8 @@ class PortfolioServiceTest {
         assertThat(summary.totalPatrimony()).isEqualByComparingTo("2000.00000000");
         assertThat(summary.fallbackQuoteUsed()).isTrue();
         assertThat(summary.fallbackTickers()).containsExactly("CDB-CDI");
+        assertThat(summary.profitability().twrPercentage()).isEqualByComparingTo("1.2500");
+        assertThat(summary.profitability().twrReliable()).isFalse();
         assertThat(summary.allocations().getFirst().marketPriceReliable()).isFalse();
         assertThat(summary.positions().getFirst().marketPriceReliable()).isFalse();
         verify(quoteService, never()).getCurrentQuotes(any());

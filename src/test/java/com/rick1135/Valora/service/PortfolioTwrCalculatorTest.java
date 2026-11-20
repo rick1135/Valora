@@ -3,6 +3,8 @@ package com.rick1135.Valora.service;
 import com.rick1135.Valora.service.PortfolioTwrCalculator.DailyObservation;
 import com.rick1135.Valora.service.PortfolioTwrCalculator.DailyResult;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -77,16 +79,50 @@ class PortfolioTwrCalculatorTest {
     }
 
     @Test
-    void keepsFactorsAndQuotasPositiveAfterTotalLoss() {
+    void startsANewSegmentAfterTotalLossAndAnEmptyDay() {
         List<DailyResult> results = calculator.calculate(List.of(
                 day(0, "100", "100", "0"),
                 day(1, "0", "0", "0"),
-                day(2, "1", "100", "0")
+                day(2, "0", "0", "0"),
+                day(3, "50", "100", "0"),
+                day(4, "100", "0", "0")
         ));
 
-        assertThat(results.get(1).dailyReturnFactor()).isEqualTo(new BigDecimal("0.000000000001"));
-        assertThat(results.getLast().quota()).isEqualTo(new BigDecimal("0.000000000001"));
-        assertThat(percentage(results)).isEqualTo(new BigDecimal("-100.0000"));
+        assertThat(results.get(1).dailyReturnFactor()).isEqualByComparingTo("0");
+        assertThat(results.get(1).quota()).isEqualByComparingTo("0");
+        assertThat(results.get(2).dailyReturnFactor()).isEqualByComparingTo("1");
+        assertThat(results.get(2).quota()).isEqualByComparingTo("0");
+        assertThat(results.get(3).quota()).isEqualByComparingTo("0.5");
+        assertThat(calculator.calculatePeriodTwrPercentage(BigDecimal.ONE, results.get(1).quota()))
+                .isEqualByComparingTo("-100");
+        assertThat(percentage(results)).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void compoundsFiftyPercentGainAndLossAfterReentry() {
+        var results = calculator.calculate(List.of(day(0, "150", "100", "0"), day(1, "75", "0", "0")),
+                BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThat(percentage(results)).isEqualByComparingTo("-25");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"110, 110", "100, 120", "120, 100"})
+    void separatesSameDayInflowsAndOutflowsRegardlessOfNetFlow(String patrimony, String withdrawal) {
+        var results = calculator.calculate(List.of(
+                new DailyObservation(start, new BigDecimal(patrimony), BigDecimal.ZERO,
+                        new BigDecimal("100"), new BigDecimal(withdrawal), BigDecimal.ZERO, true)),
+                new BigDecimal("100"), BigDecimal.ONE);
+
+        assertThat(percentage(results)).isEqualByComparingTo("10");
+    }
+
+    @Test
+    void returnsNullWithoutAValidPeriodBaselineOrEnd() {
+        assertThat(calculator.calculatePeriodTwrPercentage(null, BigDecimal.ONE)).isNull();
+        assertThat(calculator.calculatePeriodTwrPercentage(BigDecimal.ONE, null)).isNull();
+        assertThat(calculator.calculatePeriodTwrPercentage(BigDecimal.ZERO, BigDecimal.ONE)).isNull();
+        assertThat(calculator.calculatePeriodTwrPercentage(BigDecimal.ONE.negate(), BigDecimal.ONE)).isNull();
     }
 
     private BigDecimal percentage(List<DailyResult> results) {
@@ -94,7 +130,8 @@ class PortfolioTwrCalculatorTest {
     }
 
     private DailyObservation day(int offset, String patrimony, String cashFlow, String provents) {
+        BigDecimal flow = new BigDecimal(cashFlow);
         return new DailyObservation(start.plusDays(offset), new BigDecimal(patrimony), BigDecimal.ZERO,
-                new BigDecimal(cashFlow), new BigDecimal(provents), true);
+                flow.max(BigDecimal.ZERO), flow.negate().max(BigDecimal.ZERO), new BigDecimal(provents), true);
     }
 }
