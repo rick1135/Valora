@@ -331,6 +331,19 @@ a {
   background: var(--green-soft);
 }
 
+.mini-chart .bar--h40 { --height: 40%; }
+.mini-chart .bar--h48 { --height: 48%; }
+.mini-chart .bar--h56 { --height: 56%; }
+.mini-chart .bar--h60 { --height: 60%; }
+.mini-chart .bar--h68 { --height: 68%; }
+.mini-chart .bar--h72 { --height: 72%; }
+.mini-chart .bar--h76 { --height: 76%; }
+.mini-chart .bar--h80 { --height: 80%; }
+.mini-chart .bar--h86 { --height: 86%; }
+.mini-chart .bar--h94 { --height: 94%; }
+.mini-chart .bar--h98 { --height: 98%; }
+.mini-chart .bar--h106 { --height: 106%; }
+
 .allocation-card {
   display: flex;
   flex-direction: column;

@@ -1,0 +1,13 @@
+{$VALORA_DOMAIN:localhost} {
+	@prometheus path /actuator/prometheus /actuator/prometheus/*
+	respond @prometheus 403
+
+	@docs path /swagger-ui* /v3/api-docs*
+	respond @docs 404
+
+	reverse_proxy app:8080 {
+		header_up -Forwarded
+		header_up -X-Forwarded-Prefix
+		header_up -X-Forwarded-Port
+	}
+}

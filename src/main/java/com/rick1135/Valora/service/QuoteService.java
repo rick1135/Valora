@@ -4,8 +4,11 @@ import com.rick1135.Valora.client.BrapiClient;
 import com.rick1135.Valora.dto.brapi.BrapiResponseDTO;
 import com.rick1135.Valora.dto.brapi.BrapiResultDTO;
 import com.rick1135.Valora.dto.response.QuoteDTO;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -28,6 +31,9 @@ public class QuoteService {
 
     private final BrapiClient brapiClient;
     private final RedisTemplate<String, Object> redisTemplate;
+
+    @Autowired(required = false)
+    private MeterRegistry meterRegistry;
 
     @Value("${brapi.token:}")
     private String brapiToken;
@@ -96,16 +102,20 @@ public class QuoteService {
     }
 
     private Map<String, QuoteDTO> fetchAndCacheMissingQuotes(List<String> missingTickers) {
-        if (brapiToken == null || brapiToken.isBlank()) {
-            log.warn("Token da Brapi nao configurado. Cotacoes indisponiveis para tickers={}", missingTickers);
-            return Map.of();
-        }
-
+        Timer.Sample sample = meterRegistry == null ? null : Timer.start(meterRegistry);
+        String outcome = "error";
         try {
+            if (brapiToken == null || brapiToken.isBlank()) {
+                log.warn("Token da Brapi nao configurado. Cotacoes indisponiveis para tickers={}", missingTickers);
+                outcome = "fallback";
+                return Map.of();
+            }
+
             String joinedTickers = String.join(",", missingTickers);
             BrapiResponseDTO response = brapiClient.getQuote(joinedTickers, brapiToken);
             if (response == null || response.results() == null || response.results().isEmpty()) {
                 log.warn("Cotacao invalida ou ausente retornada pela Brapi para tickers={}", missingTickers);
+                outcome = "fallback";
                 return Map.of();
             }
 
@@ -127,10 +137,16 @@ public class QuoteService {
                 log.warn("Cotacao invalida ou ausente retornada pela Brapi para tickers={}", unresolvedTickers);
             }
 
+            outcome = unresolvedTickers.isEmpty() ? "success" : "fallback";
             return fetchedQuotes;
         } catch (Exception exception) {
             log.error("Erro ao buscar cotacoes dos ativos tickers={}: {}", missingTickers, exception.getMessage());
             return Map.of();
+        } finally {
+            if (sample != null) {
+                sample.stop(meterRegistry.timer("valora.quotes.fetch.duration"));
+                meterRegistry.counter("valora.quotes.fetch.total", "outcome", outcome).increment();
+            }
         }
     }
 

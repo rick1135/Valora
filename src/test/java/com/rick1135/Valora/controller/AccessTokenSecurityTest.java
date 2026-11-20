@@ -23,6 +23,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -43,12 +44,15 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.HttpStatus.CREATED;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -128,6 +132,44 @@ class AccessTokenSecurityTest {
         mockMvc.perform(get("/conta.html")).andExpect(status().isOk());
         mockMvc.perform(get("/conta.js")).andExpect(status().isOk());
         mockMvc.perform(get("/conta-page.css")).andExpect(status().isOk());
+    }
+
+    @Test
+    void publicResponsesIncludeSecurityHeaders() throws Exception {
+        mockMvc.perform(get("/index.html").secure(true))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Security-Policy", "default-src 'self'; script-src 'self'; "
+                        + "style-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(header().string("X-Frame-Options", "DENY"))
+                .andExpect(header().string("Referrer-Policy", "strict-origin-when-cross-origin"))
+                .andExpect(header().doesNotExist("Strict-Transport-Security"));
+    }
+
+    @Test
+    void readinessProbeIsPublic() throws Exception {
+        mockMvc.perform(get("/actuator/health/readiness"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void prometheusRequiresAdminRole() throws Exception {
+        mockMvc.perform(get("/actuator/prometheus").with(user("user@valora.dev").roles("USER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/actuator/prometheus").with(user("admin@valora.dev").roles("ADMIN")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void corsPreflightAllowsIdempotencyKey() throws Exception {
+        String origin = "http://localhost:5173";
+        mockMvc.perform(options("/assets")
+                        .header(HttpHeaders.ORIGIN, origin)
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "Idempotency-Key"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, origin))
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, containsString("Idempotency-Key")));
     }
 
     @Test
@@ -436,6 +478,10 @@ class AccessTokenSecurityTest {
 
     @RestController
     static class TestControllers {
+        @GetMapping({"/actuator/health/readiness", "/actuator/prometheus"})
+        void actuatorEndpoint() {
+        }
+
         @GetMapping("/assets")
         void assets() {
         }
