@@ -19,11 +19,24 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Validate operational files
+        run: |
+          test -s Dockerfile
+          test -s docker-compose.prod.yml
+          test -s Caddyfile
+          test -s scripts/backup-postgres.sh
+          bash -n scripts/backup-postgres.sh
       - name: Make Maven wrapper executable
         run: chmod +x mvnw
       - name: Run test suite
         run: ./mvnw -B test
       - name: Check JavaScript syntax
-        run: for f in src/main/resources/static/*.js; do node --check "$f"; done
+        run: |
+          while IFS= read -r -d '' f; do
+            node --check "$f"
+          done < <(find src/main/resources/static -type f -name '*.js' -print0)
       - name: Reject unsafe HTML injection APIs
-        run: if grep -rnE "innerHTML|outerHTML|insertAdjacentHTML" src/main/resources/static/*.js; then exit 1; fi
+        run: |
+          if find src/main/resources/static -type f -name '*.js' -exec grep -nE "innerHTML|outerHTML|insertAdjacentHTML" {} +; then
+            exit 1
+          fi

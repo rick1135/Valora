@@ -1,3 +1,9 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -15,20 +21,24 @@ services:
       retries: 5
     cpus: 1.0
     mem_limit: 1g
+    logging: *default-logging
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     volumes: [redis_data:/data]
     networks: [valora-net]
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
     cpus: 0.5
     mem_limit: 512m
+    logging: *default-logging
     restart: unless-stopped
 
   app:
@@ -58,14 +68,18 @@ services:
       timeout: 5s
       start_period: 45s
       retries: 3
+    stop_grace_period: 45s
     cpus: 2.0
     mem_limit: 2g
     read_only: true
     tmpfs: [/tmp]
+    logging: *default-logging
     restart: unless-stopped
 
   caddy:
     image: caddy:2-alpine
+    environment:
+      VALORA_DOMAIN: ${VALORA_DOMAIN:?VALORA_DOMAIN is required}
     ports:
       - "80:80"
       - "443:443"
@@ -77,6 +91,7 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    logging: *default-logging
     restart: unless-stopped
 
 networks:

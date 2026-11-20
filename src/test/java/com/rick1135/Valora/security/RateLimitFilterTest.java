@@ -130,9 +130,36 @@ class RateLimitFilterTest {
     }
 
     @Test
-    void missingRedisTemplateBypassesRateLimitingEvenWhenFailClosed() throws Exception {
-        properties.setFailOpen(false);
+    void missingRedisTemplateBypassesRateLimitingWhenFailOpen() throws Exception {
+        properties.setFailOpen(true);
         assertBypass(new RateLimitFilter(null, properties, objectMapper), request("POST", "/auth/login"));
+    }
+
+    @Test
+    void missingRedisTemplateReturns503WhenFailClosed() throws Exception {
+        properties.setFailOpen(false);
+        var request = request("POST", "/auth/login");
+
+        new RateLimitFilter(null, properties, objectMapper).doFilter(request, response, chain);
+
+        verifyNoInteractions(chain);
+        assertError(HttpStatus.SERVICE_UNAVAILABLE, request.getRequestURI());
+    }
+
+    @Test
+    void forwardedHeaderFilterUsesProxyClientIpWhenUntrustedForwardedIsStripped() throws Exception {
+        var forwardedFilter = new org.springframework.web.filter.ForwardedHeaderFilter();
+        var request = request("POST", "/auth/login");
+        request.setRemoteAddr("172.18.0.10");
+        request.addHeader("X-Forwarded-For", "198.51.100.77");
+        stubCounter("ratelimit:auth:ip:198.51.100.77", 16, 45);
+
+        forwardedFilter.doFilter(request, response, (wrappedReq, wrappedRes) ->
+                filter.doFilter(wrappedReq, wrappedRes, chain));
+
+        verifyNoInteractions(chain);
+        assertThat(response.getHeader(HttpHeaders.RETRY_AFTER)).isEqualTo("45");
+        assertError(HttpStatus.TOO_MANY_REQUESTS, "/auth/login");
     }
 
     @Test

@@ -57,7 +57,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        if (!properties.isEnabled() || redisTemplate == null || HttpMethod.OPTIONS.matches(request.getMethod())) {
+        if (!properties.isEnabled() || HttpMethod.OPTIONS.matches(request.getMethod())) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -65,6 +65,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
         String path = UrlPathHelper.defaultInstance.getPathWithinApplication(request);
         if (EXCLUDED_PATHS.contains(path) || path.endsWith(".html") || path.endsWith(".css") || path.endsWith(".js")) {
             filterChain.doFilter(request, response);
+            return;
+        }
+
+        if (redisTemplate == null) {
+            if (properties.isFailOpen()) {
+                filterChain.doFilter(request, response);
+            } else {
+                writeError(request, response, HttpStatus.SERVICE_UNAVAILABLE, "Servico temporariamente indisponivel.");
+            }
             return;
         }
 

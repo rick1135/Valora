@@ -21,6 +21,8 @@ class ProdProfileConfigurationTest {
         assertThat(properties.getProperty("management.endpoints.web.exposure.include"))
                 .isEqualTo("health,info,prometheus");
         assertThat(properties.getProperty("management.endpoint.health.probes.enabled")).isEqualTo(true);
+        assertThat(properties.getProperty("management.endpoint.health.show-details")).isEqualTo("when_authorized");
+        assertThat(properties.getProperty("management.endpoint.health.roles")).isEqualTo("ADMIN");
         assertThat(properties.getProperty("server.forward-headers-strategy")).isEqualTo("framework");
         assertThat(properties.getProperty("server.shutdown")).isEqualTo("graceful");
         assertThat(properties.getProperty("security.headers.hsts-enabled"))
