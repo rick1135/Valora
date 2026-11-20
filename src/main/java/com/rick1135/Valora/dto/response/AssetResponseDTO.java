@@ -18,10 +18,17 @@ public record AssetResponseDTO(
         String issuer,
         LocalDate expirationDate,
         FixedIncomeRateType rateType,
-        BigDecimal spreadRate
+        BigDecimal spreadRate,
+        boolean persisted
 ) {
     public AssetResponseDTO(UUID id, String ticker, String name, AssetCategory category, FixedIncomeIndexer indexer,
                             BigDecimal annualRate, String issuer, LocalDate expirationDate) {
-        this(id, ticker, name, category, indexer, annualRate, issuer, expirationDate, null, null);
+        this(id, ticker, name, category, indexer, annualRate, issuer, expirationDate, null, null, true);
+    }
+
+    public AssetResponseDTO(UUID id, String ticker, String name, AssetCategory category, FixedIncomeIndexer indexer,
+                            BigDecimal annualRate, String issuer, LocalDate expirationDate,
+                            FixedIncomeRateType rateType, BigDecimal spreadRate) {
+        this(id, ticker, name, category, indexer, annualRate, issuer, expirationDate, rateType, spreadRate, true);
     }
 }

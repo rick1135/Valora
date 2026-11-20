@@ -156,6 +156,7 @@ public class SecurityConfigurations {
                                 "/actuator/health/readiness", "/actuator/info").permitAll()
                         .requestMatchers("/actuator/prometheus", "/actuator/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/assets").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/assets/sync").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/provents", "/provents/sync").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/benchmarks/sync").hasRole("ADMIN")
                         .anyRequest().authenticated())

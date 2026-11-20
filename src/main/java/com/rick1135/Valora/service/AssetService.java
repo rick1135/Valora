@@ -1,6 +1,7 @@
 package com.rick1135.Valora.service;
 
 import com.rick1135.Valora.client.BrapiClient;
+import com.rick1135.Valora.dto.brapi.BrapiListedAssetDTO;
 import com.rick1135.Valora.dto.brapi.BrapiResponseDTO;
 import com.rick1135.Valora.dto.brapi.BrapiResultDTO;
 import com.rick1135.Valora.dto.request.AssetImportRequestDTO;
@@ -17,6 +18,8 @@ import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.mapper.AssetMapper;
 import com.rick1135.Valora.repository.AssetRepository;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -32,22 +35,41 @@ import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.text.Normalizer;
 import java.time.Clock;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 @Service
 public class AssetService {
+    private static final Logger log = LoggerFactory.getLogger(AssetService.class);
     private static final String REQUIRED_FIXED_INCOME_FIELDS =
             "Indexador, taxa anual, emissor e data de vencimento sao obrigatorios para ativos de renda fixa.";
     private static final Pattern BRAPI_TICKER = Pattern.compile("^[A-Z0-9]{4,12}$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern FRACTIONAL_TICKER = Pattern.compile("^[A-Z]{4}[0-9]{1,2}F$", Pattern.CASE_INSENSITIVE);
+    private static final List<String> ETF_NAME_MARKERS =
+            List.of("ETF", "ISHARES", "INDEX", "INDICE", "S&P", "NASDAQ", "MSCI", "HASH", "IMA-B", "BTC");
+    private static final Set<String> KNOWN_ETF_TICKERS = Set.of("SPXB11", "BOVA11", "IVVB11", "SMAL11");
+    private static final long SEARCH_CACHE_TTL_NANOS = Duration.ofMinutes(15).toNanos();
+    private static final int SEARCH_CACHE_CAPACITY = 256;
 
     private final AssetRepository assetRepository;
     private final AssetMapper assetMapper;
     private final MarketCalendar marketCalendar;
-    private final BrapiClient brapiClient;
+    private final @Nullable BrapiClient brapiClient;
     private final String brapiToken;
+    private final ConcurrentHashMap<String, CachedSuggestions> externalSearchCache = new ConcurrentHashMap<>();
+
+    private record CachedSuggestions(List<BrapiListedAssetDTO> stocks, long fetchedAt) {
+        boolean isExpired(long now) {
+            return now - fetchedAt >= SEARCH_CACHE_TTL_NANOS;
+        }
+    }
 
     @Autowired
     public AssetService(AssetRepository assetRepository, AssetMapper assetMapper, MarketCalendar marketCalendar,
@@ -191,13 +213,69 @@ public class AssetService {
 
     @Transactional(readOnly = true)
     public List<AssetResponseDTO> searchAssets(@Nullable User user, String ticker) {
-        String normalizedTicker = normalizeTicker(ticker);
-        var assets = user == null ? assetRepository.findByTickerContainingIgnoreCase(normalizedTicker)
-                : assetRepository.searchVisibleToUser(user, normalizedTicker);
-        return assets
-                .stream()
-                .map(assetMapper::toResponse)
-                .toList();
+        return searchAssets(user, ticker, true);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AssetResponseDTO> searchAssets(@Nullable User user, String query, boolean includeExternal) {
+        String normalizedQuery = normalizeTicker(query);
+        var assets = user == null ? assetRepository.findByTickerContainingIgnoreCase(normalizedQuery)
+                : assetRepository.searchVisibleToUser(user, normalizedQuery);
+        List<AssetResponseDTO> localResults = assets.stream().map(assetMapper::toResponse).toList();
+        if (!includeExternal || query.trim().length() < 2 || brapiClient == null || !StringUtils.hasText(brapiToken)) {
+            return localResults;
+        }
+
+        Set<String> seen = new HashSet<>();
+        localResults.forEach(asset -> seen.add(normalizeTicker(asset.ticker())));
+        if (seen.contains(normalizedQuery) && localResults.size() >= 10) {
+            return localResults;
+        }
+
+        List<BrapiListedAssetDTO> suggestions;
+        try {
+            suggestions = getExternalSuggestions(brapiClient, normalizedQuery);
+        } catch (RestClientException exception) {
+            log.warn("Falha ao buscar sugestoes de ativos na BRAPI ({}).", exception.getClass().getSimpleName());
+            return localResults;
+        }
+
+        List<AssetResponseDTO> results = new ArrayList<>(localResults);
+        for (BrapiListedAssetDTO item : suggestions) {
+            if (item == null || !StringUtils.hasText(item.stock())) {
+                continue;
+            }
+            String ticker = normalizeTicker(item.stock());
+            if (isValidCatalogTicker(ticker) && seen.add(ticker)) {
+                String name = catalogName(ticker, item.name());
+                AssetCategory category = inferCategoryForCatalog(ticker, name, item.type());
+                results.add(new AssetResponseDTO(null, ticker, name, category, null, null, null, null, null, null, false));
+            }
+        }
+        return List.copyOf(results);
+    }
+
+    private List<BrapiListedAssetDTO> getExternalSuggestions(BrapiClient client, String query) {
+        CachedSuggestions cached = externalSearchCache.get(query);
+        if (cached != null && !cached.isExpired(System.nanoTime())) {
+            return cached.stocks();
+        }
+        var response = client.listQuotes(query, 15, 1, brapiToken);
+        if (response == null || response.stocks() == null) {
+            throw new RestClientException("Resposta da BRAPI sem lista de ativos.");
+        }
+        long now = System.nanoTime();
+        var suggestions = new CachedSuggestions(response.stocks(), now);
+        synchronized (externalSearchCache) {
+            if (externalSearchCache.size() >= SEARCH_CACHE_CAPACITY && !externalSearchCache.containsKey(query)) {
+                externalSearchCache.values().removeIf(entry -> entry.isExpired(now));
+                if (externalSearchCache.size() >= SEARCH_CACHE_CAPACITY) {
+                    externalSearchCache.remove(externalSearchCache.keySet().iterator().next());
+                }
+            }
+            externalSearchCache.put(query, suggestions);
+        }
+        return suggestions.stocks();
     }
 
     private BrapiResultDTO findBrapiQuote(String ticker) {
@@ -223,21 +301,44 @@ public class AssetService {
     }
 
     private AssetCategory inferCategory(String ticker, String name) {
+        return inferCategory(ticker, name, null);
+    }
+
+    boolean isValidCatalogTicker(String ticker) {
+        return ticker != null && BRAPI_TICKER.matcher(ticker).matches()
+                && !FRACTIONAL_TICKER.matcher(ticker).matches();
+    }
+
+    AssetCategory inferCategoryForCatalog(String ticker, String name, @Nullable String brapiType) {
+        return inferCategory(ticker, name, brapiType);
+    }
+
+    private AssetCategory inferCategory(String ticker, String name, @Nullable String brapiType) {
+        if ("stock".equalsIgnoreCase(brapiType) || "bdr".equalsIgnoreCase(brapiType)) {
+            return AssetCategory.ACOES;
+        }
         String normalizedName = Normalizer.normalize(name, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}+", "").toUpperCase(Locale.ROOT);
-        if (normalizedName.contains("ETF") || normalizedName.contains("ISHARES") || normalizedName.contains("INDEX")
-                || normalizedName.contains("INDICE")) {
+        if (KNOWN_ETF_TICKERS.contains(ticker) || ETF_NAME_MARKERS.stream().anyMatch(normalizedName::contains)) {
             return AssetCategory.ETF;
         }
-        if (ticker.endsWith("11") && (normalizedName.contains("FII") || normalizedName.contains("IMOB"))) {
+        if ("fund".equalsIgnoreCase(brapiType) || normalizedName.contains("FII") || normalizedName.contains("IMOB")) {
             return AssetCategory.FII;
         }
         return AssetCategory.ACOES;
     }
 
-    private boolean isUniqueViolation(DataIntegrityViolationException exception) {
-        return exception.getMostSpecificCause() instanceof SQLException sqlException
-                && "23505".equals(sqlException.getSQLState());
+    static boolean isUniqueViolation(DataIntegrityViolationException exception) {
+        for (Throwable cause = exception.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sqlException) {
+                for (SQLException sql = sqlException; sql != null; sql = sql.getNextException()) {
+                    if ("23505".equals(sql.getSQLState())) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private void validateRates(AssetRequestDTO request, FixedIncomeRateType rateType) {
@@ -293,7 +394,11 @@ public class AssetService {
         }
     }
 
-    private String normalizeTicker(String ticker) {
+    static String catalogName(String ticker, @Nullable String name) {
+        return StringUtils.hasText(name) ? name.strip() : ticker;
+    }
+
+    static String normalizeTicker(String ticker) {
         return ticker.trim().toUpperCase(Locale.ROOT);
     }
 

@@ -3,13 +3,17 @@ package com.rick1135.Valora.controller;
 import com.rick1135.Valora.dto.request.AssetImportRequestDTO;
 import com.rick1135.Valora.dto.request.AssetRequestDTO;
 import com.rick1135.Valora.dto.request.FixedIncomeAssetRequestDTO;
+import com.rick1135.Valora.dto.response.AssetCatalogSyncResultDTO;
 import com.rick1135.Valora.dto.response.AssetResponseDTO;
 import com.rick1135.Valora.entity.User;
+import com.rick1135.Valora.service.AssetCatalogSyncService;
 import com.rick1135.Valora.service.AssetService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import org.jspecify.annotations.Nullable;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
@@ -22,9 +26,16 @@ import java.util.List;
 @RequestMapping("/assets")
 public class AssetController {
     private final AssetService assetService;
+    private final @Nullable AssetCatalogSyncService assetCatalogSyncService;
 
     public AssetController(AssetService assetService) {
+        this(assetService, null);
+    }
+
+    @Autowired
+    public AssetController(AssetService assetService, @Nullable AssetCatalogSyncService assetCatalogSyncService) {
         this.assetService = assetService;
+        this.assetCatalogSyncService = assetCatalogSyncService;
     }
 
     @PostMapping
@@ -36,6 +47,14 @@ public class AssetController {
     @PostMapping("/import")
     public ResponseEntity<AssetResponseDTO> importAsset(@Valid @RequestBody AssetImportRequestDTO request) {
         return ResponseEntity.ok(assetService.importAssetFromBrapi(request));
+    }
+
+    @PostMapping("/sync")
+    public ResponseEntity<AssetCatalogSyncResultDTO> syncAssets() {
+        AssetCatalogSyncResultDTO result = assetCatalogSyncService == null
+                ? new AssetCatalogSyncResultDTO(0, 0, 0)
+                : assetCatalogSyncService.syncB3Catalog();
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping("/fixed-income")
@@ -60,8 +79,9 @@ public class AssetController {
     @GetMapping("/search")
     public ResponseEntity<List<AssetResponseDTO>> searchAssets(
             @AuthenticationPrincipal User user,
-            @RequestParam @NotBlank(message = "ticker e obrigatorio.") String ticker
+            @RequestParam @NotBlank(message = "ticker e obrigatorio.") String ticker,
+            @RequestParam(defaultValue = "true") boolean includeExternal
     ) {
-        return ResponseEntity.ok(assetService.searchAssets(user, ticker));
+        return ResponseEntity.ok(assetService.searchAssets(user, ticker, includeExternal));
     }
 }

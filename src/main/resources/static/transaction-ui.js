@@ -166,6 +166,24 @@
     state.elements.quantityInput.focus();
   }
 
+  async function chooseAsset(asset) {
+    if (asset.persisted === false || !asset.id) {
+      setStatus(`Importando ${asset.ticker} da B3...`, "info");
+      try {
+        const importedAsset = await getApi().request("/assets/import", {
+          method: "POST",
+          body: { ticker: asset.ticker },
+        });
+        selectAsset(importedAsset);
+        setStatus("Ativo importado da B3 com sucesso.", "success");
+      } catch (error) {
+        setStatus(extractErrorMessage(error), "error");
+      }
+      return;
+    }
+    selectAsset(asset);
+  }
+
   function clearSelectedAsset(clearInput = false) {
     state.selectedAsset = null;
     updateSelectedAssetView();
@@ -232,6 +250,7 @@
       const ticker = createEl("span", "valora-tx-suggestion__ticker", asset.ticker || "");
       const name = createEl("span", "valora-tx-suggestion__name", asset.name || "");
       main.append(ticker, name);
+      if (asset.persisted === false) main.append(createEl("span", "valora-tx-suggestion__badge", "B3 · Importar"));
 
       const categoryLabel = CATEGORY_LABELS[asset.category] || asset.category || "";
       item.append(main);
@@ -241,7 +260,7 @@
 
       item.addEventListener("mousedown", (event) => {
         event.preventDefault();
-        selectAsset(asset);
+        chooseAsset(asset);
       });
 
       suggestionsList.append(item);
@@ -400,7 +419,7 @@
       event.preventDefault();
       const chosen = state.suggestions[state.activeIndex];
       if (chosen) {
-        selectAsset(chosen);
+        chooseAsset(chosen);
       }
     } else if (event.key === "Escape") {
       event.stopPropagation();

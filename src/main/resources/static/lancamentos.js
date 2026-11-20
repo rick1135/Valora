@@ -82,6 +82,30 @@
       warning.textContent = "Estes ativos precisam ser cadastrados ou importados antes da importação.";
       preview.append(warning);
       appendImportList(preview, "Ativos ausentes", missing);
+      const importMissingButton = document.createElement("button");
+      importMissingButton.className = "button button--ghost";
+      importMissingButton.type = "button";
+      importMissingButton.textContent = "Importar ativos ausentes da B3";
+      importMissingButton.addEventListener("click", async () => {
+        importMissingButton.disabled = true;
+        setImportStatus("Importando ativos da B3...", "info");
+        const imported = [];
+        const failures = [];
+        for (const ticker of missing) {
+          try {
+            await api.request("/assets/import", { method: "POST", body: { ticker } });
+            imported.push(ticker);
+          } catch (error) {
+            failures.push({ ticker, message: error?.message || "Falha na importação." });
+          }
+        }
+        const summary = [`${imported.length} ativo(s) importado(s).`];
+        if (failures.length) summary.push(`Falhas: ${failures.map((item) => `${item.ticker} (${item.message})`).join("; ")}`);
+        setImportStatus(summary.join(" "), failures.length ? "error" : "success");
+        if (imported.length) importForm.requestSubmit();
+        else importMissingButton.disabled = false;
+      });
+      preview.append(importMissingButton);
     }
     const errors = Array.isArray(result.errors) ? result.errors : [];
     if (errors.length) appendImportList(preview, "Erros encontrados", errors, (item) => `Linha ${item.lineNumber ?? item.line ?? item.row ?? "?"}: ${item.message || "Erro de validação"}`);

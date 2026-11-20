@@ -355,7 +355,7 @@
     if (!Array.isArray(assets) || assets.length === 0) {
       const emptyLi = createEl("li");
       const msg = createEl("div", "metas-suggestion-meta", "Nenhum ativo encontrado.");
-      msg.style.padding = "8px 10px";
+      msg.classList.add("metas-suggestion-empty");
       emptyLi.append(msg);
       list.replaceChildren(emptyLi);
       list.hidden = false;
@@ -370,10 +370,27 @@
         createEl("strong", "", asset.ticker),
         createEl("span", "metas-suggestion-meta", `${asset.name || ""} · ${getCategoryLabel(asset.category)}`)
       );
-      btn.addEventListener("click", () => {
-        addAssetTarget(asset);
-        input.value = "";
-        hideAssetSuggestions();
+      if (asset.persisted === false || !asset.id) {
+        btn.append(createEl("span", "metas-suggestion-badge", "B3 · Importar"));
+      }
+      if (asset.persisted === false || !asset.id) {
+        btn.classList.add("metas-suggestion-item--import");
+      }
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          const selectedAsset = asset.persisted === false || !asset.id
+            ? await apiRequest("/assets/import", { method: "POST", body: { ticker: asset.ticker } })
+            : asset;
+          addAssetTarget(selectedAsset);
+          input.value = "";
+          hideAssetSuggestions();
+          setPageError("");
+        } catch (error) {
+          btn.disabled = false;
+          const message = error instanceof Error ? error.message : "Não foi possível importar o ativo da B3.";
+          setPageError(`Não foi possível adicionar o ativo: ${message}`);
+        }
       });
       li.append(btn);
       return li;

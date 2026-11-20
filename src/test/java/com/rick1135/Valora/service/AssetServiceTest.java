@@ -1,6 +1,8 @@
 package com.rick1135.Valora.service;
 
 import com.rick1135.Valora.client.BrapiClient;
+import com.rick1135.Valora.dto.brapi.BrapiListedAssetDTO;
+import com.rick1135.Valora.dto.brapi.BrapiQuoteListResponseDTO;
 import com.rick1135.Valora.dto.brapi.BrapiResponseDTO;
 import com.rick1135.Valora.dto.brapi.BrapiResultDTO;
 import com.rick1135.Valora.dto.request.AssetImportRequestDTO;
@@ -53,8 +55,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -356,6 +360,75 @@ class AssetServiceTest {
 
         assertThat(assetService.getAllAssets(user, 0, 20, "ticker", "asc")).containsExactly(response);
         assertThat(assetService.searchAssets(user, " rf ")).containsExactly(response);
+    }
+
+    @Test
+    void searchCombinesLocalAndExternalAssetsAndCachesSuggestionsWithoutSaving() {
+        User user = new User();
+        UUID localId = UUID.randomUUID();
+        Asset local = new Asset();
+        local.setId(localId);
+        local.setTicker("ITSA4");
+        local.setName("Itausa");
+        local.setCategory(AssetCategory.ACOES);
+        AssetResponseDTO localResponse = new AssetResponseDTO(localId, "ITSA4", "Itausa",
+                AssetCategory.ACOES, null, null, null, null);
+        when(assetRepository.searchVisibleToUser(user, "ITSA4")).thenReturn(List.of(local));
+        when(brapiClient.listQuotes("ITSA4", 15, 1, "token")).thenReturn(new BrapiQuoteListResponseDTO(List.of(
+                new BrapiListedAssetDTO("itsa4", "Itausa", "stock"),
+                new BrapiListedAssetDTO("ITSA4F", "Itausa fracionario", "stock"),
+                new BrapiListedAssetDTO("IT$A4", "Invalido", "stock"),
+                new BrapiListedAssetDTO(" spxb11 ", "S&P 500", "fund"),
+                new BrapiListedAssetDTO("SPXB11", "ETF duplicado", "fund")
+        ), 1, 1, false));
+
+        AssetService service = configuredBrapiService();
+        var result = service.searchAssets(user, " itsa4 ");
+
+        assertThat(result).hasSize(2);
+        assertThat(result.getFirst()).isEqualTo(localResponse);
+        assertThat(result.getFirst().persisted()).isTrue();
+        assertThat(result.getLast()).isEqualTo(new AssetResponseDTO(null, "SPXB11", "S&P 500",
+                AssetCategory.ETF, null, null, null, null, null, null, false));
+        assertThat(service.searchAssets(user, "ITSA4")).isEqualTo(result);
+        assertThat(service.searchAssets(user, "ITSA4", false)).containsExactly(localResponse);
+        verify(brapiClient).listQuotes("ITSA4", 15, 1, "token");
+        verify(assetRepository, times(3)).searchVisibleToUser(user, "ITSA4");
+        verifyNoMoreInteractions(assetRepository, brapiClient);
+    }
+
+    @Test
+    void searchReturnsLocalResultsWhenBrapiFails() {
+        UUID localId = UUID.randomUUID();
+        Asset local = new Asset();
+        local.setId(localId);
+        local.setTicker("ITSA4");
+        local.setName("Itausa");
+        local.setCategory(AssetCategory.ACOES);
+        AssetResponseDTO localResponse = new AssetResponseDTO(localId, "ITSA4", "Itausa",
+                AssetCategory.ACOES, null, null, null, null);
+        when(assetRepository.findByTickerContainingIgnoreCase("IT")).thenReturn(List.of(local));
+        when(brapiClient.listQuotes("IT", 15, 1, "token"))
+                .thenThrow(new RestClientException("upstream unavailable"))
+                .thenReturn(new BrapiQuoteListResponseDTO(null, null, null, null));
+
+        AssetService service = configuredBrapiService();
+        assertThat(service.searchAssets("it")).containsExactly(localResponse);
+        assertThat(service.searchAssets("it")).containsExactly(localResponse);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "ITSA4, Itausa, STOCK, ACOES",
+            "AAPL34, Apple, BDR, ACOES",
+            "SPXB11, S&P 500, fund, ETF",
+            "SPXB11, Fundo XP, FUND, ETF",
+            "ABCD11, Fundo de Índice Imobiliário, , ETF",
+            "HGLG11, Fundo Imobiliario, fund, FII",
+            "KNRI11, FDO INV IMOB, , FII"
+    })
+    void classifiesCatalogAssets(String ticker, String name, String type, AssetCategory category) {
+        assertThat(assetService.inferCategoryForCatalog(ticker, name, type)).isEqualTo(category);
     }
 
     @Test
