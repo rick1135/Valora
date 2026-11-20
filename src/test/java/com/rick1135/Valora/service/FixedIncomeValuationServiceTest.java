@@ -16,6 +16,8 @@ import com.rick1135.Valora.repository.TransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -73,6 +75,7 @@ class FixedIncomeValuationServiceTest {
         assertThat(result.reliable()).isTrue();
         assertThat(result.currentTotalValue()).isEqualByComparingTo("2100.00000000");
         assertThat(result.currentUnitPrice()).isEqualByComparingTo("1050.00000000");
+        assertThat(result.valuedThrough()).isNull();
     }
 
     @Test
@@ -162,8 +165,10 @@ class FixedIncomeValuationServiceTest {
         assertThat(results.get(multipleLots).reliable()).isTrue();
         assertThat(results.get(multipleLots).currentTotalValue()).isEqualByComparingTo("1901.75486603");
         assertThat(results.get(multipleLots).currentUnitPrice()).isEqualByComparingTo("950.87743302");
+        assertThat(results.get(multipleLots).valuedThrough()).isEqualTo(secondOpenDay);
         assertThat(results.get(singleLot).reliable()).isTrue();
         assertThat(results.get(singleLot).currentTotalValue()).isEqualByComparingTo("1000.55000000");
+        assertThat(results.get(singleLot).valuedThrough()).isEqualTo(secondOpenDay);
         verify(benchmarkRepository).findByTicker("CDI");
         verify(benchmarkValueRepository).findByBenchmarkInRange(cdi, firstOpenDay, secondOpenDay);
         verifyNoMoreInteractions(benchmarkRepository, benchmarkValueRepository);
@@ -182,22 +187,46 @@ class FixedIncomeValuationServiceTest {
 
         assertThat(result.reliable()).isTrue();
         assertThat(result.currentTotalValue()).isEqualByComparingTo("1001.11221150");
+        assertThat(result.valuedThrough()).isEqualTo(end);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = FixedIncomeIndexer.class, names = {"CDI", "SELIC"})
+    void valuatePositionShouldReportEarliestLotCoverageWhenD1IsPending(FixedIncomeIndexer indexer) {
+        LocalDate lastCoveredDate = LocalDate.of(2025, 4, 16);
+        var calendar = new MarketCalendar(Clock.fixed(Instant.parse("2025-04-22T15:00:00Z"), ZoneOffset.UTC));
+        var service = new FixedIncomeValuationService(new FixedIncomeYieldCalculator(calendar), calendar,
+                transactionRepository, new PostFixedIncomeYieldCalculator(calendar), benchmarkRepository, benchmarkValueRepository);
+        Asset asset = postFixedAsset(indexer, FixedIncomeRateType.PERCENTAGE_OF_INDEX, "100", LocalDate.of(2026, 1, 1));
+        Position position = position(asset, "2", "1000.00", lastCoveredDate);
+        List<Transaction> transactions = List.of(
+                tx(asset, TransactionType.BUY, "1", "1000.00", Instant.parse("2025-04-16T15:00:00Z")),
+                tx(asset, TransactionType.BUY, "1", "1000.00", Instant.parse("2025-04-22T15:00:00Z"))
+        );
+        Benchmark benchmark = benchmark(indexer);
+        when(benchmarkValueRepository.findByBenchmarkInRange(benchmark, lastCoveredDate, calendar.today().minusDays(1)))
+                .thenReturn(List.of(rate(benchmark, lastCoveredDate, "0.055")));
+
+        var result = service.valuatePosition(position, transactions);
+
+        assertThat(result.reliable()).isTrue();
+        assertThat(result.currentTotalValue()).isEqualByComparingTo("2000.55000000");
+        assertThat(result.valuedThrough()).isEqualTo(lastCoveredDate);
     }
 
     @Test
-    void valuatePositionShouldApplyTreasuryIpcaAndSpread() {
+    void valuatePositionShouldFallBackForIpcaWithoutQueryingBenchmarks() {
         LocalDate start = LocalDate.of(2025, 11, 17);
-        LocalDate referenceMonth = start.withDayOfMonth(1);
         LocalDate expiration = LocalDate.of(2025, 12, 1);
         Asset asset = postFixedAsset(FixedIncomeIndexer.IPCA, FixedIncomeRateType.SPREAD, "6.5", expiration);
-        Benchmark ipca = benchmark(FixedIncomeIndexer.IPCA);
-        when(benchmarkValueRepository.findByBenchmarkInRange(ipca, referenceMonth, expiration.minusDays(1)))
-                .thenReturn(List.of(rate(ipca, referenceMonth, "0.4")));
 
-        var result = valuationServiceWithBenchmarks().valuatePosition(position(asset, "1", "1000.00", start), List.of());
+        var result = valuationServiceWithBenchmarks().valuatePosition(position(asset, "2", "1000.00", start), List.of());
 
-        assertThat(result.reliable()).isTrue();
-        assertThat(result.currentTotalValue()).isEqualByComparingTo("1004.14863929");
+        assertThat(result.reliable()).isFalse();
+        assertThat(result.currentTotalValue()).isEqualByComparingTo("2000.00000000");
+        assertThat(result.currentUnitPrice()).isEqualByComparingTo("1000.00000000");
+        assertThat(result.valuedThrough()).isNull();
+        verifyNoInteractions(benchmarkRepository, benchmarkValueRepository);
     }
 
     @Test
@@ -219,6 +248,7 @@ class FixedIncomeValuationServiceTest {
         assertThat(result.reliable()).isFalse();
         assertThat(result.currentTotalValue()).isEqualByComparingTo("1900.00000000");
         assertThat(result.currentUnitPrice()).isEqualByComparingTo("950.00000000");
+        assertThat(result.valuedThrough()).isNull();
     }
 
     @Test

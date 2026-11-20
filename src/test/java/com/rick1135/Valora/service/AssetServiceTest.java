@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mapstruct.factory.Mappers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -48,9 +50,11 @@ class AssetServiceTest {
     @InjectMocks
     private AssetService assetService;
 
-    @Test
-    void createAssetNormalizesTickerAndSaves() {
-        AssetRequestDTO request = new AssetRequestDTO(" petr4 ", "Petrobras", AssetCategory.ACOES, null, null, null, null);
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = "  ")
+    void createAssetNormalizesTickerAndSaves(String issuer) {
+        AssetRequestDTO request = new AssetRequestDTO(" petr4 ", "Petrobras", AssetCategory.ACOES, null, null, issuer, null);
         when(assetRepository.findByTickerIgnoreCase("PETR4")).thenReturn(Optional.empty());
 
         Asset mappedAsset = new Asset();
@@ -149,7 +153,7 @@ class AssetServiceTest {
     }
 
     @Test
-    void createAssetPersistsFixedIncomeSuccessfully() {
+    void createAssetPersistsLegacyCdiWithoutRateType() {
         java.math.BigDecimal rate = new java.math.BigDecimal("110.0000");
         java.time.LocalDate expiration = java.time.LocalDate.now().plusDays(365);
         AssetRequestDTO request = new AssetRequestDTO("CDB", "CDB BMG", AssetCategory.RENDA_FIXA, com.rick1135.Valora.entity.FixedIncomeIndexer.CDI, rate, "Banco BMG", expiration);
@@ -187,11 +191,12 @@ class AssetServiceTest {
         assertThat(persisted.getTicker()).isEqualTo("CDB");
         assertThat(persisted.getIndexer()).isEqualTo(com.rick1135.Valora.entity.FixedIncomeIndexer.CDI);
         assertThat(persisted.getAnnualRate()).isEqualTo(rate);
-        assertThat(persisted.getRateType()).isEqualTo(FixedIncomeRateType.PERCENTAGE_OF_INDEX);
+        assertThat(persisted.getRateType()).isNull();
         assertThat(persisted.getIssuer()).isEqualTo("Banco BMG");
         assertThat(persisted.getExpirationDate()).isEqualTo(expiration);
         assertThat(response.indexer()).isEqualTo(com.rick1135.Valora.entity.FixedIncomeIndexer.CDI);
         assertThat(response.annualRate()).isEqualTo(rate);
+        assertThat(response.rateType()).isNull();
         assertThat(response.issuer()).isEqualTo("Banco BMG");
         assertThat(response.expirationDate()).isEqualTo(expiration);
     }
@@ -199,12 +204,16 @@ class AssetServiceTest {
     @ParameterizedTest(name = "{0}")
     @CsvSource({
             "CDB 110% CDI, CDI, PERCENTAGE_OF_INDEX, 110, , PERCENTAGE_OF_INDEX, ",
+            "Tesouro SELIC com percentual e spread zero, SELIC, PERCENTAGE_OF_INDEX, 100, 0, PERCENTAGE_OF_INDEX, 0",
+            "CDB CDI com spread explicito, CDI, SPREAD, , 0.15, SPREAD, 0.15",
             "Tesouro SELIC + 0.15%, SELIC, SPREAD, , 0.15, SPREAD, 0.15",
             "Tesouro IPCA + 6.5%, IPCA, SPREAD, , 6.5, SPREAD, 6.5",
             "CDB PRE 13.5%, PRE, FIXED, 13.5, , FIXED, ",
             "CDB PRE sem tipo de taxa, PRE, , 13.5, , FIXED, ",
-            "CDB CDI com spread sem tipo de taxa, CDI, , , 0.15, SPREAD, 0.15",
-            "Tesouro IPCA com taxa anual legada, IPCA, , 6.5, , SPREAD, 6.5",
+            "CDB CDI com taxa anual legada, CDI, , 0.15, , , ",
+            "Tesouro SELIC com taxa anual legada, SELIC, , 0.15, , , ",
+            "Tesouro IPCA com taxa anual legada, IPCA, , 0.15, , , ",
+            "CDB CDI com taxa anual legada zero, CDI, , 0, , , ",
             "Tesouro SELIC com spread zero, SELIC, SPREAD, , 0, SPREAD, 0",
             "CDB PRE com taxa e spread zero, PRE, FIXED, 0, 0, FIXED, 0"
     })
@@ -236,10 +245,21 @@ class AssetServiceTest {
             "PRE, SPREAD, , 0.15, 'CDI, SELIC ou IPCA'",
             "CDI, FIXED, 13.5, , indexador PRE",
             "PRE, FIXED, 13.5, 0.15, spread nulo ou zero",
+            "PRE, FIXED, , , sao obrigatorios para ativos de renda fixa",
             "PRE, FIXED, -1, , taxa anual nao pode ser negativa",
+            "CDI, PERCENTAGE_OF_INDEX, , , sao obrigatorios para ativos de renda fixa",
+            "CDI, PERCENTAGE_OF_INDEX, -1, , taxa anual nao pode ser negativa",
             "CDI, PERCENTAGE_OF_INDEX, 0, , taxa anual deve ser maior que zero",
+            "CDI, PERCENTAGE_OF_INDEX, 110, 6.5, Percentual do indexador nao pode ser combinado com spread",
+            "SELIC, PERCENTAGE_OF_INDEX, 110, -0.15, Percentual do indexador nao pode ser combinado com spread",
             "IPCA, SPREAD, , -1, spread e obrigatorio e nao pode ser negativo",
-            "IPCA, SPREAD, , , spread e obrigatorio e nao pode ser negativo"
+            "IPCA, SPREAD, , , spread e obrigatorio e nao pode ser negativo",
+            "IPCA, SPREAD, 6.5, 6.5, Informe apenas spreadRate",
+            "IPCA, SPREAD, 7, 6.5, Informe apenas spreadRate",
+            "IPCA, SPREAD, 6.5, , Informe apenas spreadRate",
+            "CDI, , , 0.15, Informe rateType",
+            "SELIC, , 0.15, 0, Informe rateType",
+            "IPCA, , 6.5, 6.5, Informe rateType"
     })
     void createAssetRejectsInvalidRateModel(FixedIncomeIndexer indexer, FixedIncomeRateType rateType,
                                             BigDecimal annualRate, BigDecimal spreadRate, String errorMessage) {
@@ -249,6 +269,34 @@ class AssetServiceTest {
         assertThatThrownBy(() -> assetService.createAsset(request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining(errorMessage);
+        verifyNoInteractions(assetRepository, assetMapper);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "ACOES, CDI, , , , , ",
+            "ACOES, , 0, , , , ",
+            "ACOES, , , Emissor, , , ",
+            "ACOES, , , , 2030-01-01, , ",
+            "ACOES, , , , , FIXED, ",
+            "ACOES, , , , , , 0",
+            "FII, CDI, , , , , ",
+            "FII, , 0, , , , ",
+            "FII, , , Emissor, , , ",
+            "FII, , , , 2030-01-01, , ",
+            "FII, , , , , FIXED, ",
+            "FII, , , , , , 0"
+    })
+    void createAssetRejectsFixedIncomeFieldsForOtherCategories(AssetCategory category, FixedIncomeIndexer indexer,
+                                                               BigDecimal annualRate, String issuer,
+                                                               LocalDate expirationDate, FixedIncomeRateType rateType,
+                                                               BigDecimal spreadRate) {
+        AssetRequestDTO request = new AssetRequestDTO("ATIVO1", "Ativo", category, indexer, annualRate, issuer,
+                expirationDate, rateType, spreadRate);
+
+        assertThatThrownBy(() -> assetService.createAsset(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Campos de renda fixa so podem ser informados para ativos da categoria RENDA_FIXA.");
         verifyNoInteractions(assetRepository, assetMapper);
     }
 }

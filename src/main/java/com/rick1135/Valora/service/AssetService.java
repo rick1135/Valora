@@ -43,21 +43,22 @@ public class AssetService {
 
     public AssetResponseDTO createAsset(AssetRequestDTO request) {
         FixedIncomeRateType rateType = request.rateType();
-        BigDecimal spreadRate = request.spreadRate();
         if (request.category() == AssetCategory.RENDA_FIXA) {
             if (request.indexer() == null || request.issuer() == null || request.expirationDate() == null) {
                 throw new IllegalArgumentException(REQUIRED_FIXED_INCOME_FIELDS);
             }
-            if (rateType == null) {
-                rateType = inferRateType(request);
-            }
-            if (rateType != FixedIncomeRateType.SPREAD && request.annualRate() == null) {
-                throw new IllegalArgumentException(REQUIRED_FIXED_INCOME_FIELDS);
+            if (rateType == null && request.indexer() == FixedIncomeIndexer.PRE) {
+                rateType = FixedIncomeRateType.FIXED;
             }
             if (request.expirationDate().isBefore(marketCalendar.today())) {
                 throw new IllegalArgumentException("A data de vencimento nao pode estar no passado.");
             }
-            spreadRate = validateRates(request, rateType);
+            validateRates(request, rateType);
+        } else if (request.indexer() != null || request.annualRate() != null || rateType != null
+                || request.spreadRate() != null || (request.issuer() != null && !request.issuer().isBlank())
+                || request.expirationDate() != null) {
+            throw new IllegalArgumentException(
+                    "Campos de renda fixa so podem ser informados para ativos da categoria RENDA_FIXA.");
         }
 
         String normalizedTicker = normalizeTicker(request.ticker());
@@ -70,7 +71,7 @@ public class AssetService {
         asset.setTicker(normalizedTicker);
         asset.setName(request.name().trim());
         asset.setRateType(rateType);
-        asset.setSpreadRate(spreadRate);
+        asset.setSpreadRate(request.spreadRate());
 
         try {
             Asset savedAsset = assetRepository.saveAndFlush(asset);
@@ -107,52 +108,57 @@ public class AssetService {
                 .toList();
     }
 
-    private FixedIncomeRateType inferRateType(AssetRequestDTO request) {
-        return switch (request.indexer()) {
-            case PRE -> FixedIncomeRateType.FIXED;
-            case IPCA -> FixedIncomeRateType.SPREAD;
-            case CDI, SELIC -> request.spreadRate() != null && request.annualRate() == null
-                    ? FixedIncomeRateType.SPREAD
-                    : FixedIncomeRateType.PERCENTAGE_OF_INDEX;
-        };
-    }
-
-    private BigDecimal validateRates(AssetRequestDTO request, FixedIncomeRateType rateType) {
+    private void validateRates(AssetRequestDTO request, FixedIncomeRateType rateType) {
         BigDecimal annualRate = request.annualRate();
         BigDecimal spreadRate = request.spreadRate();
         FixedIncomeIndexer indexer = request.indexer();
 
-        if (annualRate != null && annualRate.signum() < 0) {
-            throw new IllegalArgumentException("A taxa anual nao pode ser negativa.");
-        }
-
         switch (rateType) {
+            case null -> {
+                if (spreadRate != null) {
+                    throw new IllegalArgumentException("Informe rateType quando spreadRate for informado.");
+                }
+                validateAnnualRate(annualRate);
+            }
             case FIXED -> {
+                validateAnnualRate(annualRate);
                 if (indexer != FixedIncomeIndexer.PRE || (spreadRate != null && spreadRate.signum() != 0)) {
                     throw new IllegalArgumentException("A taxa fixa exige indexador PRE e spread nulo ou zero.");
                 }
             }
             case PERCENTAGE_OF_INDEX -> {
+                validateAnnualRate(annualRate);
                 if (indexer != FixedIncomeIndexer.CDI && indexer != FixedIncomeIndexer.SELIC) {
                     throw new IllegalArgumentException("O percentual do indexador exige CDI ou SELIC.");
                 }
                 if (annualRate.signum() == 0) {
                     throw new IllegalArgumentException("A taxa anual deve ser maior que zero para percentual do indexador.");
                 }
+                if (spreadRate != null && spreadRate.signum() != 0) {
+                    throw new IllegalArgumentException("Percentual do indexador nao pode ser combinado com spread.");
+                }
             }
             case SPREAD -> {
                 if (indexer == FixedIncomeIndexer.PRE) {
                     throw new IllegalArgumentException("O spread exige indexador CDI, SELIC ou IPCA.");
                 }
-                if (spreadRate == null) {
-                    spreadRate = annualRate;
+                if (annualRate != null) {
+                    throw new IllegalArgumentException("Informe apenas spreadRate quando o tipo de taxa for SPREAD.");
                 }
                 if (spreadRate == null || spreadRate.signum() < 0) {
                     throw new IllegalArgumentException("O spread e obrigatorio e nao pode ser negativo.");
                 }
             }
         }
-        return spreadRate;
+    }
+
+    private void validateAnnualRate(BigDecimal annualRate) {
+        if (annualRate == null) {
+            throw new IllegalArgumentException(REQUIRED_FIXED_INCOME_FIELDS);
+        }
+        if (annualRate.signum() < 0) {
+            throw new IllegalArgumentException("A taxa anual nao pode ser negativa.");
+        }
     }
 
     private String normalizeTicker(String ticker) {

@@ -37,7 +37,7 @@ class PostFixedIncomeYieldCalculatorTest {
                         APRIL_17.plusDays(4), BigDecimal.TEN, APRIL_24, BigDecimal.TEN)
         );
 
-        assertValuation(result, expectedValue, true);
+        assertValuation(result, expectedValue, true, APRIL_23);
     }
 
     @Test
@@ -48,24 +48,56 @@ class PostFixedIncomeYieldCalculatorTest {
                 asset, PRINCIPAL, APRIL_17, Map.of(APRIL_17, DAILY_RATE, APRIL_22, DAILY_RATE, APRIL_23, DAILY_RATE)
         );
 
-        assertValuation(result, "1001.66878105", true);
+        assertValuation(result, "1001.66878105", true, APRIL_23);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "2025-01-01, 2026-01-01, true",
+            "2025-01-01, 2026-01-01, false",
+            "2025-01-01, 2025-03-01, true",
+            "2025-01-01, 2025-03-01, false",
+            "2025-01-16, 2025-02-01, true",
+            "2025-03-06, 2025-03-06, false"
+    })
+    void fallsBackForIpcaRegardlessOfExpirationOrSeries(
+            LocalDate purchaseDate, LocalDate expirationDate, boolean seriesAvailable
+    ) {
+        Asset asset = asset(FixedIncomeIndexer.IPCA, FixedIncomeRateType.SPREAD, "6.5");
+        asset.setExpirationDate(expirationDate);
+        Map<LocalDate, BigDecimal> rates = seriesAvailable ? Map.of(
+                LocalDate.of(2025, 1, 1), new BigDecimal("0.6"),
+                LocalDate.of(2025, 2, 1), new BigDecimal("0.8")
+        ) : Map.of();
+
+        PostFixedValuation result = calculatorOn(LocalDate.of(2025, 3, 6)).calculateCurrentValue(
+                asset, PRINCIPAL, purchaseDate, rates
+        );
+
+        assertValuation(result, "1000.00000000", false, null);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"CDI, PERCENTAGE_OF_INDEX, 0", "SELIC, PERCENTAGE_OF_INDEX, -1", "CDI, SPREAD, -1"})
+    void fallsBackForUnsupportedDailyRates(FixedIncomeIndexer indexer, FixedIncomeRateType rateType, String rate) {
+        Asset asset = asset(indexer, rateType, rate);
+
+        PostFixedValuation result = calculatorOn(APRIL_24).calculateCurrentValue(
+                asset, PRINCIPAL, APRIL_23, Map.of(APRIL_23, DAILY_RATE)
+        );
+
+        assertValuation(result, "1000.00000000", false, null);
     }
 
     @Test
-    void proratesFirstIpcaMonthAndAccruesSpreadThroughUnpublishedMonth() {
-        Asset asset = asset(FixedIncomeIndexer.IPCA, FixedIncomeRateType.SPREAD, "6.5");
-        LocalDate purchaseDate = LocalDate.of(2025, 1, 16);
-        LocalDate today = LocalDate.of(2025, 3, 6);
+    void acceptsZeroSpread() {
+        Asset asset = asset(FixedIncomeIndexer.SELIC, FixedIncomeRateType.SPREAD, "0");
 
-        // 12 of January's 22 business days, all of February, and 33 business days of spread.
-        PostFixedValuation result = calculatorOn(today).calculateCurrentValue(
-                asset, PRINCIPAL, purchaseDate, Map.of(
-                        LocalDate.of(2025, 1, 1), new BigDecimal("0.6"),
-                        LocalDate.of(2025, 2, 1), new BigDecimal("0.8")
-                )
+        PostFixedValuation result = calculatorOn(APRIL_24).calculateCurrentValue(
+                asset, PRINCIPAL, APRIL_23, Map.of(APRIL_23, DAILY_RATE)
         );
 
-        assertValuation(result, "1019.66874804", true);
+        assertValuation(result, "1000.55000000", true, APRIL_23);
     }
 
     @Test
@@ -77,7 +109,19 @@ class PostFixedIncomeYieldCalculatorTest {
                 asset, PRINCIPAL, APRIL_17, Map.of(APRIL_17, DAILY_RATE, APRIL_22, DAILY_RATE, APRIL_23, BigDecimal.TEN)
         );
 
-        assertValuation(result, "1001.10030250", true);
+        assertValuation(result, "1001.10030250", true, APRIL_22);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"2025-04-28, 2025-04-24", "2025-04-22, 2025-04-16"})
+    void reportsLastCoveredDayWithD1PendingAcrossNonBusinessDays(LocalDate today, LocalDate lastCoveredDate) {
+        Asset asset = asset(FixedIncomeIndexer.CDI, FixedIncomeRateType.PERCENTAGE_OF_INDEX, "100");
+
+        PostFixedValuation result = calculatorOn(today).calculateCurrentValue(
+                asset, PRINCIPAL, lastCoveredDate, Map.of(lastCoveredDate, DAILY_RATE)
+        );
+
+        assertValuation(result, "1000.55000000", true, lastCoveredDate);
     }
 
     @Test
@@ -87,13 +131,13 @@ class PostFixedIncomeYieldCalculatorTest {
 
         assertValuation(calculator.calculateCurrentValue(
                 asset, PRINCIPAL, APRIL_17, Map.of(APRIL_17, DAILY_RATE, APRIL_22, DAILY_RATE)
-        ), "1001.10030250", true);
+        ), "1001.10030250", true, APRIL_22);
         assertValuation(calculator.calculateCurrentValue(
                 asset, PRINCIPAL, APRIL_17, Map.of(APRIL_17, DAILY_RATE)
-        ), "1000.00000000", false);
+        ), "1000.00000000", false, null);
         assertValuation(calculator.calculateCurrentValue(
                 asset, PRINCIPAL, APRIL_23, Map.of()
-        ), "1000.00000000", false);
+        ), "1000.00000000", false, null);
     }
 
     @Test
@@ -104,19 +148,19 @@ class PostFixedIncomeYieldCalculatorTest {
                 asset, PRINCIPAL, APRIL_17, Map.of(APRIL_17, DAILY_RATE, APRIL_23, DAILY_RATE)
         );
 
-        assertValuation(result, "1000.00000000", false);
+        assertValuation(result, "1000.00000000", false, null);
     }
 
     @Test
-    void fallsBackWhenClosedIpcaReferenceMonthIsMissing() {
-        Asset asset = asset(FixedIncomeIndexer.IPCA, FixedIncomeRateType.SPREAD, "6.5");
+    void returnsPrincipalWhenOnlyNonBusinessDaysHaveElapsed() {
+        Asset asset = asset(FixedIncomeIndexer.CDI, FixedIncomeRateType.PERCENTAGE_OF_INDEX, "100");
+        LocalDate purchaseDate = APRIL_17.plusDays(1);
 
-        PostFixedValuation result = calculatorOn(LocalDate.of(2025, 3, 6)).calculateCurrentValue(
-                asset, PRINCIPAL, LocalDate.of(2025, 1, 16),
-                Map.of(LocalDate.of(2025, 1, 1), new BigDecimal("0.6"))
+        PostFixedValuation result = calculatorOn(APRIL_22).calculateCurrentValue(
+                asset, PRINCIPAL, purchaseDate, Map.of()
         );
 
-        assertValuation(result, "1000.00000000", false);
+        assertValuation(result, "1000.00000000", true, purchaseDate);
     }
 
     @Test
@@ -124,9 +168,19 @@ class PostFixedIncomeYieldCalculatorTest {
         Asset asset = asset(FixedIncomeIndexer.CDI, FixedIncomeRateType.PERCENTAGE_OF_INDEX, "100");
         PostFixedIncomeYieldCalculator calculator = calculatorOn(APRIL_24);
 
-        assertValuation(calculator.calculateCurrentValue(asset, PRINCIPAL, null, Map.of()), "1000.00000000", true);
-        assertValuation(calculator.calculateCurrentValue(asset, PRINCIPAL, APRIL_24, Map.of()), "1000.00000000", true);
-        assertValuation(calculator.calculateCurrentValue(asset, BigDecimal.ZERO, APRIL_17, Map.of()), "0.00000000", true);
+        assertValuation(calculator.calculateCurrentValue(asset, PRINCIPAL, null, Map.of()), "1000.00000000", true, null);
+        assertValuation(calculator.calculateCurrentValue(asset, PRINCIPAL, APRIL_24, Map.of()), "1000.00000000", true, APRIL_24);
+        assertValuation(calculator.calculateCurrentValue(asset, BigDecimal.ZERO, APRIL_17, Map.of()), "0.00000000", true, null);
+    }
+
+    @Test
+    void returnsPrincipalWhenPurchaseAndExpirationAreToday() {
+        Asset asset = asset(FixedIncomeIndexer.CDI, FixedIncomeRateType.PERCENTAGE_OF_INDEX, "100");
+        asset.setExpirationDate(APRIL_24);
+
+        PostFixedValuation result = calculatorOn(APRIL_24).calculateCurrentValue(asset, PRINCIPAL, APRIL_24, Map.of());
+
+        assertValuation(result, "1000.00000000", true, APRIL_24);
     }
 
     private PostFixedIncomeYieldCalculator calculatorOn(LocalDate date) {
@@ -146,8 +200,11 @@ class PostFixedIncomeYieldCalculatorTest {
         return asset;
     }
 
-    private void assertValuation(PostFixedValuation result, String expectedValue, boolean reliable) {
+    private void assertValuation(
+            PostFixedValuation result, String expectedValue, boolean reliable, LocalDate valuedThrough
+    ) {
         assertThat(result.reliable()).isEqualTo(reliable);
         assertThat(result.currentValue()).isEqualTo(new BigDecimal(expectedValue));
+        assertThat(result.valuedThrough()).isEqualTo(valuedThrough);
     }
 }

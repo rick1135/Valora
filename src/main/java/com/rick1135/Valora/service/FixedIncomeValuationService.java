@@ -70,8 +70,12 @@ public class FixedIncomeValuationService {
     public record FixedIncomeValuationResult(
             BigDecimal currentTotalValue,
             BigDecimal currentUnitPrice,
-            boolean reliable
+            boolean reliable,
+            LocalDate valuedThrough
     ) {
+        public FixedIncomeValuationResult(BigDecimal currentTotalValue, BigDecimal currentUnitPrice, boolean reliable) {
+            this(currentTotalValue, currentUnitPrice, reliable, null);
+        }
     }
 
     private record ValuationLot(
@@ -188,9 +192,7 @@ public class FixedIncomeValuationService {
         if (!start.isBefore(end)) {
             return;
         }
-        FixedIncomeIndexer indexer = asset.getIndexer();
-        LocalDate startReference = indexer == FixedIncomeIndexer.IPCA ? start.withDayOfMonth(1) : start;
-        ranges.merge(indexer, new BenchmarkRange(startReference, end.minusDays(1)), BenchmarkRange::merge);
+        ranges.merge(asset.getIndexer(), new BenchmarkRange(start, end.minusDays(1)), BenchmarkRange::merge);
     }
 
     private Map<FixedIncomeIndexer, Map<LocalDate, BigDecimal>> loadBenchmarks(
@@ -216,6 +218,7 @@ public class FixedIncomeValuationService {
     ) {
         Asset asset = position.getAsset();
         BigDecimal totalValue = BigDecimal.ZERO;
+        LocalDate valuedThrough = null;
         for (ValuationLot lot : lots) {
             if (isFixedRate(asset)) {
                 totalValue = totalValue.add(fixedIncomeYieldCalculator.calculateCurrentValue(
@@ -230,11 +233,15 @@ public class FixedIncomeValuationService {
                 return principalFallback(position);
             }
             totalValue = totalValue.add(valuation.currentValue());
+            LocalDate lotValuedThrough = valuation.valuedThrough();
+            if (lotValuedThrough != null && (valuedThrough == null || lotValuedThrough.isBefore(valuedThrough))) {
+                valuedThrough = lotValuedThrough;
+            }
         }
         totalValue = totalValue.setScale(FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
         BigDecimal unitPrice = totalValue.divide(position.getQuantity(),
                 FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING);
-        return new FixedIncomeValuationResult(totalValue, unitPrice, true);
+        return new FixedIncomeValuationResult(totalValue, unitPrice, true, valuedThrough);
     }
 
     private FixedIncomeValuationResult principalFallback(Position position) {

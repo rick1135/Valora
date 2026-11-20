@@ -12,7 +12,6 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.time.Clock;
 import java.time.LocalDate;
-import java.time.YearMonth;
 import java.util.Map;
 
 @Component
@@ -32,12 +31,17 @@ public class PostFixedIncomeYieldCalculator {
         this(new MarketCalendar(Clock.systemDefaultZone()));
     }
 
-    public record PostFixedValuation(BigDecimal currentValue, boolean reliable) {
+    public record PostFixedValuation(BigDecimal currentValue, boolean reliable, LocalDate valuedThrough) {
+        public PostFixedValuation(BigDecimal currentValue, boolean reliable) {
+            this(currentValue, reliable, null);
+        }
     }
 
     /**
-     * Benchmark rates are percentages per day for CDI and SELIC, and percentages
-     * per month for IPCA, keyed by the first day of the reference month.
+     * Benchmark rates for CDI and SELIC are percentages per day keyed by observation date.
+     * For daily accrual, {@code valuedThrough} is the last date whose rate was applied.
+     * IPCA falls back to principal until the contractual monetary adjustment convention
+     * (including anniversary and lag) and ANBIMA projections are modeled.
      */
     public PostFixedValuation calculateCurrentValue(
             Asset asset,
@@ -45,19 +49,21 @@ public class PostFixedIncomeYieldCalculator {
             LocalDate purchaseDate,
             Map<LocalDate, BigDecimal> benchmarkRates
     ) {
+        if (!supportsRateModel(asset)) {
+            return valuation(principal, false, null);
+        }
         LocalDate today = marketCalendar.today();
         LocalDate endDate = effectiveEndDate(today, asset.getExpirationDate());
-        if (purchaseDate == null || !purchaseDate.isBefore(endDate) || principal.signum() <= 0) {
-            return valuation(principal, true);
+        if (purchaseDate == null) {
+            return valuation(principal, true, null);
         }
-        if (!supportsRateModel(asset)) {
-            return valuation(principal, false);
+        if (!purchaseDate.isBefore(endDate)) {
+            return valuation(principal, true, endDate);
         }
-
-        BigDecimal factor = asset.getIndexer() == FixedIncomeIndexer.IPCA
-                ? inflationFactor(purchaseDate, endDate, asset.getSpreadRate(), benchmarkRates)
-                : dailyFactor(asset, purchaseDate, endDate, today, benchmarkRates);
-        return factor == null ? valuation(principal, false) : valuation(principal.multiply(factor), true);
+        if (principal.signum() <= 0) {
+            return valuation(principal, true, null);
+        }
+        return dailyValuation(asset, principal, purchaseDate, endDate, today, benchmarkRates);
     }
 
     static LocalDate effectiveEndDate(LocalDate today, LocalDate expirationDate) {
@@ -66,18 +72,20 @@ public class PostFixedIncomeYieldCalculator {
 
     static boolean supportsRateModel(Asset asset) {
         FixedIncomeIndexer indexer = asset.getIndexer();
-        boolean dailyIndexer = indexer == FixedIncomeIndexer.CDI || indexer == FixedIncomeIndexer.SELIC;
+        if (indexer != FixedIncomeIndexer.CDI && indexer != FixedIncomeIndexer.SELIC) {
+            return false;
+        }
         if (asset.getRateType() == FixedIncomeRateType.PERCENTAGE_OF_INDEX) {
-            return dailyIndexer && asset.getAnnualRate() != null;
+            return asset.getAnnualRate() != null && asset.getAnnualRate().signum() > 0;
         }
         return asset.getRateType() == FixedIncomeRateType.SPREAD
-                && (dailyIndexer || indexer == FixedIncomeIndexer.IPCA)
                 && asset.getSpreadRate() != null
-                && rateFactor(asset.getSpreadRate()).signum() > 0;
+                && asset.getSpreadRate().signum() >= 0;
     }
 
-    private BigDecimal dailyFactor(
+    private PostFixedValuation dailyValuation(
             Asset asset,
+            BigDecimal principal,
             LocalDate startDate,
             LocalDate endDate,
             LocalDate today,
@@ -85,10 +93,10 @@ public class PostFixedIncomeYieldCalculator {
     ) {
         boolean spread = asset.getRateType() == FixedIncomeRateType.SPREAD;
         BigDecimal indexMultiplier = spread ? BigDecimal.ONE : asset.getAnnualRate().movePointLeft(2);
-        BigDecimal spreadFactor = spread ? annualSpreadFactor(asset.getSpreadRate(), 1) : BigDecimal.ONE;
+        BigDecimal spreadFactor = spread ? dailySpreadFactor(asset.getSpreadRate()) : BigDecimal.ONE;
         LocalDate latestBusinessDay = marketCalendar.previousBusinessDay(today);
         BigDecimal accumulated = BigDecimal.ONE;
-        boolean hasCoveredDay = false;
+        LocalDate lastCoveredDate = null;
         for (LocalDate date = startDate; date.isBefore(endDate); date = date.plusDays(1)) {
             if (!marketCalendar.isBusinessDay(date)) {
                 continue;
@@ -96,60 +104,24 @@ public class PostFixedIncomeYieldCalculator {
             BigDecimal rate = rates.get(date);
             if (rate == null) {
                 // Only the latest daily observation can be delayed by publication.
-                if (hasCoveredDay && date.equals(latestBusinessDay)) {
-                    continue;
+                if (lastCoveredDate != null && date.equals(latestBusinessDay)) {
+                    break;
                 }
-                return null;
+                return valuation(principal, false, null);
             }
             BigDecimal indexFactor = rateFactor(rate.multiply(indexMultiplier));
             if (indexFactor.signum() <= 0) {
-                return null;
+                return valuation(principal, false, null);
             }
             accumulated = accumulated.multiply(indexFactor, MATH_CONTEXT).multiply(spreadFactor, MATH_CONTEXT);
-            hasCoveredDay = true;
+            lastCoveredDate = date;
         }
-        return accumulated;
+        LocalDate valuedThrough = lastCoveredDate == null ? startDate : lastCoveredDate;
+        return valuation(principal.multiply(accumulated), true, valuedThrough);
     }
 
-    private BigDecimal inflationFactor(
-            LocalDate startDate,
-            LocalDate endDate,
-            BigDecimal spreadRate,
-            Map<LocalDate, BigDecimal> rates
-    ) {
-        long businessDays = marketCalendar.businessDaysBetween(startDate, endDate.minusDays(1));
-        if (businessDays == 0) {
-            return BigDecimal.ONE;
-        }
-
-        BigDecimal accumulated = annualSpreadFactor(spreadRate, businessDays);
-        LocalDate periodStart = startDate;
-        for (YearMonth month = YearMonth.from(startDate); periodStart.isBefore(endDate); month = month.plusMonths(1)) {
-            LocalDate nextMonth = month.plusMonths(1).atDay(1);
-            boolean fullMonthEnded = !nextMonth.isAfter(endDate);
-            BigDecimal rate = rates.get(month.atDay(1));
-            if (rate == null) {
-                return fullMonthEnded ? null : accumulated;
-            }
-            BigDecimal monthlyFactor = rateFactor(rate);
-            if (monthlyFactor.signum() <= 0) {
-                return null;
-            }
-            if (!fullMonthEnded || periodStart.getDayOfMonth() != 1) {
-                LocalDate periodEnd = fullMonthEnded ? nextMonth : endDate;
-                long coveredDays = marketCalendar.businessDaysBetween(periodStart, periodEnd.minusDays(1));
-                long monthDays = marketCalendar.businessDaysBetween(month.atDay(1), month.atEndOfMonth());
-                BigDecimal fraction = BigDecimal.valueOf(coveredDays).divide(BigDecimal.valueOf(monthDays), MATH_CONTEXT);
-                monthlyFactor = BigDecimalMath.pow(monthlyFactor, fraction, MATH_CONTEXT);
-            }
-            accumulated = accumulated.multiply(monthlyFactor, MATH_CONTEXT);
-            periodStart = nextMonth;
-        }
-        return accumulated;
-    }
-
-    private static BigDecimal annualSpreadFactor(BigDecimal spreadRate, long businessDays) {
-        BigDecimal exponent = BigDecimal.valueOf(businessDays).divide(BUSINESS_DAYS_PER_YEAR, MATH_CONTEXT);
+    private static BigDecimal dailySpreadFactor(BigDecimal spreadRate) {
+        BigDecimal exponent = BigDecimal.ONE.divide(BUSINESS_DAYS_PER_YEAR, MATH_CONTEXT);
         return BigDecimalMath.pow(rateFactor(spreadRate), exponent, MATH_CONTEXT);
     }
 
@@ -157,10 +129,11 @@ public class PostFixedIncomeYieldCalculator {
         return BigDecimal.ONE.add(percentage.movePointLeft(2));
     }
 
-    private static PostFixedValuation valuation(BigDecimal value, boolean reliable) {
+    private static PostFixedValuation valuation(BigDecimal value, boolean reliable, LocalDate valuedThrough) {
         return new PostFixedValuation(
                 value.setScale(FinancialConstants.EXTENDED_PRECISION_SCALE, FinancialConstants.DEFAULT_ROUNDING),
-                reliable
+                reliable,
+                valuedThrough
         );
     }
 }
