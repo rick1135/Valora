@@ -4,6 +4,7 @@ import com.rick1135.Valora.dto.response.PositionResponseDTO;
 import com.rick1135.Valora.entity.Asset;
 import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.entity.FixedIncomeIndexer;
+import com.rick1135.Valora.entity.FixedIncomeRateType;
 import com.rick1135.Valora.entity.Portfolio;
 import com.rick1135.Valora.entity.Position;
 import com.rick1135.Valora.entity.User;
@@ -19,6 +20,7 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -91,6 +93,8 @@ class PositionServiceTest {
         assertThat(portfolio.getFirst().ticker()).isEqualTo("ITSA4");
         assertThat(portfolio.getFirst().totalCost()).isEqualByComparingTo("21.0000000000000000");
         assertThat(portfolio.getFirst().currentPrice()).isEqualByComparingTo("12.00000000");
+        assertThat(portfolio.getFirst().valuedThrough()).isNull();
+        assertThat(portfolio.getFirst().pendingLatestObservation()).isFalse();
     }
 
     @Test
@@ -106,7 +110,7 @@ class PositionServiceTest {
     }
 
     @Test
-    void getUserPortfolioShouldValuateFixedIncomeWithoutCallingQuoteService() {
+    void getUserPortfolioShouldExposeFixedIncomeCoverageWithoutCallingQuoteService() {
         User user = new User();
         Portfolio portfolioEntity = new Portfolio();
         portfolioEntity.setId(UUID.randomUUID());
@@ -115,11 +119,12 @@ class PositionServiceTest {
 
         Asset cdb = new Asset();
         cdb.setId(UUID.randomUUID());
-        cdb.setTicker("CDB_PRE");
-        cdb.setName("CDB Prefixado");
+        cdb.setTicker("CDB_CDI");
+        cdb.setName("CDB CDI");
         cdb.setCategory(AssetCategory.RENDA_FIXA);
-        cdb.setIndexer(FixedIncomeIndexer.PRE);
-        cdb.setAnnualRate(new BigDecimal("10.00"));
+        cdb.setIndexer(FixedIncomeIndexer.CDI);
+        cdb.setRateType(FixedIncomeRateType.PERCENTAGE_OF_INDEX);
+        cdb.setAnnualRate(new BigDecimal("100.00"));
 
         Position cdbPosition = new Position();
         cdbPosition.setId(UUID.randomUUID());
@@ -127,6 +132,7 @@ class PositionServiceTest {
         cdbPosition.setAsset(cdb);
         cdbPosition.setQuantity(new BigDecimal("2.00000000"));
         cdbPosition.setAveragePrice(new BigDecimal("1000.00000000"));
+        LocalDate valuedThrough = LocalDate.of(2025, 4, 22);
 
         when(portfolioService.resolveOwnedPortfolio(user, portfolioEntity.getId())).thenReturn(portfolioEntity);
         when(positionRepository.findByPortfolio(portfolioEntity)).thenReturn(List.of(cdbPosition));
@@ -134,16 +140,20 @@ class PositionServiceTest {
                 .thenReturn(Map.of(cdbPosition, new FixedIncomeValuationService.FixedIncomeValuationResult(
                         new BigDecimal("2200.00000000"),
                         new BigDecimal("1100.00000000"),
+                        true,
+                        valuedThrough,
                         true
                 )));
 
         List<PositionResponseDTO> result = positionService.getUserPortfolio(user, portfolioEntity.getId());
 
         assertThat(result).hasSize(1);
-        assertThat(result.getFirst().ticker()).isEqualTo("CDB_PRE");
+        assertThat(result.getFirst().ticker()).isEqualTo("CDB_CDI");
         assertThat(result.getFirst().currentPrice()).isEqualByComparingTo("1100.00000000");
         assertThat(result.getFirst().currentTotalValue()).isEqualByComparingTo("2200.00000000");
         assertThat(result.getFirst().profitability()).isEqualByComparingTo("10.0000");
+        assertThat(result.getFirst().valuedThrough()).isEqualTo(valuedThrough);
+        assertThat(result.getFirst().pendingLatestObservation()).isTrue();
         verify(quoteService, never()).getCurrentPrices(any());
     }
 
@@ -185,6 +195,8 @@ class PositionServiceTest {
         assertThat(result.getFirst().currentPrice()).isNull();
         assertThat(result.getFirst().currentTotalValue()).isNull();
         assertThat(result.getFirst().profitability()).isNull();
+        assertThat(result.getFirst().valuedThrough()).isNull();
+        assertThat(result.getFirst().pendingLatestObservation()).isFalse();
         verify(quoteService, never()).getCurrentPrices(any());
     }
 }

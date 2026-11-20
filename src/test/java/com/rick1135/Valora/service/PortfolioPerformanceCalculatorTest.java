@@ -7,6 +7,8 @@ import com.rick1135.Valora.entity.AssetCategory;
 import com.rick1135.Valora.entity.FixedIncomeIndexer;
 import com.rick1135.Valora.entity.Position;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -166,6 +168,27 @@ class PortfolioPerformanceCalculatorTest {
         assertThat(summary.totalInvested()).isEqualByComparingTo("1000.0000000000");
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void calculateShouldExposeFixedIncomeCoverageInPositionSummary(boolean pendingLatestObservation) {
+        Position position = position("CDB_CDI", AssetCategory.RENDA_FIXA, "1", "1000.00");
+        LocalDate valuedThrough = LocalDate.of(2025, 4, 22);
+        BigDecimal currentValue = new BigDecimal("1001.10");
+        var valuation = new FixedIncomeValuationService.FixedIncomeValuationResult(
+                currentValue, currentValue, true, valuedThrough, pendingLatestObservation
+        );
+
+        PortfolioSummaryDTO summary = calculator.calculate(
+                List.of(position), Map.of(), BigDecimal.ZERO, BigDecimal.ZERO, List.of(), Map.of(position, valuation)
+        );
+
+        assertThat(summary.positions()).hasSize(1);
+        var positionSummary = summary.positions().getFirst();
+        assertThat(positionSummary.marketPriceReliable()).isTrue();
+        assertThat(positionSummary.valuedThrough()).isEqualTo(valuedThrough);
+        assertThat(positionSummary.pendingLatestObservation()).isEqualTo(pendingLatestObservation);
+    }
+
     @Test
     void calculateShouldDistinguishUnrealizedRealizedAndTotalProfit() {
         Position openPosition = position("PETR4", AssetCategory.ACOES, "6.00000000", "10.00");
@@ -230,6 +253,8 @@ class PortfolioPerformanceCalculatorTest {
         assertThat(summary.fallbackTickers()).containsExactly("CDB_CDI");
         assertThat(summary.allocations().getFirst().marketPriceReliable()).isFalse();
         assertThat(summary.positions().getFirst().marketPriceReliable()).isFalse();
+        assertThat(summary.positions().getFirst().valuedThrough()).isNull();
+        assertThat(summary.positions().getFirst().pendingLatestObservation()).isFalse();
     }
 
     private Position position(String ticker, AssetCategory category, String quantity, String averagePrice) {

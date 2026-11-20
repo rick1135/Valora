@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -67,12 +68,16 @@ public class PositionService {
 
         BigDecimal currentPrice;
         BigDecimal currentTotalValue;
+        LocalDate valuedThrough = null;
+        boolean pendingLatestObservation = false;
 
         if (position.getAsset().getCategory() == AssetCategory.RENDA_FIXA) {
             FixedIncomeValuationService.FixedIncomeValuationResult valuation = fixedIncomeValuations.get(position);
             if (valuation != null && valuation.reliable()) {
                 currentPrice = valuation.currentUnitPrice();
                 currentTotalValue = valuation.currentTotalValue();
+                valuedThrough = valuation.valuedThrough();
+                pendingLatestObservation = valuation.pendingLatestObservation();
             } else {
                 currentPrice = null;
                 currentTotalValue = null;
@@ -96,7 +101,9 @@ public class PositionService {
                 totalCost,
                 currentPrice,
                 currentTotalValue,
-                profitability
+                profitability,
+                valuedThrough,
+                pendingLatestObservation
         );
     }
 }

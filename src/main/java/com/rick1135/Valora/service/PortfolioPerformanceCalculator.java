@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -151,7 +152,9 @@ public class PortfolioPerformanceCalculator {
                         line.patrimony(),
                         line.quantity(),
                         line.currentPrice(),
-                        !line.fallbackQuoteUsed()
+                        !line.fallbackQuoteUsed(),
+                        line.valuedThrough(),
+                        line.pendingLatestObservation()
                 ))
                 .toList();
     }
@@ -205,6 +208,8 @@ public class PortfolioPerformanceCalculator {
         BigDecimal patrimony;
         QuoteDTO quote = null;
         boolean hasValidQuote;
+        LocalDate valuedThrough = null;
+        boolean pendingLatestObservation = false;
 
         if (position.getAsset().getCategory() == AssetCategory.RENDA_FIXA) {
             FixedIncomeValuationService.FixedIncomeValuationResult valuation =
@@ -212,6 +217,10 @@ public class PortfolioPerformanceCalculator {
                             ? fixedIncomeValuations.get(position)
                             : effectiveFixedIncomeValuationService().valuatePosition(position, List.of());
             hasValidQuote = valuation != null && valuation.reliable();
+            if (hasValidQuote) {
+                valuedThrough = valuation.valuedThrough();
+                pendingLatestObservation = valuation.pendingLatestObservation();
+            }
             effectivePrice = valuation != null && valuation.currentUnitPrice() != null
                     ? valuation.currentUnitPrice()
                     : fallbackPrice;
@@ -238,7 +247,9 @@ public class PortfolioPerformanceCalculator {
                 patrimony,
                 dayVariation.absoluteVariation(),
                 dayVariation.available(),
-                !hasValidQuote
+                !hasValidQuote,
+                valuedThrough,
+                pendingLatestObservation
         );
     }
 
@@ -295,7 +306,9 @@ public class PortfolioPerformanceCalculator {
             BigDecimal patrimony,
             BigDecimal dayAbsoluteVariation,
             boolean dayChangeAvailable,
-            boolean fallbackQuoteUsed
+            boolean fallbackQuoteUsed,
+            LocalDate valuedThrough,
+            boolean pendingLatestObservation
     ) {
     }
 
