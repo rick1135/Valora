@@ -13,6 +13,8 @@ import com.rick1135.Valora.entity.User;
 import com.rick1135.Valora.exception.PortfolioNotFoundException;
 import com.rick1135.Valora.mapper.PortfolioMapper;
 import com.rick1135.Valora.repository.*;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -45,6 +47,9 @@ public class PortfolioService {
 
     @Autowired(required = false)
     private PortfolioSnapshotService portfolioSnapshotService;
+
+    @Autowired(required = false)
+    private MeterRegistry meterRegistry;
 
     @Transactional
     public PortfolioResponseDTO createPortfolio(User user, PortfolioRequestDTO dto) {
@@ -107,6 +112,17 @@ public class PortfolioService {
 
     @Transactional(readOnly = true)
     public PortfolioSummaryDTO getPortfolioSummary(User user, UUID portfolioId) {
+        Timer.Sample sample = meterRegistry == null ? null : Timer.start(meterRegistry);
+        try {
+            return calculatePortfolioSummary(user, portfolioId);
+        } finally {
+            if (sample != null) {
+                sample.stop(meterRegistry.timer("valora.portfolio.summary.duration"));
+            }
+        }
+    }
+
+    private PortfolioSummaryDTO calculatePortfolioSummary(User user, UUID portfolioId) {
         Portfolio portfolio = resolveOwnedPortfolio(user, portfolioId);
         List<Position> positions = positionRepository.findByPortfolioAndQuantityGreaterThan(portfolio, ZERO);
 

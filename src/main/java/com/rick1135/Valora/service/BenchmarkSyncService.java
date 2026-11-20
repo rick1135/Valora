@@ -14,8 +14,11 @@ import com.rick1135.Valora.entity.BenchmarkType;
 import com.rick1135.Valora.entity.BenchmarkValue;
 import com.rick1135.Valora.repository.BenchmarkRepository;
 import com.rick1135.Valora.repository.BenchmarkValueRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -55,43 +58,69 @@ public class BenchmarkSyncService {
     private final MarketCalendar marketCalendar;
     private final BrapiClient brapiClient;
 
+    @Autowired(required = false)
+    private MeterRegistry meterRegistry;
+
     @Value("${brapi.token:}")
     private String brapiToken;
 
     @Scheduled(cron = "0 0 2 * * *")
     @Transactional
     public void syncAllBenchmarks() {
-        LocalDate today = marketCalendar.today();
-        List<String> errors = new ArrayList<>();
-        for (Benchmark benchmark : benchmarkRepository.findAll(Sort.by("ticker"))) {
-            LocalDate latest = findLatestDate(benchmark);
-            if (benchmark.getProvider() == BenchmarkProvider.BCB) {
-                syncBcbAutomatically(benchmark, latest, today, errors);
-            } else {
-                syncBrapiAutomatically(benchmark, latest, today, errors);
+        Timer.Sample sample = meterRegistry == null ? null : Timer.start(meterRegistry);
+        boolean successful = false;
+        try {
+            LocalDate today = marketCalendar.today();
+            List<String> errors = new ArrayList<>();
+            for (Benchmark benchmark : benchmarkRepository.findAll(Sort.by("ticker"))) {
+                LocalDate latest = findLatestDate(benchmark);
+                if (benchmark.getProvider() == BenchmarkProvider.BCB) {
+                    syncBcbAutomatically(benchmark, latest, today, errors);
+                } else {
+                    syncBrapiAutomatically(benchmark, latest, today, errors);
+                }
             }
+            successful = errors.isEmpty();
+        } finally {
+            recordSyncMetrics(sample, successful);
         }
     }
 
     @Transactional
     public BenchmarkSyncResponseDTO syncRange(LocalDate startDate, LocalDate endDate) {
-        LocalDate today = marketCalendar.today();
-        LocalDate end = endDate == null ? today : endDate;
-        LocalDate start = startDate == null ? end.minusYears(1) : startDate;
-        if (start.isAfter(end)) {
-            throw new IllegalArgumentException("startDate deve ser anterior ou igual a endDate.");
-        }
+        Timer.Sample sample = meterRegistry == null ? null : Timer.start(meterRegistry);
+        boolean successful = false;
+        try {
+            LocalDate today = marketCalendar.today();
+            LocalDate end = endDate == null ? today : endDate;
+            LocalDate start = startDate == null ? end.minusYears(1) : startDate;
+            if (start.isAfter(end)) {
+                throw new IllegalArgumentException("startDate deve ser anterior ou igual a endDate.");
+            }
 
-        List<String> errors = new ArrayList<>();
-        List<Benchmark> benchmarks = benchmarkRepository.findAll(Sort.by("ticker"));
-        int inserted = 0;
-        for (Benchmark benchmark : benchmarks) {
-            inserted += switch (benchmark.getProvider()) {
-                case BCB -> syncBcbRange(benchmark, start, end, errors);
-                case BRAPI -> syncBrapiHistorical(benchmark, start, end, today, errors);
-            };
+            List<String> errors = new ArrayList<>();
+            List<Benchmark> benchmarks = benchmarkRepository.findAll(Sort.by("ticker"));
+            int inserted = 0;
+            for (Benchmark benchmark : benchmarks) {
+                inserted += switch (benchmark.getProvider()) {
+                    case BCB -> syncBcbRange(benchmark, start, end, errors);
+                    case BRAPI -> syncBrapiHistorical(benchmark, start, end, today, errors);
+                };
+            }
+            BenchmarkSyncResponseDTO response = new BenchmarkSyncResponseDTO(
+                    start, end, benchmarks.size(), inserted, List.copyOf(errors));
+            successful = errors.isEmpty();
+            return response;
+        } finally {
+            recordSyncMetrics(sample, successful);
         }
-        return new BenchmarkSyncResponseDTO(start, end, benchmarks.size(), inserted, List.copyOf(errors));
+    }
+
+    private void recordSyncMetrics(Timer.Sample sample, boolean successful) {
+        if (sample != null) {
+            sample.stop(meterRegistry.timer("valora.benchmarks.sync.duration"));
+            meterRegistry.counter("valora.benchmarks.sync.total", "outcome", successful ? "success" : "error").increment();
+        }
     }
 
     @Transactional(readOnly = true)
