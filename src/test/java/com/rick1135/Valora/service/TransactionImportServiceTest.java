@@ -22,6 +22,8 @@ import com.rick1135.Valora.repository.UserRepository;
 import com.rick1135.Valora.support.AbstractPostgresIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -90,7 +92,8 @@ class TransactionImportServiceTest {
         verify(portfolioService).resolveOwnedPortfolio(user, PORTFOLIO_ID);
         assertThat(preview).isEqualTo(new TransactionImportPreviewDTO(1, 1, 0, List.of(),
                 List.of(new PreviewRow(2, LocalDate.of(2025, 1, 10), "PETR4", TransactionType.BUY,
-                        new BigDecimal("2.500"), new BigDecimal("35.50"))), List.of()));
+                        new BigDecimal("2.500"), new BigDecimal("35.50"), new BigDecimal("88.75"))),
+                List.of(), new BigDecimal("88.75")));
         verifyNoInteractions(transactionService);
     }
 
@@ -98,16 +101,65 @@ class TransactionImportServiceTest {
     void previewsB3WithFractionalTickerAndBrazilianNumbers() {
         stubPetr4();
         when(assetRepository.findVisibleByTickerIgnoreCase(user, "PETR4F")).thenReturn(List.of());
-        String content = "Data do Negócio;Tipo de Movimentação;Mercado;Código de Negociação;Quantidade;Valor\r\n"
-                + "10/01/2025;Venda;Fracionário;PETR4F;'1.234,56';\"R$ 35,50\"\r\n";
+        String content = "Data do Negócio;Tipo de Movimentação;Mercado;Código de Negociação;Quantidade;Preço;Valor\r\n"
+                + "10/01/2025;Venda;Fracionário;PETR4F;'1.234,56';\"R$ 35,50\";43826,88\r\n";
 
         TransactionImportPreviewDTO preview = service.preview(user, PORTFOLIO_ID, csv(content));
 
         assertThat(preview).isEqualTo(new TransactionImportPreviewDTO(1, 1, 0, List.of(),
                 List.of(new PreviewRow(2, LocalDate.of(2025, 1, 10), "PETR4", TransactionType.SELL,
-                        new BigDecimal("1234.56"), new BigDecimal("35.50"))), List.of()));
+                        new BigDecimal("1234.56"), new BigDecimal("35.50"), new BigDecimal("43826.88"))),
+                List.of(), new BigDecimal("43826.88")));
         verify(assetRepository).findVisibleByTickerIgnoreCase(user, "PETR4F");
         verify(assetRepository).findVisibleByTickerIgnoreCase(user, "PETR4");
+    }
+
+    @Test
+    void previewsPortugueseHeadersAndCalculatesTotalValueIgnoringOptionalTotalColumn() {
+        stubPetr4();
+        String content = "Data da Compra;Compra/Venda;Código da Ação;Quantidade;Preço Unitário;Valor Total\n"
+                + "10/01/2025;C;PETR4;10;13,47;\n"
+                + "11/01/2025;V;PETR4;4;15,10;999,99\n";
+
+        TransactionImportPreviewDTO preview = service.preview(user, PORTFOLIO_ID, csv(content));
+
+        assertThat(preview.totalRows()).isEqualTo(2);
+        assertThat(preview.validCount()).isEqualTo(2);
+        assertThat(preview.errorCount()).isZero();
+        assertThat(preview.totalVolume()).isEqualByComparingTo("195.10");
+        assertThat(preview.validRows()).containsExactly(
+                new PreviewRow(2, LocalDate.of(2025, 1, 10), "PETR4", TransactionType.BUY,
+                        new BigDecimal("10"), new BigDecimal("13.47"), new BigDecimal("134.70")),
+                new PreviewRow(3, LocalDate.of(2025, 1, 11), "PETR4", TransactionType.SELL,
+                        new BigDecimal("4"), new BigDecimal("15.10"), new BigDecimal("60.40")));
+        verifyNoInteractions(transactionService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Valor", "Valor Total"})
+    void rejectsCsvWithoutExplicitUnitPriceBeforePreviewOrImport(String valueHeader) {
+        String content = "Data do Negócio;Tipo de Movimentação;Código de Negociação;Quantidade;" + valueHeader + "\n"
+                + "10/01/2025;Compra;PETR4;10;134,70\n";
+
+        assertThatThrownBy(() -> service.preview(user, PORTFOLIO_ID, csv(content)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("preco unitario");
+        assertThatThrownBy(() -> service.importCsv(user, PORTFOLIO_ID, csv(content)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("preco unitario");
+        verifyNoInteractions(assetRepository, transactionService);
+    }
+
+    @Test
+    void rejectsCsvWithoutDateColumnWithClearErrorMessage() {
+        String content = "Compra/Venda;Código da Ação;Quantidade;Preço Unitário;Valor Total\n"
+                + "Compra;PETR4;10;13,47;134,70\n";
+
+        assertThatThrownBy(() -> service.preview(user, PORTFOLIO_ID, csv(content)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Colunas obrigatorias ausentes")
+                .hasMessageContaining("data");
+        verifyNoInteractions(assetRepository, transactionService);
     }
 
     @Test

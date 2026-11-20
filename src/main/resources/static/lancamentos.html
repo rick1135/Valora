@@ -46,8 +46,16 @@
           <label class="csv-import__file" for="csv-file-input">Arquivo CSV
             <input type="file" id="csv-file-input" accept=".csv,text/csv" required>
           </label>
-          <p class="csv-import__hint">Compat&iacute;vel com CSV Valora e Negocia&ccedil;&otilde;es B3. At&eacute; 2 MB e 2.000 linhas.</p>
-          <button class="button button--primary" id="csv-analyze-btn" type="submit">Analisar arquivo</button>
+          <p class="csv-import__hint">
+            Colunas obrigat&oacute;rias: Data, Tipo (Compra ou Venda), C&oacute;digo da a&ccedil;&atilde;o, Quantidade e Pre&ccedil;o unit&aacute;rio.
+            O valor total &eacute; calculado automaticamente (quantidade &times; pre&ccedil;o unit&aacute;rio).
+            Compat&iacute;vel com CSV Valora e Negocia&ccedil;&otilde;es B3. At&eacute; 2 MB e 2.000 linhas.
+            O modelo cont&eacute;m compras de exemplo: ajuste os dados antes de importar.
+          </p>
+          <div class="csv-import__form-actions">
+            <button class="button button--primary" id="csv-analyze-btn" type="submit">Analisar arquivo</button>
+            <button class="button button--ghost" id="csv-template-btn" type="button">Baixar modelo CSV</button>
+          </div>
         </form>
         <div id="csv-preview" class="csv-import__preview" hidden></div>
         <p id="csv-import-status" class="csv-import__status" role="status" hidden></p>
@@ -90,6 +98,7 @@
                 <th scope="col">Tipo</th>
                 <th scope="col">Quantidade</th>
                 <th scope="col">Pre&ccedil;o unit&aacute;rio</th>
+                <th scope="col">Valor total</th>
                 <th scope="col">A&ccedil;&otilde;es</th>
               </tr>
             </thead>

@@ -4,15 +4,22 @@
 
 .csv-import-backdrop { position: fixed; inset: 0; z-index: 1100; background: rgb(4 8 14 / 76%); }
 .csv-import-backdrop[hidden] { display: none; }
-.csv-import { position: fixed; z-index: 1101; inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(calc(100% - 28px), 720px); max-height: min(86vh, 850px); overflow: auto; padding: clamp(18px, 4vw, 28px); }
+.csv-import { position: fixed; z-index: 1101; inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(calc(100% - 28px), 840px); max-height: min(86vh, 850px); overflow: auto; padding: clamp(18px, 4vw, 28px); }
 .csv-import[hidden] { display: none; }
 .csv-import__header, .csv-import__actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .csv-import__header h2 { margin: 0; }
 .csv-import__file { display: grid; gap: 8px; margin-top: 18px; color: var(--text-soft); }
+.csv-import__form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
 .csv-import__hint, .csv-import__status { color: var(--muted-strong); }
 .csv-import__preview { margin-top: 18px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); }
 .csv-import__preview h3 { margin: 16px 0 8px; font-size: 1rem; }
 .csv-import__preview ul { padding-left: 22px; }
+.csv-preview-summary { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 0; font-size: 0.95rem; color: var(--text-soft); font-variant-numeric: tabular-nums; }
+.csv-preview-table-wrap { margin-top: 8px; overflow-x: auto; }
+.csv-preview-table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.csv-preview-table th, .csv-preview-table td { border-bottom: 1px solid var(--border); padding: 8px 10px; }
+.csv-preview-table th { color: var(--muted-strong); }
+.csv-preview-note { margin: 8px 0 0; font-size: 0.85rem; color: var(--muted-strong); }
 .csv-import__status[data-tone="error"] { color: #ff9ab8; }
 .csv-import__status[data-tone="success"] { color: var(--green-soft); }
 .csv-import__actions { justify-content: flex-end; margin-top: 14px; }

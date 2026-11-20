@@ -1,11 +1,14 @@
 package com.rick1135.Valora.controller;
 
+import com.rick1135.Valora.dto.response.TransactionImportPreviewDTO;
+import com.rick1135.Valora.dto.response.TransactionImportResultDTO;
 import com.rick1135.Valora.dto.response.TransactionResponseDTO;
 import com.rick1135.Valora.entity.TransactionType;
 import com.rick1135.Valora.exception.AssetNotFoundException;
 import com.rick1135.Valora.exception.GlobalExceptionHandler;
 import com.rick1135.Valora.exception.InsufficientPositionException;
 import com.rick1135.Valora.exception.TransactionNotFoundException;
+import com.rick1135.Valora.service.TransactionImportService;
 import com.rick1135.Valora.service.TransactionService;
 import com.rick1135.Valora.service.TransactionService.TransactionResult;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,12 +20,15 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -31,6 +37,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -55,12 +62,15 @@ class TransactionControllerTest {
     @Mock
     private TransactionService transactionService;
 
+    @Mock
+    private TransactionImportService transactionImportService;
+
     @BeforeEach
     void setUp() {
         LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
 
-        TransactionController controller = new TransactionController(transactionService);
+        TransactionController controller = new TransactionController(transactionService, transactionImportService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
@@ -275,5 +285,53 @@ class TransactionControllerTest {
         mockMvc.perform(get("/transactions").param("portfolioId", "not-a-uuid"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("portfolioId: valor invalido."));
+    }
+
+    @Test
+    void previewAndImportCsvShouldReturnCalculatedTotalValues() throws Exception {
+        UUID portfolioId = UUID.randomUUID();
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "operacoes.csv",
+                "text/csv",
+                "data;tipo;codigo_acao;quantidade;preco_unitario\n17/11/2026;Compra;ITSA4;10;13,47\n"
+                        .getBytes(StandardCharsets.UTF_8)
+        );
+        TransactionImportPreviewDTO preview = new TransactionImportPreviewDTO(
+                1,
+                1,
+                0,
+                List.of(),
+                List.of(new TransactionImportPreviewDTO.PreviewRow(
+                        2,
+                        LocalDate.of(2026, 11, 17),
+                        "ITSA4",
+                        TransactionType.BUY,
+                        new BigDecimal("10"),
+                        new BigDecimal("13.47"),
+                        new BigDecimal("134.70")
+                )),
+                List.of(),
+                new BigDecimal("134.70")
+        );
+        when(transactionImportService.preview(any(), eq(portfolioId), any())).thenReturn(preview);
+        when(transactionImportService.importCsv(any(), eq(portfolioId), any()))
+                .thenReturn(new TransactionImportResultDTO(1, 1, 0));
+
+        mockMvc.perform(multipart("/transactions/import/preview")
+                        .file(file)
+                        .param("portfolioId", portfolioId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.validCount").value(1))
+                .andExpect(jsonPath("$.totalVolume").value(134.70))
+                .andExpect(jsonPath("$.validRows[0].ticker").value("ITSA4"))
+                .andExpect(jsonPath("$.validRows[0].totalValue").value(134.70));
+
+        mockMvc.perform(multipart("/transactions/import")
+                        .file(file)
+                        .param("portfolioId", portfolioId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.importedCount").value(1))
+                .andExpect(jsonPath("$.skippedDuplicatesCount").value(0));
     }
 }

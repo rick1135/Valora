@@ -12,7 +12,8 @@ public record TransactionImportPreviewDTO(
         int errorCount,
         List<String> missingTickers,
         List<PreviewRow> validRows,
-        List<RowError> errors
+        List<RowError> errors,
+        BigDecimal totalVolume
 ) {
     public record PreviewRow(
             int lineNumber,
@@ -20,7 +21,8 @@ public record TransactionImportPreviewDTO(
             String ticker,
             TransactionType type,
             BigDecimal quantity,
-            BigDecimal unitPrice
+            BigDecimal unitPrice,
+            BigDecimal totalValue
     ) {
     }
 
